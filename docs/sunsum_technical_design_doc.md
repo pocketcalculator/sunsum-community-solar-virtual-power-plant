@@ -9,7 +9,6 @@ At the same time, smaller solar developers face challenges on the other side of 
 
 SunSum Solar is intended to help bridge these two gaps through aggregation and a standardized project-development workflow
 
-
 ## 2. Scope
 
 ### 2.1 In scope
@@ -23,7 +22,7 @@ SunSum Solar is intended to help bridge these two gaps through aggregation and a
 7. **Investor Portfolio and Deal Room** - Allow investors to onboard with an investor type and mandate, discover investment-ready projects through a portfolio view, review detailed project information and supporting documents in a project-level deal room, and express interest in opportunities they want to evaluate further.
 8. **Investor Engagement Lifecycle** - Model the investor journey from interest through commitment, underwriting, approval and funding, with progressive disclosure of project information by engagement state. The MVP builds the interest stage; later states are specified but not implemented (§7.8).
 
-### 2.2 Out of scope 
+### 2.2 Out of scope
 
 - Live utility / Georgia Power integration
 - Grid dispatch and device control
@@ -69,6 +68,7 @@ SunSum Solar is intended to help bridge these two gaps through aggregation and a
 | Monitoring | Application Insights/OpenTelemetry; Aspire Dashboard locally | Health, logs, and traces. |
 | Analytics | Fabric Mirroring, OneLake, optional Power BI | Reporting without coupling the live app to analytics. |
 | Design / planning | Figma/FigJam; GitHub Issues or Linear | Clear handoffs and a lightweight backlog. |
+
 ---
 
 ## 4. Architecture
@@ -202,6 +202,7 @@ Eleven tables: six from the charter's minimum data model, five added to support 
 | `diligence_requests.status` | `open` · `in_progress` · `submitted` · `accepted` · `rejected` · `waived` |
 
 ---
+
 ## 6. Workflow and pipeline
 
 ### 6.1 The journey
@@ -265,7 +266,6 @@ stateDiagram-v2
   Rejected --> [*]
 ```
 
-
 Distinct from the investor engagement lifecycle (§6.3): this tracks how *built* a project is, that tracks how *funded* it is, per investor.
 
 ### 6.3 Investor engagement lifecycle
@@ -316,7 +316,8 @@ stateDiagram-v2
 
 **What it is.** Route each visitor to the right experience in one click.
 
-**Build**
+#### Build
+
 - Three entry paths: submit rooftop, submit land, investor.
 - Static decision-tree Q&A for unsure visitors - no AI.
 - Plain language, no solar jargon.
@@ -328,7 +329,8 @@ stateDiagram-v2
 
 **What it is.** Capture enough information to create a project record.
 
-**Build**
+#### Build
+
 - Multi-step form: contact, address, rooftop or land, ownership status, usable area, electricity usage or bill upload, existing solar, photos and documents, consent.
 - Draft save plus a computed "still missing" list.
 - Uploads go through the API to Blob with server-side type and size validation - never direct from the browser.
@@ -340,7 +342,8 @@ stateDiagram-v2
 
 **What it is.** Screen a submitted site transparently, without claiming an engineering determination.
 
-**Build**
+#### Build
+
 - Call S-VIA on submit; persist an append-only assessment row.
 - Return the five charter outputs: estimated system-size range, estimated annual production range, preliminary project type, missing-data and risk flags, and one of three results.
 - Display every factor used, the ruleset version, and the preliminary-only disclaimer.
@@ -359,7 +362,8 @@ stateDiagram-v2
 
 **What it is.** Tell the owner where they stand and what happens next.
 
-**Build**
+#### Build
+
 - One composed endpoint returning: site, submission status, viability result, outstanding information, documents and acknowledgements, project stage, next expected action, contact.
 - Outstanding information is the owner's single inbox - operator `request_info` items and, later, forwarded diligence items appear in one list, never a separate investor surface.
 
@@ -369,7 +373,8 @@ stateDiagram-v2
 
 **What it is.** The system of record for origination.
 
-**Build**
+#### Build
+
 - Submission queue filtered by status, type, location and viability.
 - Submission detail with document review; accept, reject or request-info; assignment to an internal owner; notes and activity history.
 - Pipeline board across all seven stages.
@@ -385,7 +390,8 @@ stateDiagram-v2
 
 **What it is.** Collect files and record agreement, without a production e-signature dependency.
 
-**Build**
+#### Build
+
 - Upload against a required-document checklist per project.
 - Typed-name acknowledgement with timestamp and status.
 - Private blob container, short-lived read SAS, access logged.
@@ -396,7 +402,7 @@ stateDiagram-v2
 
 **What it is.** Investors find projects that fit their mandate, and see more of each project as they engage.
 
-**Access tiers**
+#### Access tiers
 
 | Tier | Unlocked by | Shows |
 |---|---|---|
@@ -404,7 +410,8 @@ stateDiagram-v2
 | 1 | Expressing interest | Full viability result and its factors, assessment history, project timeline, site characteristics, non-sensitive documents |
 | 2 | Commitment (post-MVP) | Financial and technical diligence material |
 
-**Build**
+#### Build
+
 - **Onboarding.** Profile form: organisation, investor type, capital type, funding stage focus, ticket size, geographies, objectives, impact priorities, decision criteria. Picklists rather than free text, so answers can drive filters. Sets `deal_room_profile`. Self-declared, not verified.
 - **Portfolio (tier 0).** Project count and total capacity, with filters for stage, viability and project type. Defaults to a mandate match against open funding needs, which the investor can widen.
 - **Deal room (tier 1).** Panel order comes from `deal_room_profile`, held in a config file so it can be retuned without a redeploy. Two profiles ship; every other investor type gets the default.
@@ -418,22 +425,27 @@ stateDiagram-v2
 **Rule.** The profile decides what is relevant; the tier decides what is permitted. A panel listed in a profile stays hidden until the tier unlocks it.
 
 **Done when** an investor sees only tier 0 before expressing interest, and the full deal room after (S8).
+
 ### 7.8 Investor engagement lifecycle
 
 **What it is.** Track an investor's progress on a project, separately from the project's own development stage. States and transitions are in §6.3.
 
-**Build (MVP)**
+#### Build (MVP)
+
 - Express interest → engagement state `interested`, in a single transaction that re-checks project visibility and writes an activity row.
 - Unlocks tier 1; the interest appears on the operator's project timeline.
 
-**Model only - schema and API contract, no UI**
+#### Model only - schema and API contract, no UI
+
 - `committed` → `underwriting` → `approved` → `funded`, plus `declined` and `withdrawn`.
 - `funding_needs` seeded and read-only, so the philanthropy panel has real content.
 
-**Design only - not built**
+#### Design only - not built
+
 - Diligence loop: investor raises a request → operator triages → optionally forwards to the site owner → owner uploads → operator resolves.
 
-**Rules**
+#### Rules
+
 - Engagement state never changes project stage.
 - Commitment is non-binding; no capital moves and no capital stack is managed.
 - Investors never contact site owners directly; requests route through the operator.
@@ -442,6 +454,7 @@ stateDiagram-v2
 **Done when** expressing interest opens the deal room and lands in the shared timeline visible to all three roles.
 
 ---
+
 ## 8. Identity, roles, and authorization
 
 ### 8.1 Authentication
@@ -466,6 +479,7 @@ stateDiagram-v2
 Only the operator changes project stage or investor visibility. The `approved` and `funded` engagement states are recorded by the operator; investors request them. Investors never contact site owners directly.
 
 ### 8.3 Other controls
+
 Secrets (DB, Blob) in App Settings/Key Vault. Private blob container with short-lived read SAS. Server-side validation of upload type/size. Structured request logging with actor id, excluding PII payloads.
 
 ---
@@ -495,6 +509,7 @@ Secrets (DB, Blob) in App Settings/Key Vault. Private blob container with short-
 | **S-VIA** | Viability Engine | Geocoding, capacity/production estimation, screening rules, flags, ruleset versioning | *none* (owns ruleset config) | viability | Workstream 4, "versioned viability service" | WS4 |
 
 **Not services:**
+
 - **Geocoding** is an *adapter inside S-VIA*, not a service. It is one provider call plus a cache; a separate deployable would add a network hop and a failure mode for no benefit. Cached results and pre-geocoded seed addresses are the demo-day risk mitigation (§12).
 - **Notifications** are a charter stretch goal. Define the interface (`notify(actor, event, payload)`) as a no-op stub so email/Teams can be added later without touching call sites. Do not build it. Note the engagement lifecycle is the first workflow that genuinely wants notifications - an operator should learn that an investor expressed interest without polling.
 - **Seeding and demo reset** is an idempotent admin CLI in the `api` deployable, not a runtime service. It is demo-critical but has no callers.
@@ -540,21 +555,17 @@ Contract-first. Freeze end of Day 1; publish OpenAPI; generate/share TypeScript 
 | GET | `/me/outstanding` | owner | Outstanding information, incl. forwarded diligence items |
 | GET | `/projects/{id}/activity` | any (scoped) | Timeline (S7) |
 
-
 ---
 
 ## 11. Testing
-
 
 ---
 
 ## 12. Deployment CI/CD
 
-
 ---
 
 ## 13. Risks
-
 
 ---
 
