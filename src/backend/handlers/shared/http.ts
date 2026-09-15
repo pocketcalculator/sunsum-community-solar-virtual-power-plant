@@ -7,7 +7,7 @@
  * the API.
  */
 
-import type { Failure, FailureCode } from "../core/result";
+import type { Failure, FailureCode } from "../../core/shared";
 
 /**
  * The one place a failure code becomes a status code.

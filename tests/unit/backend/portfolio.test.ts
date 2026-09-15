@@ -5,14 +5,13 @@ import {
   DEFAULT_PORTFOLIO_QUERY,
   type PortfolioQuery,
   type PortfolioResponse,
-} from "@/backend/core/portfolio";
-import type { ProjectRecord } from "@/backend/core/projects";
-import type { ProjectStore } from "@/backend/core/mock/projects";
-import type { InvestorProfile, Viewer } from "@/backend/core/viewer";
+} from "@/backend/core/investors";
+import type { InvestorProfile, Viewer } from "@/backend/core/identity";
+import type { ProjectRecord, ProjectStore } from "@/backend/core/projects";
 import {
   handleGetPortfolio,
   parsePortfolioQuery,
-} from "@/backend/handlers/portfolio";
+} from "@/backend/handlers/investors";
 
 const onboardedInvestor: InvestorProfile = {
   id: "inv-1",

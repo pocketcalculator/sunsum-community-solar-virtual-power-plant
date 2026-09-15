@@ -20,15 +20,16 @@
  * place the two meet.
  */
 
-import { mockProjectStore, type ProjectStore } from "./mock/projects";
-import type {
-  ProjectRecord,
-  ProjectStage,
-  SiteType,
-  ViabilityStatus,
-} from "./projects";
-import { failure, ok, type Result } from "./result";
-import type { InvestorProfile, Viewer } from "./viewer";
+import type { InvestorProfile, Viewer } from "../identity";
+import {
+  mockProjectStore,
+  type ProjectRecord,
+  type ProjectStage,
+  type ProjectStore,
+  type SiteType,
+  type ViabilityStatus,
+} from "../projects";
+import { failure, ok, type Result } from "../shared";
 
 /**
  * One project at disclosure tier 0.

@@ -63,6 +63,44 @@ const handlerImports = {
     "Handlers depend on core, never the reverse: core logic must stay callable without a request.",
 };
 
+/**
+ * Each directory under `core` and `handlers` is one service from design
+ * document section 9.2, and its `index.ts` is the only way in. Reaching past it
+ * is what turns a set of services into a mesh: the API surface is about
+ * thirty-five endpoints, so the difference between "imports the investors
+ * domain" and "imports one file inside it" decides whether the dependencies
+ * stay countable.
+ *
+ * The patterns are deliberately domain-agnostic — a wildcard rather than a list
+ * of names — so a new service is covered the moment its directory exists.
+ *
+ * These are gitignore-style patterns, not minimatch, with two consequences
+ * worth knowing before editing them: a wildcard segment also matches a parent
+ * segment, and a later pattern overrides an earlier one. So the first pattern
+ * catches a sibling's internals but would also catch the perfectly legal
+ * cross-layer barrel import; the negation puts every cross-layer path back, and
+ * the two trailing patterns then re-block only the deep ones. Reordering these
+ * four lines silently stops them working. The combination was checked against
+ * sixty specifier and file-path pairs before it was adopted, and the
+ * architecture tests pin the behaviour.
+ */
+const domainInternals = {
+  group: ["../*/*", "!../../**", "**/core/*/*", "**/handlers/*/*"],
+  message:
+    "Import a service through its directory index, not a file inside it: use ../projects, not ../projects/types.",
+};
+
+/**
+ * `shared` holds what has no domain meaning, so the traffic is one-way. If a
+ * shared module imports a domain, the two can only import each other next, and
+ * the cycle is much harder to remove than to prevent.
+ */
+const sharedIsDomainFree = {
+  group: ["../*", "../*/**"],
+  message:
+    "core/shared must not depend on a service; a rule that needs one belongs in that service.",
+};
+
 const transportModules = [
   "next/server",
   "next/headers",
@@ -239,7 +277,36 @@ export default defineConfig([
         "error",
         {
           paths: transportModules,
-          patterns: [presentationImports, handlerImports],
+          patterns: [presentationImports, handlerImports, domainInternals],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/backend/handlers/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [presentationImports, domainInternals],
+        },
+      ],
+    },
+  },
+  {
+    /** Must follow the core block: a later match replaces the rule, not merges it. */
+    files: ["src/backend/core/shared/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: transportModules,
+          patterns: [
+            presentationImports,
+            handlerImports,
+            domainInternals,
+            sharedIsDomainFree,
+          ],
         },
       ],
     },

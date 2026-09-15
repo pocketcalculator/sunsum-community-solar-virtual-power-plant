@@ -14,16 +14,16 @@
  * cannot differ depending on how the call arrived.
  */
 
+import type { Viewer } from "../../core/identity";
 import {
   DEFAULT_PORTFOLIO_QUERY,
   getPortfolio,
   type PortfolioQuery,
-} from "../core/portfolio";
-import { isProjectStage, isViabilityStatus } from "../core/projects";
-import { failure, ok, type Result } from "../core/result";
-import type { Viewer } from "../core/viewer";
-import { failureResponse, jsonResponse } from "./http";
-import { resolveDemoViewer } from "./viewer";
+} from "../../core/investors";
+import { isProjectStage, isViabilityStatus } from "../../core/projects";
+import { failure, ok, type Result } from "../../core/shared";
+import { resolveDemoViewer } from "../identity";
+import { failureResponse, jsonResponse } from "../shared";
 
 /**
  * Exported with the viewer as a parameter so the authorization paths can be

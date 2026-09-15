@@ -11,7 +11,7 @@
  * type guard end up being the same thing.
  */
 
-import type { ProjectStage } from "./projects";
+import type { ProjectStage } from "../projects";
 
 export const ROLES = ["site_owner", "operator", "investor"] as const;
 

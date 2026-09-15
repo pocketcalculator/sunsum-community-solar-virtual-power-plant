@@ -17,7 +17,7 @@
  * came from.
  */
 
-import type { Viewer } from "../core/viewer";
+import type { Viewer } from "../../core/identity";
 
 const DEMO_INVESTOR_VIEWER: Viewer = {
   role: "investor",

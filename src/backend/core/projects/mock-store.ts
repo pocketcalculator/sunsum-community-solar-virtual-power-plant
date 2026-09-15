@@ -5,7 +5,7 @@
  * the handler/core pattern before persistence is chosen — the design document
  * proposes Azure SQL or PostgreSQL, and neither is wired up. Replacing this
  * file with a real query is meant to be the whole change: core depends on the
- * `ProjectStore` interface below, not on this array.
+ * `ProjectStore` interface in `store.ts`, not on this array.
  *
  * The addresses and owner ids are invented for the demo. Nothing here is real
  * customer data, and nothing here should ever be treated as a real site.
@@ -15,15 +15,8 @@
  * rules honest: one is not investor-visible, and one is in a different region.
  */
 
-import type { ProjectRecord } from "../projects";
-
-/**
- * The seam persistence will plug into. Core asks for projects through this, so
- * swapping the implementation does not touch any rule.
- */
-export interface ProjectStore {
-  listProjects(): Promise<readonly ProjectRecord[]>;
-}
+import type { ProjectStore } from "./store";
+import type { ProjectRecord } from "./types";
 
 const MOCK_PROJECTS: readonly ProjectRecord[] = [
   {
