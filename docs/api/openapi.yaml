@@ -134,8 +134,8 @@ paths:
 
         With `submit: false` (default) the site is stored at `submission_status: draft`
         and every field is optional, so a partial form can be saved (§7.2 "draft save").
-        With `submit: true` the server applies the same validation as
-        `POST /sites/{siteId}/submit` and triggers the assessment.
+        With `submit: true` the server validates and submits the new site
+        internally, with the same lifecycle as `POST /submissions`.
       requestBody:
         required: true
         content:
