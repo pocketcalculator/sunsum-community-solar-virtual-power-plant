@@ -1,0 +1,442 @@
+openapi: 3.0.3
+
+info:
+  title: SunSum Viability Engine (`sumsum-viability` / S-VIA)
+  version: 0.1.0
+  description: |
+    Internal contract between `sumsum-api` (WS2) and the viability engine (WS4).
+
+    > ## ⚠️ This is a proposal, not a transcription
+    >
+    > `openapi.yaml` in this folder is *derived* from the design doc — every
+    > operation maps to a row of §10 and every enum value is copied from §5.3.
+    >
+    > **This file is different.** The design doc names S-VIA (§4.1, §7.3, §9.1,
+    > §9.2) but never gives it a request or response shape, so this is WS2
+    > proposing one. It is built strictly from what §7.3 and §9.2 *do* say, and it
+    > invents no output that §5.2 does not already persist — but WS4 owns this
+    > service and should push back wherever it is wrong.
+    >
+    > It exists so the two halves of WS1's **"Wire contract — WS2 with WS4"** gate
+    > can be agreed against something concrete rather than in the abstract.
+
+    ## Not called by the browser
+
+    §4.1 puts the web app behind the API. The frontend never calls this service;
+    `sumsum-api` does, server-side, inside `POST /sites/{siteId}/submit`. Nothing
+    here appears in the frontend contract.
+
+    ## Three properties this contract is shaped by
+
+    **Stateless.** §9.1 requires S-VIA to "stay stateless and independently
+    testable by Workstream 4". So `POST /assess` takes **facts, not identifiers** —
+    there is no `site_id`, and nothing here can be looked up. Everything the
+    ruleset needs arrives in the body, which is also what makes a WS4 unit test a
+    plain function call over a fixture.
+
+    **Geocoding happens here.** §9.2: geocoding is "an *adapter inside S-VIA*, not
+    a service." The caller sends `address_raw`; S-VIA geocodes it and returns
+    `geocode` back, because `sites.latitude`, `sites.longitude` and
+    `sites.geocode_confidence` (§5.2) are persisted by the API but produced here.
+    Callers may pass coordinates in to skip the lookup — §9.2 names "cached results
+    and pre-geocoded seed addresses" as the demo-day risk mitigation.
+
+    **Incomplete input is a result, not an error.** This is the one most likely to
+    be built wrong. §7.3 returns `more_information_required` when "area unknown,
+    ownership pending, consent missing, or required usage data absent", and
+    `not_currently_eligible` when the address is not geocodable. Those are
+    **`200` responses carrying a verdict**, not `4xx`. A body that parses gets an
+    assessment; only a malformed body gets a `400`.
+
+    ## The verdict table (§7.3, verbatim)
+
+    | Result | Returned when |
+    |---|---|
+    | `potentially_viable` | Geocoded, ownership confirmed or pending, usable area at or above threshold |
+    | `more_information_required` | Area unknown, ownership pending, consent missing, or required usage data absent |
+    | `not_currently_eligible` | Address not geocodable, ownership unverifiable, or area below the hard minimum |
+
+    ## The five charter outputs (§7.3)
+
+    Estimated system-size range · estimated annual production range · preliminary
+    project type · missing-data and risk flags · one of three results. All five are
+    in `AssessmentResult`, alongside `ruleset_version` and `inputs_used`, which
+    §7.3 requires the UI to display ("every factor used, the ruleset version, and
+    the preliminary-only disclaimer").
+
+    ## What WS4 still owns
+
+    Per **OQ-6** in the frontend contract, the *vocabularies* are not fixed here and
+    this spec does not guess them:
+
+    - `flags` and `missing_information` — arrays of strings, values undefined
+    - `preliminary_project_type` — a string, values undefined
+    - `inputs_used` — free-form object
+
+    §7.3 also requires that "thresholds and coefficients live in a versioned ruleset
+    file, never in code branches." `ruleset_version` is the handle on that file and
+    is **required** on every response, so any stored assessment can be traced back
+    to the rules that produced it.
+
+  contact:
+    name: WS2 (caller) — proposing to WS4 (owner)
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: /
+    description: The `sumsum-viability` deployable (§9.1). Reached server-to-server only.
+
+security:
+  - serviceToken: []
+  - functionKey: []
+
+tags:
+  - name: Assessment
+    description: S-VIA — geocoding, capacity and production estimation, screening rules, flags, ruleset versioning
+  - name: Operations
+    description: Liveness for a separately deployed service
+
+paths:
+  /assess:
+    post:
+      tags: [Assessment]
+      operationId: assess
+      summary: Screen one site and return a preliminary verdict
+      description: |
+        Called by S-ASSESS during `POST /sites/{siteId}/submit`. The caller persists
+        the result as an append-only `assessments` row (§7.3) and copies `geocode`
+        onto the site.
+
+        Deterministic: the same body and the same `ruleset_version` must produce the
+        same verdict, so a stored assessment can be reproduced. Geocoding is the one
+        non-deterministic input, which is why the resolved coordinates are returned
+        and persisted rather than re-derived later.
+
+        **No partial success.** If the ruleset cannot run, this fails — it does not
+        return a degraded verdict. The caller's submit transaction rolls the whole
+        submission back to `draft` so the owner can retry, rather than persisting an
+        assessment that does not mean anything.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssessRequest" }
+      responses:
+        "200":
+          description: |
+            An assessment. **Any of the three verdicts, including the two negative
+            ones** — missing area, pending ownership, absent consent and an
+            ungeocodable address all resolve here, not to a 4xx.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssessmentResult" }
+        "400":
+          description: |
+            The body is malformed — bad JSON, wrong type, or an unknown enum value.
+            Reserved for requests that cannot be evaluated at all. Absent *values*
+            are the caller's normal case and must produce a `200`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: Missing or invalid service credential.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: The ruleset failed to evaluate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: |
+            The geocoding provider is unreachable and no cached or caller-supplied
+            coordinates were available. Distinct from `500` because it is transient
+            and worth retrying; §9.2 names the geocode cache and pre-geocoded seed
+            addresses as the demo-day mitigation for exactly this.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /health:
+    get:
+      tags: [Operations]
+      operationId: health
+      summary: Liveness and the loaded ruleset version
+      description: |
+        **Not in the design doc** — proposed by WS2. A separately deployed service
+        (§9.1) needs a readiness probe, and returning `ruleset_version` makes it
+        possible to confirm which rules are live before a demo without submitting a
+        site.
+
+        Unauthenticated, so a platform probe can reach it. It therefore exposes only
+        a version string and no site data.
+      security: []
+      responses:
+        "200":
+          description: Serving.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+components:
+  securitySchemes:
+    serviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        **Proposed — §8.1 of the design doc is an empty heading, so WS3 decides.**
+
+        Preferred option: `sumsum-api` calls with a managed-identity token and S-VIA
+        validates the audience. No secret is stored or rotated, which is the reason
+        to prefer it over a key.
+
+        Whatever WS3 picks, the point is that this endpoint must not be anonymous.
+        It accepts street addresses and is a separate deployable, so unless the
+        platform guarantees it is unreachable from outside, an open `/assess` is a
+        free geocoding proxy attached to the demo's data.
+
+    functionKey:
+      type: apiKey
+      in: header
+      name: x-functions-key
+      description: |
+        Fallback if S-VIA ships as an Azure Function, which the charter allows
+        ("versioned viability service or Azure Function"). Simpler to stand up than
+        a token, at the cost of a shared secret to store and rotate.
+
+  schemas:
+    ViabilityStatus:
+      type: string
+      description: |
+        §5.3 `assessments.viability_status`, verbatim. Identical to the enum of the
+        same name in `openapi.yaml` — the API passes it straight through to the
+        `assessments` row, so the two must not drift.
+      enum:
+        [potentially_viable, more_information_required, not_currently_eligible]
+
+    SiteType:
+      type: string
+      description: "§5.3 `sites.site_type`, verbatim."
+      enum: [rooftop, land]
+
+    OwnershipStatus:
+      type: string
+      description: |
+        §5.3 `sites.ownership_status`, verbatim. Load-bearing for the verdict:
+        §7.3 makes `confirmed` or `pending` necessary for `potentially_viable`,
+        `pending` a trigger for `more_information_required`, and unverifiable
+        ownership a trigger for `not_currently_eligible`.
+      enum: [confirmed, pending, unverified]
+
+    AssessRequest:
+      type: object
+      description: |
+        Site facts only — no identifiers, so the service stays stateless (§9.1).
+
+        Only `address_raw` and `site_type` are required. Everything else is
+        genuinely optional, because its **absence is an input to the verdict**:
+        §7.3 turns unknown area, pending ownership, missing consent and absent usage
+        data into `more_information_required`. Requiring them here would make the
+        second verdict unreachable.
+      required: [address_raw, site_type]
+      properties:
+        address_raw:
+          type: string
+          minLength: 1
+          description: As typed by the owner. S-VIA geocodes it (§9.2).
+        site_type: { $ref: "#/components/schemas/SiteType" }
+        ownership_status: { $ref: "#/components/schemas/OwnershipStatus" }
+        approximate_area_sqm:
+          type: number
+          format: double
+          minimum: 0
+          nullable: true
+          description: |
+            Usable area in **square metres** — the unit is fixed by the §5.2 field
+            name. Null or absent is the §7.3 "area unknown" case. The threshold and
+            the hard minimum live in the ruleset, not in this contract.
+        electricity_usage_kwh_annual:
+          type: number
+          format: double
+          minimum: 0
+          nullable: true
+          description: Annual consumption in kWh. Absent is the §7.3 "required usage data absent" case.
+        has_existing_solar: { type: boolean, nullable: true }
+        consent_given:
+          type: boolean
+          description: |
+            Derived by the caller from `sites.consent_given_at` (§7.2). Sent as a
+            boolean so S-VIA never has to reason about the caller's timestamps.
+            `false` is the §7.3 "consent missing" case.
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          nullable: true
+          description: |
+            Optional pre-resolved coordinate. When both `latitude` and `longitude`
+            are supplied, S-VIA skips the provider call and echoes them back with
+            the confidence the caller supplied. §9.2 names pre-geocoded seed
+            addresses as the demo-day mitigation.
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          nullable: true
+        geocode_confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          nullable: true
+          description: Only meaningful alongside a supplied coordinate pair.
+        ruleset_version:
+          type: string
+          description: |
+            Optional. Pins evaluation to a specific ruleset so a stored assessment
+            can be reproduced exactly. Omit to use the currently loaded version.
+            An unknown version is a `400`, never a silent fallback.
+        request_id:
+          type: string
+          description: |
+            Opaque correlation id for tracing. Deliberately **not** the site id —
+            a stateless service should not be able to identify the subject of an
+            assessment.
+
+    Geocode:
+      type: object
+      description: |
+        Resolved location. Persisted by the caller onto `sites.latitude`,
+        `sites.longitude` and `sites.geocode_confidence` (§5.2).
+
+        Absent when the address could not be geocoded, which §7.3 makes a
+        `not_currently_eligible` verdict rather than an error.
+      required: [latitude, longitude]
+      properties:
+        latitude: { type: number, format: double, minimum: -90, maximum: 90 }
+        longitude: { type: number, format: double, minimum: -180, maximum: 180 }
+        confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          nullable: true
+          description: Provider confidence, normalised to 0–1.
+
+    AssessmentResult:
+      type: object
+      description: |
+        The five charter outputs (§7.3) plus the provenance the UI is required to
+        display. Field names match `assessments` in §5.2 exactly, so the caller can
+        persist the row without renaming anything.
+
+        Omits the columns the API owns rather than the engine: `id`, `site_id`,
+        `created_at`, `is_override`, `override_reason`, `overridden_by_user_id`.
+        S-VIA never produces an override — §7.3 makes that an operator action that
+        inserts its own row.
+      required:
+        [
+          ruleset_version,
+          viability_status,
+          flags,
+          missing_information,
+          inputs_used,
+        ]
+      properties:
+        ruleset_version:
+          type: string
+          description: |
+            **Always present.** §7.3 requires it to be displayed, and it is what
+            makes an assessment reproducible once thresholds are retuned.
+        viability_status: { $ref: "#/components/schemas/ViabilityStatus" }
+        estimated_system_size_kw_low:
+          type: number
+          format: double
+          minimum: 0
+          nullable: true
+          description: |
+            Low end of the estimated system size, in kW. Null when the inputs do not
+            support an estimate — expected for `more_information_required` and
+            `not_currently_eligible`.
+        estimated_system_size_kw_high:
+          type: number
+          format: double
+          minimum: 0
+          nullable: true
+          description: Must be greater than or equal to `estimated_system_size_kw_low`.
+        estimated_annual_generation_kwh_low:
+          type: number
+          format: double
+          minimum: 0
+          nullable: true
+          description: Low end of estimated annual production, in kWh.
+        estimated_annual_generation_kwh_high:
+          type: number
+          format: double
+          minimum: 0
+          nullable: true
+          description: Must be greater than or equal to `estimated_annual_generation_kwh_low`.
+        preliminary_project_type:
+          type: string
+          nullable: true
+          description: "**OQ-6** — WS4 owns the vocabulary; the design doc gives none."
+        flags:
+          type: array
+          items: { type: string }
+          description: |
+            §7.3 "missing-data and risk flags". **OQ-6** — WS4 owns the vocabulary.
+            Empty array rather than absent when there are none.
+        missing_information:
+          type: array
+          items: { type: string }
+          description: |
+            What would change the verdict. Drives the owner's outstanding-information
+            list (§7.4). **OQ-6** — WS4 owns the vocabulary. Empty array rather than
+            absent.
+        inputs_used:
+          type: object
+          additionalProperties: true
+          description: |
+            Every factor the ruleset consumed, which §7.3 requires the UI to display.
+            Free-form: the shape follows the ruleset, so freezing it here would
+            constrain WS4 for no benefit.
+        geocode:
+          allOf: [{ $ref: "#/components/schemas/Geocode" }]
+          description: Absent when the address could not be geocoded.
+
+    Health:
+      type: object
+      required: [status, ruleset_version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        ruleset_version:
+          type: string
+          description: The currently loaded ruleset — check this before a demo.
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: |
+            Stable and machine-readable; the caller branches on this. Suggested
+            values — WS4 may extend:
+            `invalid_request`, `unknown_ruleset_version`, `ruleset_error`,
+            `geocoder_unavailable`.
+          example: geocoder_unavailable
+        message:
+          type: string
+          description: Human-readable. Not for branching.
+        details:
+          type: object
+          additionalProperties: true
+          nullable: true

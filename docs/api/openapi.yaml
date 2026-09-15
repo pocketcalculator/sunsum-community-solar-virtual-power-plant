@@ -1,0 +1,1330 @@
+openapi: 3.0.3
+info:
+  title: SunSum API (MVP)
+  version: 0.1.0
+  description: >-
+    MVP wire contract for the SunSum community-solar VPP - **eight operations**, the set agreed
+
+    on the whiteboard of 15 September 2026. Derived from `docs/sunsum_technical_design_doc.md`;
+
+    where the two disagree, the design doc wins and this file is the bug.
+
+
+    The remaining operations in section 10 of the design doc are out of scope for this MVP and are
+
+    deliberately not transcribed here.
+
+
+    ## Scope
+
+
+    | Role | Operations |
+
+    | --- | --- |
+
+    | Site owner | `POST /sites`, `GET /sites`, `POST /submissions` |
+
+    | Operator | `GET /submissions`, `POST /projects`, `GET /projects`, `PATCH
+    /projects/{projectId}` |
+
+    | Investor | `GET /portfolio` |
+
+
+    The viability engine is a **separate internal service** and is not in this file. Browsers never
+    call
+
+    it. Its contract is `viability-openapi.yaml` (`POST /assess`), called server-to-server during
+
+    `POST /submissions`.
+
+
+    ## Where an identifier goes
+
+
+    Applied consistently; follow it when adding endpoints.
+
+
+    - **Path** identifies a resource you are acting on - `PATCH /projects/{projectId}`.
+
+    - **Body** carries the data of a resource being created. `POST /submissions` and `POST
+    /projects`
+      take `site_id` in the body because the submission and the project are what is being created; the
+      site is an attribute of them.
+    - **Query** filters a collection - `GET /portfolio?stage=...`.
+
+
+    The whiteboard's "PATCH /projects" is written here as `PATCH /projects/{projectId}`: a
+    collection
+
+    cannot be coherently patched.
+
+
+    ## Absent versus null
+
+
+    OpenAPI 3.0 cannot express a nullable `$ref`, so this file uses one rule:
+
+
+    - An **object or enum** that may be empty is **optional and omitted** - generates as `prop?: T`.
+
+    - A **scalar** that may be empty is `nullable: true` - generates as `T | null`.
+
+
+    Test `== null`. Do not rely on the difference between absent and null.
+
+
+    ## Not in this MVP
+
+
+    Each of these is a real gap, listed so nobody assumes it was forgotten:
+
+
+    1. **Rejecting a submission.** `POST /projects` is the accept path only. Reject and
+       request-more-information are specified in section 10 of the design doc as
+       `POST /submissions/{id}/decision`.
+    2. **Login.** No `/auth/*` or `/me` here - identity is workstream 3's, and the role-aware UI
+    will
+       very likely need `/me` on day one. Say the word and it is a five-minute addition.
+    3. **Detail views.** No `GET /sites/{siteId}` or `GET /projects/{projectId}`; the list endpoints
+       return full records, so add them only if a deep link needs one.
+    4. **Documents, engagements, the deal room and diligence** - all in section 10 of the design
+       doc.
+
+
+    ## Open questions
+
+
+    - **OQ-1** Section 5.3 says `in_review`; section 6.2 and all prose say `screening`. Using
+      `screening` (9 mentions to 1). Confirm before hard-coding.
+    - **OQ-2** Sections 7.5 and 10 say seven pipeline stages; 5.3 enumerates five. `PipelineColumn`
+    has
+      seven, `ProjectStage` keeps five.
+    - **OQ-4** snake_case on the wire throughout, matching the design doc's column names.
+
+
+    Error codes (400/401/403/404/409/422) are a proposal - the design doc does not specify them.
+  contact:
+    name: Workstream 2 — Backend & Workflow
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: /api
+    description: Next.js server endpoints (§3 — "Next.js/Node.js server endpoints")
+security:
+  - sessionCookie: []
+tags:
+  - name: Sites
+    description: S-SITE — draft save, missing-field computation, submission lifecycle
+  - name: Submissions
+    description: S-SITE — operator queue and decisions
+  - name: Projects
+    description: S-PROJ — project creation, stage transitions, assignment, visibility
+  - name: Portfolio
+    description: S-INV — investor profiles, mandate capture, portfolio matching
+paths:
+  /sites:
+    post:
+      tags:
+        - Sites
+      operationId: createSite
+      summary: Create a site, as a draft or submitted directly
+      description: |
+        §10 — site owner. "Create/submit (accepts `draft`)".
+
+        With `submit: false` (default) the site is stored at `submission_status: draft`
+        and every field is optional, so a partial form can be saved (§7.2 "draft save").
+        With `submit: true` the server validates and submits the new site
+        internally, with the same lifecycle as `POST /submissions`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SiteCreateRequest"
+      responses:
+        "201":
+          description: Site created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteWithMissing"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: |
+            `submit: true` was requested but required fields are missing or consent
+            was not given. `missing_fields` lists what is outstanding.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+    get:
+      tags:
+        - Sites
+      operationId: listMySites
+      summary: List the sites I own, with their current status
+      description: |
+        §10 and §7.4 — the single composed endpoint. Returns, per site: the site,
+        submission status, latest viability result, outstanding information,
+        documents, acknowledgements, project stage, next expected action and contact.
+
+        §7.4: the owner must see the same stage the operator and investor see (**S7**).
+      responses:
+        "200":
+          description: The owner's sites.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OwnerDashboardItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /submissions:
+    post:
+      tags:
+        - Sites
+      operationId: createSubmission
+      summary: Submit one of my sites for operator review
+      description: >-
+        Moves the site from `draft` to `submitted` and triggers the viability assessment (S-VIA
+        `POST /assess`).
+
+
+        The site is named in the **body**, not the path: the submission is the resource being
+        created, and the site is an attribute of it.
+      responses:
+        "200":
+          description: Submitted and assessed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not the owner of this site.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The site is not in `draft` (already submitted).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Required fields missing or consent not given.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "503":
+          description: |
+            The viability service is unreachable. The site stays in `draft` and the
+            whole transaction rolls back, so the owner may retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSubmissionRequest"
+    get:
+      tags:
+        - Submissions
+      operationId: listSubmissions
+      summary: Operator submission queue
+      description: |
+        §10 — operator. "Queue", filterable by status, type, location and viability
+        (§7.5).
+
+        `draft` sites are **never** returned: they have not been handed to the
+        operator (§6.2).
+      parameters:
+        - name: status
+          in: query
+          description: Filter by submission status. Repeat for multiple values.
+          required: false
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/SubmissionStatus"
+          style: form
+          explode: true
+        - name: type
+          in: query
+          description: Filter by site type.
+          required: false
+          schema:
+            $ref: "#/components/schemas/SiteType"
+        - name: viability
+          in: query
+          description: Filter by the viability status of the latest assessment.
+          required: false
+          schema:
+            $ref: "#/components/schemas/ViabilityStatus"
+        - name: location
+          in: query
+          description: Free-text match against the site's locality.
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Matching submissions, each with its latest assessment attached.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SubmissionSummary"
+        "400":
+          description: An unknown enum value was supplied in a filter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /projects:
+    get:
+      tags:
+        - Projects
+      operationId: listProjects
+      summary: "Operator pipeline: every project, grouped by column"
+      description: >-
+        Operator-scoped; returns the full project record.
+
+
+        **Investors must not call this.** It carries operator-only fields. The investor-facing list
+        is `GET /portfolio`, whose item shape cannot express an exact address or owner identity.
+        Non-operators receive 403.
+      responses:
+        "200":
+          description: The board.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineBoard"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Submissions
+      operationId: createProject
+      summary: Accept a submission and open the project
+      description: >-
+        The accept half of the operator decision in section 7.5: advancing the site to `accepted`
+        and opening the project happen in one transaction.
+
+
+        **Reject and request-more-information are not in this MVP** - they have no endpoint in the
+        agreed scope. See section 10 of the design doc: `POST /submissions/{id}/decision`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            The submission is in a state that does not accept this decision — for
+            example deciding on a `draft`, or on an already-`rejected` submission
+            (`rejected` is terminal, §6.2).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "`note` is required for `reject` and `request_info`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+  /projects/{projectId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    patch:
+      tags:
+        - Projects
+      operationId: updateProject
+      summary: Set assignee, next action and target date
+      description: |
+        §10 — operator. Does **not** move the stage; use `POST /projects/{projectId}/stage`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectUpdateRequest"
+      responses:
+        "200":
+          description: Project updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /portfolio:
+    get:
+      tags:
+        - Portfolio
+      operationId: getPortfolio
+      summary: Tier 0 portfolio, mandate-matched by default
+      description: |
+        §10 — investor. §7.7: "Project count and total capacity, with filters for
+        stage, viability and project type. **Defaults to a mandate match** against
+        open funding needs, which the investor can widen."
+
+        Tier 0 shows "neighbourhood location, capacity and production ranges, project
+        type, stage, viability. **No exact address, documents or owner identity.**"
+        That restriction is structural here: `PortfolioItem` has no field that could
+        carry them.
+
+        Only projects with `visible_to_investors: true` are ever returned (§8.2
+        "R visible").
+      parameters:
+        - name: mandate_match
+          in: query
+          description: |
+            Default `true` — restrict to projects matching the investor's mandate.
+            Set `false` to widen to every visible project.
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: stage
+          in: query
+          description: Filter by project stage. Repeat for multiple values.
+          required: false
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/ProjectStage"
+          style: form
+          explode: true
+        - name: viability
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ViabilityStatus"
+        - name: project_type
+          in: query
+          description: Filter by `preliminary_project_type` (see **OQ-6**).
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tier 0 summaries plus aggregates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: |
+            Not an investor, or onboarding is not complete
+            (`onboarding_completed_at` is null) — tier 0 is "unlocked by onboarding".
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sunsum_session
+      description: |
+        Opaque session identifier set by `POST /auth/login` or `POST /auth/demo-switch`.
+        See **OQ-5** — §8.1 of the design doc is an empty header, so this is
+        provisional. Real Entra ID / External ID wiring is WS3 and does not change
+        any path or payload in this contract.
+
+        **CSRF.** Because the credential is a cookie, the browser attaches it to
+        cross-site requests automatically. Every `POST` and `PATCH` here is therefore
+        state-changing *and* ambiently authenticated, which is the classic CSRF shape.
+        `SameSite=Lax` blocks the cross-site form post but not every variant, so
+        state-changing requests must also carry an anti-forgery token. Endpoints
+        return `403` with `code: csrf_token_invalid` when it is missing or stale.
+        A bearer token would remove this requirement entirely — worth revisiting when
+        WS3 settles §8.1.
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      description: Project identifier (§10 `{id}`).
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Malformed request — bad JSON, unknown enum value, or a missing required field.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: |
+        Authenticated but not permitted. Covers three distinct cases, distinguished by
+        `code`: wrong role for the endpoint, right role but not the owner of this
+        record, or right role but an insufficient disclosure tier (§7.7).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: |
+        No such record — **or** the caller is not entitled to know it exists. Hidden
+        projects return 404 rather than 403 to investors, so the endpoint does not
+        confirm that an invisible project exists.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: No valid session.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Acknowledgement:
+      type: object
+      description: §5.2 `acknowledgements`.
+      required:
+        - id
+        - project_id
+        - user_id
+        - agreement_key
+        - typed_name
+        - acknowledged_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        agreement_key:
+          type: string
+          description: Identifies which agreement was acknowledged.
+        typed_name:
+          type: string
+        acknowledged_at:
+          type: string
+          format: date-time
+        ip_address:
+          type: string
+          nullable: true
+          description: Captured server-side; never accepted from the client.
+    Assessment:
+      type: object
+      description: |
+        §5.2 `assessments` — **append-only**; an operator override inserts a new row
+        rather than updating. All views read the latest row.
+      required:
+        - id
+        - site_id
+        - ruleset_version
+        - viability_status
+        - is_override
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        site_id:
+          type: string
+          format: uuid
+        ruleset_version:
+          type: string
+          description: §7.3 — displayed to the user alongside the factors used.
+        inputs_used:
+          type: object
+          additionalProperties: true
+          description: |
+            The exact site facts the ruleset consumed. **OQ-6** — shape owned by WS4;
+            not fixed by this contract.
+        estimated_system_size_kw_low:
+          type: number
+          format: double
+          nullable: true
+        estimated_system_size_kw_high:
+          type: number
+          format: double
+          nullable: true
+        estimated_annual_generation_kwh_low:
+          type: number
+          format: double
+          nullable: true
+        estimated_annual_generation_kwh_high:
+          type: number
+          format: double
+          nullable: true
+        preliminary_project_type:
+          type: string
+          nullable: true
+          description: "**OQ-6** — no enum is given anywhere in the design doc."
+        viability_status:
+          $ref: "#/components/schemas/ViabilityStatus"
+        flags:
+          type: array
+          items:
+            type: string
+          description: §7.3 missing-data and risk flags. **OQ-6** — vocabulary owned by WS4.
+        missing_information:
+          type: array
+          items:
+            type: string
+          description: "**OQ-6** — vocabulary owned by WS4."
+        is_override:
+          type: boolean
+        override_reason:
+          type: string
+          nullable: true
+        overridden_by_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    CreateProjectRequest:
+      type: object
+      required:
+        - site_id
+      description: >-
+        Accepts the submission for `site_id` and opens a project against it (section 7.5). One
+        project per site, so a repeat call returns 409.
+      properties:
+        site_id:
+          type: string
+          format: uuid
+          description: The submitted site being accepted.
+        name:
+          type: string
+          description: Project name. Defaults to the site label when omitted.
+        note:
+          type: string
+          description: Optional operator note, recorded on the activity log.
+        assigned_operator_user_id:
+          type: string
+          format: uuid
+          description: Optionally assign the new project to an internal owner (section 7.5).
+    CreateSubmissionRequest:
+      type: object
+      required:
+        - site_id
+      description: >-
+        Identifies the site being submitted. It must be owned by the caller and be in `draft`
+        (sections 6.1, 7.2).
+      properties:
+        site_id:
+          type: string
+          format: uuid
+          description: The draft site to submit.
+    DiligenceItemType:
+      type: string
+      description: §5.3 `diligence_requests.item_type`.
+      enum:
+        - document
+        - financial
+        - technical
+        - narrative
+        - site_access
+    Document:
+      type: object
+      description: |
+        §5.2 `documents` — metadata only; the file itself lives in Blob Storage.
+        `blob_path` is **not** serialised to clients: §7.6 requires a short-lived read
+        SAS instead, so a raw container path would be both useless and a disclosure.
+      required:
+        - id
+        - original_filename
+        - content_type
+        - size_bytes
+        - uploaded_by_user_id
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        site_id:
+          type: string
+          format: uuid
+          nullable: true
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        original_filename:
+          type: string
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        doc_type:
+          type: string
+          nullable: true
+          description: "**OQ-8** — the required-document checklist is config-driven (§7.6)."
+        uploaded_by_user_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        download_url:
+          type: string
+          format: uri
+          nullable: true
+          description: |
+            §7.6 — short-lived read SAS. Regenerated on every read; do not cache or
+            persist it. Absent when the caller's tier does not permit the file.
+        download_url_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+    EngagementState:
+      type: string
+      description: |
+        §5.3 `investor_engagements.state`. `prospect` is deliberately absent — §6.3:
+        "`Prospect` is implicit … The first persisted state is `interested`."
+      enum:
+        - interested
+        - committed
+        - underwriting
+        - approved
+        - funded
+        - declined
+        - withdrawn
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: |
+            Stable, machine-readable. Clients branch on this, never on `message`.
+
+            Authorization codes map to the §8.2 matrix:
+            `forbidden_role` (wrong role), `forbidden_owner` (right role, not your
+            record), `forbidden_tier` (right role, insufficient disclosure tier),
+            `forbidden_visibility` (project not investor-visible).
+          example: forbidden_tier
+        message:
+          type: string
+          description: Human-readable. Not intended for client branching.
+        details:
+          type: object
+          additionalProperties: true
+          nullable: true
+    MissingField:
+      type: object
+      description: One outstanding item from the §7.2 computed "still missing" list.
+      required:
+        - field
+        - message
+      properties:
+        field:
+          type: string
+          description: Property name on `SiteUpdateRequest`, so the client can focus the right input.
+        message:
+          type: string
+    OutstandingItem:
+      type: object
+      description: |
+        §7.4 — "operator `request_info` items and, later, forwarded diligence items
+        appear in one list, **never a separate investor surface**."
+      required:
+        - id
+        - source
+        - message
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        source:
+          type: string
+          description: |
+            Where the ask came from. `diligence` items are forwarded **by the
+            operator** — the investor who raised them is never identified to the
+            owner (§7.8).
+          enum:
+            - request_info
+            - diligence
+        site_id:
+          type: string
+          format: uuid
+          nullable: true
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        message:
+          type: string
+        item_type:
+          allOf:
+            - $ref: "#/components/schemas/DiligenceItemType"
+          description: Present only when `source` is `diligence`.
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    OwnerDashboardItem:
+      type: object
+      description: |
+        §7.4 — "One composed endpoint returning: site, submission status, viability
+        result, outstanding information, documents and acknowledgements, project
+        stage, next expected action, contact."
+      required:
+        - site
+        - documents
+        - acknowledgements
+        - outstanding
+      properties:
+        site:
+          $ref: "#/components/schemas/Site"
+        assessment:
+          allOf:
+            - $ref: "#/components/schemas/Assessment"
+          description: The latest row. Absent before submission.
+        project:
+          allOf:
+            - $ref: "#/components/schemas/Project"
+          description: Absent until the submission is accepted.
+        stage:
+          allOf:
+            - $ref: "#/components/schemas/PipelineColumn"
+          description: |
+            **S7** — the single shared value all three roles read. Resolved from the
+            project stage once one exists, otherwise from the submission status.
+        next_action:
+          type: string
+          nullable: true
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Document"
+        acknowledgements:
+          type: array
+          items:
+            $ref: "#/components/schemas/Acknowledgement"
+        outstanding:
+          type: array
+          description: §7.4 — the owner's single inbox for this site.
+          items:
+            $ref: "#/components/schemas/OutstandingItem"
+        contact:
+          allOf:
+            - $ref: "#/components/schemas/User"
+          description: The assigned operator, once one is set.
+    OwnershipStatus:
+      type: string
+      description: §5.3 `sites.ownership_status`.
+      enum:
+        - confirmed
+        - pending
+        - unverified
+    PipelineBoard:
+      type: object
+      required:
+        - columns
+        - project_count
+        - total_estimated_capacity_kw
+      properties:
+        columns:
+          type: array
+          description: Seven columns, in the order of `PipelineColumn` (**OQ-2**).
+          items:
+            $ref: "#/components/schemas/PipelineColumnData"
+        project_count:
+          type: integer
+          description: §7.5 portfolio summary.
+        total_estimated_capacity_kw:
+          type: number
+          format: double
+          description: §7.5 — aggregate estimated capacity.
+    PipelineCard:
+      type: object
+      description: |
+        One card on the board. Carries `site_id` always and `project_id` only once the
+        submission has been accepted, because the first two columns are pre-project.
+      required:
+        - site_id
+        - title
+      properties:
+        site_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        title:
+          type: string
+        viability_status:
+          $ref: "#/components/schemas/ViabilityStatus"
+        site_type:
+          $ref: "#/components/schemas/SiteType"
+        estimated_capacity_kw:
+          type: number
+          format: double
+          nullable: true
+        assigned_operator_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        visible_to_investors:
+          type: boolean
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+    PipelineColumn:
+      type: string
+      description: |
+        **OQ-2** — the seven columns of the §7.5 / §10 operator board, formed as §6.2
+        describes: "the operator's board unions both into one ordered view."
+
+        Two board-visible submission statuses + the five project stages = seven.
+        `draft`, `info_requested` and `rejected` are off-board states, reachable
+        through `GET /submissions` filters.
+      enum:
+        - submitted
+        - screening
+        - pre_development
+        - development
+        - construction
+        - commissioning
+        - operations
+    PipelineColumnData:
+      type: object
+      required:
+        - column
+        - items
+      properties:
+        column:
+          $ref: "#/components/schemas/PipelineColumn"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PipelineCard"
+    PortfolioItem:
+      type: object
+      description: |
+        §7.7 **tier 0**: "Neighbourhood location, capacity and production ranges,
+        project type, stage, viability. **No exact address, documents or owner
+        identity.**"
+
+        This schema deliberately has no `address_raw`, no `latitude`/`longitude`, no
+        `owner_user_id` and no documents, so tier 0 cannot leak them by accident.
+      required:
+        - project_id
+        - stage
+        - locality
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        locality:
+          type: string
+          description: Neighbourhood-level only — never the exact address.
+        stage:
+          $ref: "#/components/schemas/ProjectStage"
+        site_type:
+          $ref: "#/components/schemas/SiteType"
+        preliminary_project_type:
+          type: string
+          nullable: true
+        viability_status:
+          $ref: "#/components/schemas/ViabilityStatus"
+        estimated_system_size_kw_low:
+          type: number
+          format: double
+          nullable: true
+        estimated_system_size_kw_high:
+          type: number
+          format: double
+          nullable: true
+        estimated_annual_generation_kwh_low:
+          type: number
+          format: double
+          nullable: true
+        estimated_annual_generation_kwh_high:
+          type: number
+          format: double
+          nullable: true
+        open_funding_needs_count:
+          type: integer
+        my_engagement_state:
+          allOf:
+            - $ref: "#/components/schemas/EngagementState"
+          description: The caller's own engagement state, if any. Absent means tier 0.
+    PortfolioResponse:
+      type: object
+      required:
+        - items
+        - project_count
+        - total_estimated_capacity_kw
+        - mandate_match
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PortfolioItem"
+        project_count:
+          type: integer
+        total_estimated_capacity_kw:
+          type: number
+          format: double
+        mandate_match:
+          type: boolean
+          description: Whether the mandate filter was applied to this result.
+    Project:
+      type: object
+      description: §5.2 `projects` — created only when a submission is accepted.
+      required:
+        - id
+        - site_id
+        - name
+        - stage
+        - visible_to_investors
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        site_id:
+          type: string
+          format: uuid
+          description: Unique — one project per site (§5.2).
+        name:
+          type: string
+        assigned_operator_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        stage:
+          $ref: "#/components/schemas/ProjectStage"
+        estimated_capacity_kw:
+          type: number
+          format: double
+          nullable: true
+          description: §7.5 — set on accept from the **midpoint** of the latest assessment's size range.
+        next_action:
+          type: string
+          nullable: true
+        target_date:
+          type: string
+          format: date
+          nullable: true
+        visible_to_investors:
+          type: boolean
+          default: false
+          description: §5.2 / §7.5 — defaults off. Only the operator may change it (§8.2).
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProjectStage:
+      type: string
+      description: §5.3 `projects.stage`. Five values. A project starts at `pre_development`.
+      enum:
+        - pre_development
+        - development
+        - construction
+        - commissioning
+        - operations
+    ProjectUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        assigned_operator_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        next_action:
+          type: string
+          nullable: true
+        target_date:
+          type: string
+          format: date
+          nullable: true
+    Role:
+      type: string
+      description: §5.3 `users.role`.
+      enum:
+        - site_owner
+        - operator
+        - investor
+    Site:
+      type: object
+      description: §5.2 `sites`.
+      required:
+        - id
+        - owner_user_id
+        - site_type
+        - submission_status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        owner_user_id:
+          type: string
+          format: uuid
+        address_raw:
+          type: string
+          nullable: true
+          description: As typed by the owner, before geocoding.
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
+        geocode_confidence:
+          type: number
+          format: double
+          nullable: true
+          description: Confidence returned by the geocoding provider inside S-VIA (§9.2).
+        site_type:
+          $ref: "#/components/schemas/SiteType"
+        ownership_status:
+          $ref: "#/components/schemas/OwnershipStatus"
+        approximate_area_sqm:
+          type: number
+          format: double
+          nullable: true
+          minimum: 0
+          description: |
+            Usable area in **square metres**. The unit is fixed by the §5.2 field
+            name `approximate_area_sqm` and is not negotiable client-side — a client
+            sending square feet will silently produce wrong capacity estimates.
+        electricity_usage_kwh_annual:
+          type: number
+          format: double
+          nullable: true
+          minimum: 0
+          description: Annual consumption in kWh.
+        electricity_bill_doc_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: References an uploaded `documents.id` (§7.2 "electricity usage or bill upload").
+        has_existing_solar:
+          type: boolean
+          nullable: true
+        consent_given_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: §7.2 — "Consent is required to submit and stamps `consent_given_at`."
+        submission_status:
+          $ref: "#/components/schemas/SubmissionStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SiteCreateRequest:
+      type: object
+      description: |
+        Every field is optional so a partial draft can be saved (§7.2). Requirements
+        are enforced at submit time, not at create time — unless `submit: true`.
+      properties:
+        address_raw:
+          type: string
+        site_type:
+          $ref: "#/components/schemas/SiteType"
+        ownership_status:
+          $ref: "#/components/schemas/OwnershipStatus"
+        approximate_area_sqm:
+          type: number
+          format: double
+          minimum: 0
+          description: "**Square metres** — see `Site.approximate_area_sqm`."
+        electricity_usage_kwh_annual:
+          type: number
+          format: double
+          minimum: 0
+        electricity_bill_doc_id:
+          type: string
+          format: uuid
+        has_existing_solar:
+          type: boolean
+        consent_given:
+          type: boolean
+          description: Must be `true` to submit. Stamps `consent_given_at` server-side (§7.2).
+        submit:
+          type: boolean
+          default: false
+          description: |
+            When `true`, validate and submit immediately rather than saving a draft —
+            equivalent to `POST /sites` followed by `POST /sites/{siteId}/submit`.
+    SiteType:
+      type: string
+      description: §5.3 `sites.site_type`.
+      enum:
+        - rooftop
+        - land
+    SiteWithMissing:
+      type: object
+      required:
+        - site
+        - missing_fields
+      properties:
+        site:
+          $ref: "#/components/schemas/Site"
+        missing_fields:
+          type: array
+          description: §7.2 — the computed "still missing" list. Empty means the draft can be submitted.
+          items:
+            $ref: "#/components/schemas/MissingField"
+    SubmissionStatus:
+      type: string
+      description: |
+        §5.3 `sites.submission_status`.
+
+        **OQ-1** — §5.3 spells the review state `in_review`, but §6.2's table, the
+        state diagram and every prose reference spell it `screening` (9 mentions to 1).
+        `screening` is used here.
+
+        **OQ-3** — `accepted` is retained: §7.5's accept transaction sets it, even
+        though §6.2's board table omits it.
+      enum:
+        - draft
+        - submitted
+        - screening
+        - info_requested
+        - accepted
+        - rejected
+    SubmissionSummary:
+      type: object
+      description: §7.5 — "Unconverted sites appear with their assessment attached."
+      required:
+        - site
+      properties:
+        site:
+          $ref: "#/components/schemas/Site"
+        assessment:
+          $ref: "#/components/schemas/Assessment"
+        owner:
+          $ref: "#/components/schemas/User"
+    SubmitResult:
+      type: object
+      required:
+        - site
+        - assessment
+      properties:
+        site:
+          $ref: "#/components/schemas/Site"
+        assessment:
+          allOf:
+            - $ref: "#/components/schemas/Assessment"
+          description: The row just inserted by the S-VIA call.
+    User:
+      type: object
+      description: §5.2 `users`. `password_hash` is never serialised.
+      required:
+        - id
+        - name
+        - email
+        - role
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: "#/components/schemas/Role"
+        created_at:
+          type: string
+          format: date-time
+    ValidationError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            missing_fields:
+              type: array
+              items:
+                $ref: "#/components/schemas/MissingField"
+    ViabilityStatus:
+      type: string
+      description: §5.3 `assessments.viability_status` — the three §7.3 outcomes.
+      enum:
+        - potentially_viable
+        - more_information_required
+        - not_currently_eligible
