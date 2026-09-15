@@ -72,6 +72,22 @@ describe("the actual module-boundary configuration", () => {
     ["src/features/participation/components/probe.tsx", "@/lib/session"],
     ["app/probe.tsx", "@/features/participation/paths"],
     ["app/probe.tsx", "../features/participation/paths"],
+    ["src/components/ui/probe.tsx", "@/backend"],
+    ["src/components/ui/probe.tsx", "@/backend/core"],
+    ["src/domain/probe.ts", "@/backend"],
+    ["src/features/participation/probe.tsx", "@/backend"],
+    ["src/features/onboarding/probe.tsx", "@/backend"],
+    ["src/features/onboarding/components/probe.tsx", "../../../backend/core"],
+    ["app/probe.tsx", "@/backend/core"],
+    ["app/probe.tsx", "@/backend/handlers/sites"],
+    ["src/backend/handlers/probe.ts", "@/features/onboarding"],
+    ["src/backend/handlers/probe.ts", "@/components/ui/Badge"],
+    ["src/backend/handlers/probe.ts", "../../../app/page"],
+    ["src/backend/core/probe.ts", "@/backend/handlers"],
+    ["src/backend/core/probe.ts", "../handlers/sites"],
+    ["src/backend/core/probe.ts", "next/server"],
+    ["src/backend/core/probe.ts", "next/headers"],
+    ["src/backend/core/probe.ts", "@/features/participation"],
   ])(
     "rejects %s importing %s",
     async (file, dependency) => {
@@ -90,6 +106,13 @@ describe("the actual module-boundary configuration", () => {
     ["src/features/onboarding/probe.tsx", "../model/steps"],
     ["src/domain/probe.ts", "./roles"],
     ["src/components/ui/probe.tsx", "react"],
+    ["app/probe.tsx", "@/backend"],
+    ["src/backend/handlers/probe.ts", "@/backend/core"],
+    ["src/backend/handlers/probe.ts", "../core/screening"],
+    ["src/backend/handlers/probe.ts", "next/server"],
+    ["src/backend/handlers/probe.ts", "node:crypto"],
+    ["src/backend/core/probe.ts", "@/domain/roles"],
+    ["src/backend/core/probe.ts", "node:crypto"],
   ])(
     "permits %s importing %s",
     async (file, dependency) => {
@@ -108,6 +131,9 @@ describe("the actual module-boundary configuration", () => {
       "src/features/participation/components/probe.tsx",
       'export { DatabaseSync } from "node:sqlite";',
     ],
+    ["src/components/ui/probe.tsx", 'export * from "@/backend";'],
+    ["src/domain/probe.ts", 'export * from "@/backend/core";'],
+    ["src/backend/core/probe.ts", 'export * from "@/backend/handlers";'],
   ])("rejects prohibited re-exports from %s", async (file, source) => {
     expect(await lintBoundary(file, source)).not.toHaveLength(0);
   });

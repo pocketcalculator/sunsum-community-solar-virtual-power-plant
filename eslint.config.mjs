@@ -20,6 +20,60 @@ const nodeNamespace = {
   message: "Node-only modules cannot enter browser-safe presentation.",
 };
 
+/**
+ * The backend is server-side and may use Node built-ins, so it cannot be kept
+ * honest by the browser-safety rules above. These describe its own boundary.
+ */
+const backendModules = {
+  group: ["@/backend", "@/backend/**", "**/backend/**"],
+  message:
+    "Server-side workflow code must not enter browser-safe presentation; reach the backend from a route instead.",
+};
+
+const backendInternals = {
+  group: ["@/backend/**", "**/backend/**"],
+  message: "Routes must use the backend's public entry point.",
+};
+
+const presentationImports = {
+  group: [
+    "@/components",
+    "@/components/**",
+    "**/components/**",
+    "@/features",
+    "@/features/**",
+    "**/features/**",
+    "**/app/**",
+  ],
+  message:
+    "The backend is the system of record: it must not depend on routes, features or presentation.",
+};
+
+const handlerImports = {
+  group: [
+    "@/backend/handlers",
+    "@/backend/handlers/**",
+    "**/backend/handlers/**",
+    "./handlers",
+    "./handlers/**",
+    "../handlers",
+    "../handlers/**",
+  ],
+  message:
+    "Handlers depend on core, never the reverse: core logic must stay callable without a request.",
+};
+
+const transportModules = [
+  "next/server",
+  "next/headers",
+  "next/cache",
+  "next/navigation",
+].map((name) => ({
+  name,
+  message:
+    "Core workflow logic must stay transport-neutral; read the request in a handler and pass plain values in.",
+}));
+
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -39,6 +93,7 @@ export default defineConfig([
           paths: serverImports,
           patterns: [
             nodeNamespace,
+            backendModules,
             {
               group: [
                 "@/features",
@@ -67,6 +122,7 @@ export default defineConfig([
         "error",
         {
           patterns: [
+            backendModules,
             {
               group: ["**/app/**"],
               message: "Features must not depend on application routes.",
@@ -85,6 +141,7 @@ export default defineConfig([
           paths: serverImports,
           patterns: [
             nodeNamespace,
+            backendModules,
             {
               group: [
                 "@/features",
@@ -114,6 +171,7 @@ export default defineConfig([
           paths: serverImports,
           patterns: [
             nodeNamespace,
+            backendModules,
             {
               group: [
                 "**/app/**",
@@ -145,6 +203,7 @@ export default defineConfig([
           paths: serverImports,
           patterns: [
             nodeNamespace,
+            backendModules,
             {
               group: [
                 "**/app/**",
@@ -168,12 +227,31 @@ export default defineConfig([
     },
   },
   {
+    files: ["src/backend/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [presentationImports] }],
+    },
+  },
+  {
+    files: ["src/backend/core/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: transportModules,
+          patterns: [presentationImports, handlerImports],
+        },
+      ],
+    },
+  },
+  {
     files: ["app/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",
         {
           patterns: [
+            backendInternals,
             {
               group: ["@/features/*/**", "**/features/*/**"],
               message: "Routes must use a feature's public entry point.",

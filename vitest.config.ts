@@ -14,6 +14,7 @@ export default defineConfig({
     include: [
       "tests/unit/**/*.test.{ts,tsx}",
       "src/features/**/*.test.{ts,tsx}",
+      "src/backend/**/*.test.{ts,tsx}",
     ],
     restoreMocks: true,
   },
