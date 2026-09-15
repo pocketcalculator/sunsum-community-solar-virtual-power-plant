@@ -1,210 +1,132 @@
 openapi: 3.0.3
-
 info:
-  title: SunSum Solar — Platform API (`sumsum-api`)
+  title: SunSum API (MVP)
   version: 0.1.0
-  description: |
-    Frontend-facing contract for the `sumsum-api` deployable (design doc §9.1).
+  description: >-
+    MVP wire contract for the SunSum community-solar VPP - **eight operations**, the set agreed
 
-    This spec is derived **only** from `docs/sunsum_technical_design_doc.md`.
-    Every path in §10 appears here exactly once; no endpoint has been invented.
-    Entity properties are the §5.2 field lists verbatim, and every enum is §5.3 verbatim.
+    on the whiteboard of 15 September 2026. Derived from `docs/sunsum_technical_design_doc.md`;
 
-    The viability engine (`sumsum-viability` / S-VIA) is **not** part of this
-    contract. The web app never calls it (§4.1). Its `POST /assess` contract is
-    specified separately in `viability-openapi.yaml`.
+    where the two disagree, the design doc wins and this file is the bug.
 
-    ## Path prefix
-    §10 lists bare paths (`/sites`). Those are reproduced verbatim. The `/api`
-    mount lives in `servers` below, matching Next.js route conventions, so the
-    wire path is `/api/sites`.
 
-    ## Resolved contradictions in the design doc
-    The doc contradicts itself in three places. This spec had to pick one reading
-    of each. Each is a one-line change if the team decides otherwise.
+    The remaining operations in section 10 of the design doc are out of scope for this MVP and are
 
-    | # | Conflict | Resolution |
-    |---|---|---|
-    | **OQ-1** | §5.3 lists `in_review` in `submission_status`; §6.2's table, the state diagram and all prose say `screening` (9 mentions vs 1) | **`screening`** — the state machine is the behavioural spec |
-    | **OQ-2** | §7.5 and §10 say the board spans "seven stages"; §5.3 enumerates only five `projects.stage` values | **`PipelineColumn`** (7) = `submitted`, `screening` + the 5 project stages. `ProjectStage` keeps 5 |
-    | **OQ-3** | §5.3 lists `accepted`; §6.2's board table omits it; §7.5 writes it | **`accepted` kept** — the §7.5 accept transaction sets it |
+    deliberately not transcribed here.
 
-    ## Deliberate open questions — not resolved here
-    | # | Open | Owner |
-    |---|---|---|
-    | **OQ-4** | Payload casing is `snake_case`, matching §5.2 verbatim. Switching to camelCase is a codegen setting, not a spec rewrite | WS1 + WS2 |
-    | **OQ-5** | §8.1 Authentication is an empty header. A session cookie is modelled to match §10 and `users.password_hash`. Real Entra wiring does not change these path shapes | WS2 + WS3 |
-    | **OQ-6** | `flags`, `missing_information`, `inputs_used` and `preliminary_project_type` are free-form. WS1's gate "Screening — WS4 — units, range shapes, rules/assumptions/version" is still *Pending handoff*. Fixing a vocabulary here would be guessing | WS4 |
-    | **OQ-7** | Investor picklist values (`investment_objectives`, `impact_priorities`, `decision_criteria`, `geographies`) are `string[]`. §7.7 requires picklists but never lists them | WS5 + WS1 |
-    | **OQ-8** | `documents.doc_type` and `activity.action` are open strings. The required-document checklist is config-driven (§7.6) | WS2 |
 
-    ## Absent vs null — read this before generating clients
+    ## Scope
 
-    OpenAPI 3.0 **cannot express a nullable `$ref`**. Writing
-    `allOf: [{$ref: X}], nullable: true` lints as an error and is silently dropped by
-    most generators, so it would have produced a contract that lies.
 
-    This spec therefore uses one rule:
+    | Role | Operations |
 
-    - **Object and enum properties that may have no value are optional and OMITTED.**
-      They are absent from `required` and the server must leave the key out rather
-      than send `null`. In TypeScript these generate as `prop?: T`.
-    - **Scalar properties** (`string`, `number`, `boolean`) use `nullable: true`
-      normally, because 3.0 expresses that fine.
+    | --- | --- |
 
-    So `OwnerDashboardItem.project` is *absent* before acceptance, not `null`;
-    `Site.address_raw` is `null` when unset. Clients should test with `== null`
-    (which catches both) or optional chaining, and must not distinguish the two.
+    | Site owner | `POST /sites`, `GET /sites`, `POST /submissions` |
 
-    ## Build status (§7.8)
-    Operations tagged **`model-only`** have a schema and a contract but **no UI and no
-    implementation in the MVP**. They are published so the shape is frozen. Everything
-    else is MVP scope.
+    | Operator | `GET /submissions`, `POST /projects`, `GET /projects`, `PATCH
+    /projects/{projectId}` |
 
+    | Investor | `GET /portfolio` |
+
+
+    The viability engine is a **separate internal service** and is not in this file. Browsers never
+    call
+
+    it. Its contract is `viability-openapi.yaml` (`POST /assess`), called server-to-server during
+
+    `POST /submissions`.
+
+
+    ## Where an identifier goes
+
+
+    Applied consistently; follow it when adding endpoints.
+
+
+    - **Path** identifies a resource you are acting on - `PATCH /projects/{projectId}`.
+
+    - **Body** carries the data of a resource being created. `POST /submissions` and `POST
+    /projects`
+      take `site_id` in the body because the submission and the project are what is being created; the
+      site is an attribute of them.
+    - **Query** filters a collection - `GET /portfolio?stage=...`.
+
+
+    The whiteboard's "PATCH /projects" is written here as `PATCH /projects/{projectId}`: a
+    collection
+
+    cannot be coherently patched.
+
+
+    ## Absent versus null
+
+
+    OpenAPI 3.0 cannot express a nullable `$ref`, so this file uses one rule:
+
+
+    - An **object or enum** that may be empty is **optional and omitted** - generates as `prop?: T`.
+
+    - A **scalar** that may be empty is `nullable: true` - generates as `T | null`.
+
+
+    Test `== null`. Do not rely on the difference between absent and null.
+
+
+    ## Not in this MVP
+
+
+    Each of these is a real gap, listed so nobody assumes it was forgotten:
+
+
+    1. **Rejecting a submission.** `POST /projects` is the accept path only. Reject and
+       request-more-information are specified in section 10 of the design doc as
+       `POST /submissions/{id}/decision`.
+    2. **Login.** No `/auth/*` or `/me` here - identity is workstream 3's, and the role-aware UI
+    will
+       very likely need `/me` on day one. Say the word and it is a five-minute addition.
+    3. **Detail views.** No `GET /sites/{siteId}` or `GET /projects/{projectId}`; the list endpoints
+       return full records, so add them only if a deep link needs one.
+    4. **Documents, engagements, the deal room and diligence** - all in section 10 of the design
+       doc.
+
+
+    ## Open questions
+
+
+    - **OQ-1** Section 5.3 says `in_review`; section 6.2 and all prose say `screening`. Using
+      `screening` (9 mentions to 1). Confirm before hard-coding.
+    - **OQ-2** Sections 7.5 and 10 say seven pipeline stages; 5.3 enumerates five. `PipelineColumn`
+    has
+      seven, `ProjectStage` keeps five.
+    - **OQ-4** snake_case on the wire throughout, matching the design doc's column names.
+
+
+    Error codes (400/401/403/404/409/422) are a proposal - the design doc does not specify them.
   contact:
     name: Workstream 2 — Backend & Workflow
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
-
 servers:
   - url: /api
     description: Next.js server endpoints (§3 — "Next.js/Node.js server endpoints")
-
+security:
+  - sessionCookie: []
 tags:
-  - name: Auth
-    description: S-IAM — sessions, role resolution, demo-role switch
   - name: Sites
     description: S-SITE — draft save, missing-field computation, submission lifecycle
   - name: Submissions
     description: S-SITE — operator queue and decisions
-  - name: Assessments
-    description: S-ASSESS — append-only viability results and operator override
   - name: Projects
     description: S-PROJ — project creation, stage transitions, assignment, visibility
   - name: Portfolio
     description: S-INV — investor profiles, mandate capture, portfolio matching
-  - name: Engagements
-    description: S-ENG — engagement lifecycle, disclosure tiers, funding needs
-  - name: Diligence
-    description: S-ENG — diligence request routing (design-only in the MVP)
-  - name: Documents
-    description: S-DOC — uploads, SAS issuance, typed-name acknowledgements
-  - name: Activity
-    description: S-ACT — append-only audit trail and the shared timeline
-
-security:
-  - sessionCookie: []
-
 paths:
-
-  # ─────────────────────────────── Auth (S-IAM) ───────────────────────────────
-
-  /auth/login:
-    post:
-      tags: [Auth]
-      operationId: login
-      summary: Start a session
-      description: |
-        §10 — public. Establishes the `sunsum_session` cookie.
-        See **OQ-5**: §8.1 is an empty header, so this shape is provisional.
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/LoginRequest' }
-      responses:
-        '200':
-          description: Session established; the cookie is set.
-          headers:
-            Set-Cookie:
-              schema: { type: string }
-              description: '`sunsum_session=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/`'
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/MeResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401':
-          description: Credentials rejected.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /auth/logout:
-    post:
-      tags: [Auth]
-      operationId: logout
-      summary: End the session
-      description: §10 — public. Idempotent; succeeds even with no active session.
-      security: []
-      responses:
-        '204':
-          description: Session cleared.
-          headers:
-            Set-Cookie:
-              schema: { type: string }
-              description: Expired cookie.
-        '403':
-          description: |
-            CSRF check failed. Every state-changing request in this API is
-            cookie-authenticated, so it needs an anti-forgery token — see the
-            `sessionCookie` scheme. Logout is the endpoint where this is easiest to
-            overlook, because it is otherwise unconditional.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /auth/demo-switch:
-    post:
-      tags: [Auth]
-      operationId: demoSwitch
-      summary: Switch the active demo role
-      description: |
-        §10 — public. Demo affordance backing `users.password_hash (nullable, for the
-        demo-role switch)` in §5.2. Lets the presenter move between the three role
-        surfaces without re-authenticating.
-
-        **This must be disabled outside the demo environment.** It is an
-        authentication bypass by construction.
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/DemoSwitchRequest' }
-      responses:
-        '200':
-          description: Now acting as the requested role.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/MeResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '403':
-          description: Demo switching is disabled in this environment.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /me:
-    get:
-      tags: [Auth]
-      operationId: getMe
-      summary: Identity, role and investor profile
-      description: §10 — any authenticated role.
-      responses:
-        '200':
-          description: The current user.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/MeResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-
-  # ─────────────────────────────── Sites (S-SITE) ─────────────────────────────
-
   /sites:
     post:
-      tags: [Sites]
+      tags:
+        - Sites
       operationId: createSite
       summary: Create a site, as a draft or submitted directly
       description: |
@@ -218,112 +140,34 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/SiteCreateRequest' }
+            schema:
+              $ref: "#/components/schemas/SiteCreateRequest"
       responses:
-        '201':
+        "201":
           description: Site created.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SiteWithMissing' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422':
+              schema:
+                $ref: "#/components/schemas/SiteWithMissing"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
           description: |
             `submit: true` was requested but required fields are missing or consent
             was not given. `missing_fields` lists what is outstanding.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ValidationError' }
-
-  /sites/{siteId}:
-    parameters:
-      - $ref: '#/components/parameters/SiteId'
-    patch:
-      tags: [Sites]
-      operationId: updateSite
-      summary: Update a draft and recompute the missing-field list
-      description: |
-        §10 — site owner. "Update draft; missing-field list".
-
-        Per §8.2 the owner has `RW own, before submit`, so this returns **409**
-        once `submission_status` has left `draft`.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/SiteUpdateRequest' }
-      responses:
-        '200':
-          description: Draft updated.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/SiteWithMissing' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403':
-          description: Not the owner of this site.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409':
-          description: The site is no longer a draft and can no longer be edited by the owner.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /sites/{siteId}/submit:
-    parameters:
-      - $ref: '#/components/parameters/SiteId'
-    post:
-      tags: [Sites]
-      operationId: submitSite
-      summary: Submit a draft; triggers the viability assessment
-      description: |
-        §10 — site owner. "Draft → submitted; triggers assessment".
-
-        One transaction: set `submission_status: submitted` → call S-VIA `POST /assess`
-        → insert an append-only `assessments` row → insert an `activity` row.
-
-        The response carries the assessment, so the owner sees the preliminary result
-        immediately (§7.3). Consent is required and stamps `consent_given_at` (§7.2).
-      responses:
-        '200':
-          description: Submitted and assessed.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/SubmitResult' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403':
-          description: Not the owner of this site.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409':
-          description: The site is not in `draft` (already submitted).
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '422':
-          description: Required fields missing or consent not given.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ValidationError' }
-        '503':
-          description: |
-            The viability service is unreachable. The site stays in `draft` and the
-            whole transaction rolls back, so the owner may retry.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /me/sites:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
     get:
-      tags: [Sites]
-      operationId: getMySites
-      summary: Site-owner dashboard (composed)
+      tags:
+        - Sites
+      operationId: listMySites
+      summary: List the sites I own, with their current status
       description: |
         §10 and §7.4 — the single composed endpoint. Returns, per site: the site,
         submission status, latest viability result, outstanding information,
@@ -331,125 +175,77 @@ paths:
 
         §7.4: the owner must see the same stage the operator and investor see (**S7**).
       responses:
-        '200':
+        "200":
           description: The owner's sites.
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/OwnerDashboardItem' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+                items:
+                  $ref: "#/components/schemas/OwnerDashboardItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /submissions:
+    post:
+      tags:
+        - Sites
+      operationId: createSubmission
+      summary: Submit one of my sites for operator review
+      description: >-
+        Moves the site from `draft` to `submitted` and triggers the viability assessment (S-VIA
+        `POST /assess`).
 
-  /me/outstanding:
-    get:
-      tags: [Sites]
-      operationId: getMyOutstanding
-      summary: The owner's single inbox of outstanding information
-      description: |
-        §10 and §7.4 — site owner. Operator `request_info` items and, later,
-        forwarded diligence items appear in **one** list.
 
-        §7.8: "Investors never contact site owners directly" — a forwarded diligence
-        item is therefore attributed to the operator, never to the investor who
-        raised it. `source` distinguishes the two without leaking investor identity.
+        The site is named in the **body**, not the path: the submission is the resource being
+        created, and the site is an attribute of it.
       responses:
-        '200':
-          description: Outstanding items.
+        "200":
+          description: Submitted and assessed.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/OutstandingItem' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  # ───────────────────────── Documents & acknowledgements ─────────────────────
-
-  /sites/{siteId}/documents:
-    parameters:
-      - $ref: '#/components/parameters/SiteId'
-    post:
-      tags: [Documents]
-      operationId: uploadSiteDocument
-      summary: Upload a document against a site
-      description: |
-        §10 — site owner, operator.
-
-        §7.2: "Uploads go through the API to Blob with server-side type and size
-        validation — **never direct from the browser**." The browser posts
-        `multipart/form-data` here; the API writes to the private container and
-        stores only metadata (§5.2 `documents`).
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema: { $ref: '#/components/schemas/DocumentUpload' }
-      responses:
-        '201':
-          description: Stored; metadata returned.
+                $ref: "#/components/schemas/SubmitResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not the owner of this site.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Document' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '413':
-          description: File exceeds the configured size limit.
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The site is not in `draft` (already submitted).
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '415':
-          description: Content type not on the allow-list.
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Required fields missing or consent not given.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /sites/{siteId}/acknowledgements:
-    parameters:
-      - $ref: '#/components/parameters/SiteId'
-    post:
-      tags: [Documents]
-      operationId: createAcknowledgement
-      summary: Record a typed-name acknowledgement
-      description: |
-        §10 — site owner. §7.6: "Typed-name acknowledgement with timestamp and status.
-        No DocuSign or Adobe Sign dependency."
-
-        §5.2 keys `acknowledgements` on `project_id`, but §10 routes the write under
-        the **site**. Both are satisfied by resolving the site's project server-side,
-        which is why this returns **409** when the site has no project yet: a site is
-        only acknowledged against once it has been accepted.
-
-        `ip_address` is recorded by the server from the request; it is never accepted
-        from the client.
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "503":
+          description: |
+            The viability service is unreachable. The site stays in `draft` and the
+            whole transaction rolls back, so the owner may retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/AcknowledgementRequest' }
-      responses:
-        '201':
-          description: Acknowledgement recorded.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Acknowledgement' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409':
-          description: The site has not been accepted, so there is no project to acknowledge against.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  # ────────────────────────── Submissions (operator) ──────────────────────────
-
-  /submissions:
+            schema:
+              $ref: "#/components/schemas/CreateSubmissionRequest"
     get:
-      tags: [Submissions]
+      tags:
+        - Submissions
       operationId: listSubmissions
       summary: Operator submission queue
       description: |
@@ -465,193 +261,125 @@ paths:
           required: false
           schema:
             type: array
-            items: { $ref: '#/components/schemas/SubmissionStatus' }
+            items:
+              $ref: "#/components/schemas/SubmissionStatus"
           style: form
           explode: true
         - name: type
           in: query
           description: Filter by site type.
           required: false
-          schema: { $ref: '#/components/schemas/SiteType' }
+          schema:
+            $ref: "#/components/schemas/SiteType"
         - name: viability
           in: query
           description: Filter by the viability status of the latest assessment.
           required: false
-          schema: { $ref: '#/components/schemas/ViabilityStatus' }
+          schema:
+            $ref: "#/components/schemas/ViabilityStatus"
         - name: location
           in: query
           description: Free-text match against the site's locality.
           required: false
-          schema: { type: string }
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: Matching submissions, each with its latest assessment attached.
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/SubmissionSummary' }
-        '400':
+                items:
+                  $ref: "#/components/schemas/SubmissionSummary"
+        "400":
           description: An unknown enum value was supplied in a filter.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /submissions/{siteId}:
-    parameters:
-      - $ref: '#/components/parameters/SiteId'
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /projects:
     get:
-      tags: [Submissions]
-      operationId: getSubmission
-      summary: Submission detail with documents and activity
-      description: |
-        §10 — operator. A submission **is** a site (§6.2 keys the queue on
-        `sites.submission_status`), so the identifier here is the site id.
+      tags:
+        - Projects
+      operationId: listProjects
+      summary: "Operator pipeline: every project, grouped by column"
+      description: >-
+        Operator-scoped; returns the full project record.
+
+
+        **Investors must not call this.** It carries operator-only fields. The investor-facing list
+        is `GET /portfolio`, whose item shape cannot express an exact address or owner identity.
+        Non-operators receive 403.
       responses:
-        '200':
-          description: Submission detail.
+        "200":
+          description: The board.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SubmissionDetail' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /submissions/{siteId}/decision:
-    parameters:
-      - $ref: '#/components/parameters/SiteId'
+              schema:
+                $ref: "#/components/schemas/PipelineBoard"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     post:
-      tags: [Submissions]
-      operationId: decideSubmission
-      summary: Accept, reject, or request more information
-      description: |
-        §10 — operator. One endpoint, three outcomes. **S6** makes all three a
-        success criterion: "Accept / reject / request-info each persist a decision
-        + activity entry."
+      tags:
+        - Submissions
+      operationId: createProject
+      summary: Accept a submission and open the project
+      description: >-
+        The accept half of the operator decision in section 7.5: advancing the site to `accepted`
+        and opening the project happen in one transaction.
 
-        §7.5 — **accept is one transaction**: set `submission_status: accepted` →
-        insert a project at `pre_development` with capacity from the latest
-        assessment midpoint → insert an activity row. *Partial failure rolls back
-        all three.*
 
-        Resulting states:
-
-        | `decision` | `submission_status` | Project |
-        |---|---|---|
-        | `accept` | `accepted` | created at `pre_development` |
-        | `reject` | `rejected` | none — terminal, never investor-visible (§6.2) |
-        | `request_info` | `info_requested` | none — returns to `screening` when the owner responds |
-
-        `note` is **required** for `reject` and `request_info` so the owner always
-        has a reason; it is optional for `accept`.
+        **Reject and request-more-information are not in this MVP** - they have no endpoint in the
+        agreed scope. See section 10 of the design doc: `POST /submissions/{id}/decision`.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/SubmissionDecisionRequest' }
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
       responses:
-        '200':
-          description: Decision recorded. `project` is present only for `accept`.
+        "201":
+          description: Project created.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SubmissionDecisionResult' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409':
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
           description: |
             The submission is in a state that does not accept this decision — for
             example deciding on a `draft`, or on an already-`rejected` submission
             (`rejected` is terminal, §6.2).
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '422':
-          description: '`note` is required for `reject` and `request_info`.'
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "`note` is required for `reject` and `request_info`."
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ValidationError' }
-
-  # ───────────────────────── Assessments (S-ASSESS) ───────────────────────────
-
-  /sites/{siteId}/assessments/override:
-    parameters:
-      - $ref: '#/components/parameters/SiteId'
-    post:
-      tags: [Assessments]
-      operationId: overrideAssessment
-      summary: Operator override, inserted as a new assessment row
-      description: |
-        §10 — operator. §7.3: "Operator override inserts a **new** assessment row
-        with a recorded reason — assessments are append-only, never updated. All
-        views read the latest row; operators keep the history."
-
-        The new row carries `is_override: true`, `override_reason` and
-        `overridden_by_user_id`. `override_reason` is mandatory — an override
-        without a rationale is rejected with **422**.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/AssessmentOverrideRequest' }
-      responses:
-        '201':
-          description: New assessment row inserted; it is now the latest.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Assessment' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404':
-          description: No site, or the site has no assessment to override yet.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '422':
-          description: '`override_reason` was absent or empty.'
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ValidationError' }
-
-  # ─────────────────────────── Projects (S-PROJ) ──────────────────────────────
-
-  /pipeline:
-    get:
-      tags: [Projects]
-      operationId: getPipeline
-      summary: Operator pipeline board
-      description: |
-        §10 — operator. "Board across all seven stages."
-
-        See **OQ-2**. §5.3 enumerates only five `projects.stage` values, so the seven
-        board columns are the union described in §6.2 ("the operator's board unions
-        both into one ordered view"): the two board-visible submission statuses plus
-        the five project stages.
-
-        `info_requested` and `rejected` are **off-board** states — they are reachable
-        through `GET /submissions` filters, not as columns. `draft` is never visible
-        to the operator at all.
-
-        Also returns the §7.5 portfolio summary: project count and aggregate
-        estimated capacity.
-      responses:
-        '200':
-          description: The board.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PipelineBoard' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
+              schema:
+                $ref: "#/components/schemas/ValidationError"
   /projects/{projectId}:
     parameters:
-      - $ref: '#/components/parameters/ProjectId'
+      - $ref: "#/components/parameters/ProjectId"
     patch:
-      tags: [Projects]
+      tags:
+        - Projects
       operationId: updateProject
       summary: Set assignee, next action and target date
       description: |
@@ -660,134 +388,27 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ProjectUpdateRequest' }
+            schema:
+              $ref: "#/components/schemas/ProjectUpdateRequest"
       responses:
-        '200':
+        "200":
           description: Project updated.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Project' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /projects/{projectId}/stage:
-    parameters:
-      - $ref: '#/components/parameters/ProjectId'
-    post:
-      tags: [Projects]
-      operationId: advanceProjectStage
-      summary: Move a project to another stage
-      description: |
-        §10 — operator. §6.2: "**Only the Platform Operator moves it**; site owners
-        and investors read it but never write it."
-
-        §7.5: "each transition writing exactly **one** activity row."
-
-        The design doc's state diagram (§6.2) is linear —
-        `pre_development → development → construction → commissioning → operations` —
-        and defines no skip or reverse edge. This contract therefore rejects any
-        transition that is not to an adjacent stage with **409**, rather than
-        inventing a skip rule. If the demo needs to jump, that is a deliberate
-        contract change, not an accident.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/StageChangeRequest' }
-      responses:
-        '200':
-          description: Stage changed; exactly one activity row written.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Project' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409':
-          description: |
-            Not an adjacent stage, or the project is already at the requested stage.
-            `details.allowed` lists the stages reachable from the current one.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /projects/{projectId}/visibility:
-    parameters:
-      - $ref: '#/components/parameters/ProjectId'
-    patch:
-      tags: [Projects]
-      operationId: setProjectVisibility
-      summary: Toggle investor visibility
-      description: |
-        §10 — operator, and **only** the operator (§8.2).
-
-        `visible_to_investors` defaults to `false` (§5.2, §7.5 "default off").
-        §6.2: `pre_development` is "the earliest investor-visible stage", and a
-        `rejected` submission is "never investor-visible".
-
-        Turning visibility **off** does not delete existing engagements, but the
-        project immediately stops appearing in `GET /portfolio` and its deal room
-        returns **403**.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/VisibilityUpdateRequest' }
-      responses:
-        '200':
-          description: Visibility updated.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Project' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409':
-          description: The project cannot be made visible from its current stage.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /projects/{projectId}/activity:
-    parameters:
-      - $ref: '#/components/parameters/ProjectId'
-    get:
-      tags: [Activity]
-      operationId: getProjectActivity
-      summary: The shared project timeline
-      description: |
-        §10 — "any (scoped)". This is **S7**: "Visible project-status timeline across
-        all three roles … the same project stage renders consistently in all three
-        role views."
-
-        Scoping, per §8.2:
-        - **Operator** — every entry.
-        - **Site owner** — entries for their own project. Investor engagement entries
-          are withheld: §6.3 says the site owner "sees none" of the engagement
-          lifecycle.
-        - **Investor** — only if the project is visible *and* they hold an engagement;
-          entries are filtered to what their tier permits.
-      responses:
-        '200':
-          description: Timeline entries, oldest first.
-          content:
-            application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/Activity' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  # ──────────────────────── Portfolio & investors (S-INV) ─────────────────────
-
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /portfolio:
     get:
-      tags: [Portfolio]
+      tags:
+        - Portfolio
       operationId: getPortfolio
       summary: Tier 0 portfolio, mandate-matched by default
       description: |
@@ -809,499 +430,50 @@ paths:
             Default `true` — restrict to projects matching the investor's mandate.
             Set `false` to widen to every visible project.
           required: false
-          schema: { type: boolean, default: true }
+          schema:
+            type: boolean
+            default: true
         - name: stage
           in: query
           description: Filter by project stage. Repeat for multiple values.
           required: false
           schema:
             type: array
-            items: { $ref: '#/components/schemas/ProjectStage' }
+            items:
+              $ref: "#/components/schemas/ProjectStage"
           style: form
           explode: true
         - name: viability
           in: query
           required: false
-          schema: { $ref: '#/components/schemas/ViabilityStatus' }
+          schema:
+            $ref: "#/components/schemas/ViabilityStatus"
         - name: project_type
           in: query
           description: Filter by `preliminary_project_type` (see **OQ-6**).
           required: false
-          schema: { type: string }
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: Tier 0 summaries plus aggregates.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PortfolioResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403':
+              schema:
+                $ref: "#/components/schemas/PortfolioResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
           description: |
             Not an investor, or onboarding is not complete
             (`onboarding_completed_at` is null) — tier 0 is "unlocked by onboarding".
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /investors/me/profile:
-    post:
-      tags: [Portfolio]
-      operationId: upsertInvestorProfile
-      summary: Investor onboarding — type, mandate, objectives, criteria
-      description: |
-        §10 — investor. §7.7: "Picklists rather than free text, so answers can drive
-        filters. Sets `deal_room_profile`. **Self-declared, not verified.**"
-
-        `deal_room_profile` defaults from `investor_type` (§5.2) but is overridable.
-        Completing this sets `onboarding_completed_at`, which is what unlocks tier 0.
-
-        See **OQ-7**: the picklist *values* are not specified anywhere in the design
-        doc, so the option arrays are open `string[]` for now.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/InvestorProfileRequest' }
-      responses:
-        '200':
-          description: Profile created or replaced.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Investor' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422':
-          description: '`ticket_size_min` exceeds `ticket_size_max`, or a required field is absent.'
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ValidationError' }
-    get:
-      tags: [Portfolio]
-      operationId: getInvestorProfile
-      summary: Read the investor mandate
-      description: |
-        §10 — investor, operator. §8.2 gives the operator `R all` on "investor profile
-        and mandate" so they can see who a project fits.
-
-        An operator must pass `investor_id`; an investor must not — they always read
-        their own.
-      parameters:
-        - name: investor_id
-          in: query
-          description: Operator only. Which investor's mandate to read.
-          required: false
-          schema: { type: string, format: uuid }
-      responses:
-        '200':
-          description: The mandate.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Investor' }
-        '400':
-          description: An investor supplied `investor_id`, or an operator omitted it.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404':
-          description: No profile — onboarding has not been completed.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  # ───────────────────────── Deal room & engagements (S-ENG) ──────────────────
-
-  /projects/{projectId}/deal-room:
-    parameters:
-      - $ref: '#/components/parameters/ProjectId'
-    get:
-      tags: [Engagements]
-      operationId: getDealRoom
-      summary: Tier-composed deal room, panels ordered by profile
-      description: |
-        §10 — investor, operator. This is **S8**.
-
-        §7.7 states the governing rule plainly:
-
-        > "The **profile** decides what is relevant; the **tier** decides what is
-        > permitted. A panel listed in a profile stays hidden until the tier unlocks it."
-
-        So `panels` is ordered by the caller's `deal_room_profile` and filtered by
-        their tier. Panel order per §7.7:
-
-        | Profile | Panel order |
-        |---|---|
-        | `philanthropy` | funding needs · deliverables and milestones · impact · viability and site |
-        | `debt_project_finance` | project economics · risk register · technical package · viability and site |
-        | `default` | viability and site · impact · documents |
-
-        §6.3 — **access does not ratchet**: on `declined` or `withdrawn` the caller
-        drops back to tier 0 immediately, "an investor who walks away must not retain
-        a permanent window into a site owner's documents".
-
-        An operator always sees the full content at tier 2.
-      responses:
-        '200':
-          description: The deal room, composed for this caller.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/DealRoom' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403':
-          description: |
-            The project is not visible to investors, or the caller's engagement has
-            been declined or withdrawn.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /projects/{projectId}/engagements:
-    parameters:
-      - $ref: '#/components/parameters/ProjectId'
-    post:
-      tags: [Engagements]
-      operationId: expressInterest
-      summary: Express interest — creates the engagement
-      description: |
-        §10 — investor. **The one engagement operation that is built in the MVP**
-        (§7.8 "Build (MVP)").
-
-        §7.8: "Express interest → engagement state `interested`, in a single
-        transaction that **re-checks project visibility** and writes an activity row."
-        The re-check matters: visibility may have been revoked between the portfolio
-        read and this call.
-
-        Unlocks tier 1, and the interest appears on the operator's project timeline.
-
-        `funding_need_id` is null when evaluating the whole project (§5.2).
-        Engagements are unique on `(investor_id, project_id, funding_need_id)`, so a
-        second call for the same triple returns **409**.
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/EngagementCreateRequest' }
-      responses:
-        '201':
-          description: Engagement created at `interested`; tier 1 now unlocked.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InvestorEngagement' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403':
-          description: Not an investor, onboarding incomplete, or the project is not visible.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409':
-          description: A live engagement already exists for this investor, project and funding need.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-    get:
-      tags: [Engagements]
-      operationId: listProjectEngagements
-      summary: Who is interested or committed on this project
-      description: |
-        §10 — operator only. §6.3: "the operator sees all of them; the **site owner
-        sees none**."
-      responses:
-        '200':
-          description: Engagements on this project.
-          content:
-            application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/InvestorEngagement' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /me/engagements:
-    get:
-      tags: [Engagements]
-      operationId: getMyEngagements
-      summary: The investor's own pipeline
-      description: §10 — investor. §6.3 "the investor sees their own engagements".
-      parameters:
-        - name: state
-          in: query
-          description: Filter by engagement state. Repeat for multiple values.
-          required: false
-          schema:
-            type: array
-            items: { $ref: '#/components/schemas/EngagementState' }
-          style: form
-          explode: true
-      responses:
-        '200':
-          description: The investor's engagements.
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/InvestorEngagement' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /engagements/{engagementId}:
-    parameters:
-      - $ref: '#/components/parameters/EngagementId'
-    get:
-      tags: [Engagements]
-      operationId: getEngagement
-      summary: Engagement detail and diligence thread
-      description: §10 — investor (own only), operator (all).
-      responses:
-        '200':
-          description: Engagement detail.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/EngagementDetail' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /engagements/{engagementId}/state:
-    parameters:
-      - $ref: '#/components/parameters/EngagementId'
-    post:
-      tags: [Engagements]
-      operationId: setEngagementState
-      summary: Advance or withdraw an engagement
-      description: |
-        §10 — investor, operator. **`model-only`**: §7.8 ships this as "schema and API
-        contract, **no UI**". Only `interested` is created in the MVP, via
-        `POST /projects/{projectId}/engagements`.
-
-        Who may trigger what (§6.3):
-
-        | Transition | Who |
-        |---|---|
-        | `interested → committed` | investor, confirmed by operator |
-        | `committed → underwriting` | operator |
-        | `underwriting → approved` | operator records the investor's decision |
-        | `approved → funded` | operator; updates `funding_needs.amount_committed` |
-        | any → `declined` / `withdrawn` | either party |
-
-        Two invariants this endpoint must not break:
-        - §6.3 "**Engagement state never changes project stage.**"
-        - §7.8 "Commitment is **non-binding**" — `is_binding` defaults to `false`.
-
-        `decline_reason` is required when moving to `declined`.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/EngagementStateRequest' }
-      responses:
-        '200':
-          description: State changed.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InvestorEngagement' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403':
-          description: This role may not make this particular transition.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409':
-          description: |
-            Not a legal transition from the current state, or the engagement is
-            already terminal (`declined` / `withdrawn` / `funded`).
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '422':
-          description: '`decline_reason` is required when declining.'
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ValidationError' }
-        '501':
-          description: |
-            Returned in the MVP for every transition beyond `interested`. §7.8 ships
-            these as contract-only, with no implementation.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  # ───────────────────────────── Funding needs ────────────────────────────────
-
-  /projects/{projectId}/funding-needs:
-    parameters:
-      - $ref: '#/components/parameters/ProjectId'
-    get:
-      tags: [Engagements]
-      operationId: listFundingNeeds
-      summary: Open pre-development and capital needs
-      description: |
-        §10 — investor at **tier 1 or above**, operator. §7.8: funding needs are
-        "seeded and read-only, so the philanthropy panel has real content."
-
-        Tier 0 investors get **403**: they must express interest first.
-      responses:
-        '200':
-          description: Funding needs on this project.
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/FundingNeed' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403':
-          description: Tier 0 — express interest to unlock tier 1.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    post:
-      tags: [Engagements]
-      operationId: createFundingNeed
-      summary: Publish a funding need
-      description: |
-        §10 — operator. **`model-only`** in the MVP: §7.8 seeds funding needs and
-        treats them as read-only, so this is contract-only.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/FundingNeedCreateRequest' }
-      responses:
-        '201':
-          description: Funding need published.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FundingNeed' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '501':
-          description: Not implemented in the MVP — funding needs are seeded (§7.8).
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  # ────────────────────────────── Diligence ───────────────────────────────────
-
-  /engagements/{engagementId}/diligence-requests:
-    parameters:
-      - $ref: '#/components/parameters/EngagementId'
-    post:
-      tags: [Diligence]
-      operationId: createDiligenceRequest
-      summary: Raise a diligence request
-      description: |
-        §10 — investor, operator. **`model-only`** — §7.8 lists the diligence loop
-        under "**Design only — not built**".
-
-        The full loop: investor raises → operator triages → optionally forwards to
-        the site owner → owner uploads → operator resolves.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/DiligenceRequestCreate' }
-      responses:
-        '201':
-          description: Request raised at `open`.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/DiligenceRequest' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '501':
-          description: Design-only in the MVP (§7.8).
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /diligence-requests/{requestId}/assign:
-    parameters:
-      - $ref: '#/components/parameters/DiligenceRequestId'
-    post:
-      tags: [Diligence]
-      operationId: assignDiligenceRequest
-      summary: Forward a request to the site owner
-      description: |
-        §10 — operator. **`model-only`** (§7.8 design-only).
-
-        §7.8: "Investors never contact site owners directly; requests route through
-        the operator." This endpoint *is* that routing step, which is why only the
-        operator may call it. A forwarded item surfaces in the owner's
-        `GET /me/outstanding` inbox (§7.4) without revealing the investor.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/DiligenceAssignRequest' }
-      responses:
-        '200':
-          description: Reassigned.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/DiligenceRequest' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '501':
-          description: Design-only in the MVP (§7.8).
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /diligence-requests/{requestId}/resolve:
-    parameters:
-      - $ref: '#/components/parameters/DiligenceRequestId'
-    post:
-      tags: [Diligence]
-      operationId: resolveDiligenceRequest
-      summary: Attach a document, or accept, reject or waive
-      description: |
-        §10 — operator, site owner. **`model-only`** (§7.8 design-only).
-
-        The site owner may only `submit` with an attached document; `accept`,
-        `reject` and `waive` are operator-only outcomes.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/DiligenceResolveRequest' }
-      responses:
-        '200':
-          description: Resolved.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/DiligenceRequest' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403':
-          description: This role may not apply this outcome.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '501':
-          description: Design-only in the MVP (§7.8).
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
+                $ref: "#/components/schemas/Error"
 components:
-
   securitySchemes:
     sessionCookie:
       type: apiKey
@@ -1321,46 +493,22 @@ components:
         return `403` with `code: csrf_token_invalid` when it is missing or stale.
         A bearer token would remove this requirement entirely — worth revisiting when
         WS3 settles §8.1.
-
   parameters:
-    SiteId:
-      name: siteId
-      in: path
-      required: true
-      description: |
-        Site identifier. §10 writes this as `{id}`; it is named for its entity here so
-        generated clients read clearly. The wire path is unchanged.
-      schema: { type: string, format: uuid }
     ProjectId:
       name: projectId
       in: path
       required: true
       description: Project identifier (§10 `{id}`).
-      schema: { type: string, format: uuid }
-    EngagementId:
-      name: engagementId
-      in: path
-      required: true
-      description: Engagement identifier (§10 `{id}`).
-      schema: { type: string, format: uuid }
-    DiligenceRequestId:
-      name: requestId
-      in: path
-      required: true
-      description: Diligence request identifier (§10 `{id}`).
-      schema: { type: string, format: uuid }
-
+      schema:
+        type: string
+        format: uuid
   responses:
     BadRequest:
       description: Malformed request — bad JSON, unknown enum value, or a missing required field.
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    Unauthorized:
-      description: No valid session.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+          schema:
+            $ref: "#/components/schemas/Error"
     Forbidden:
       description: |
         Authenticated but not permitted. Covers three distinct cases, distinguished by
@@ -1368,7 +516,8 @@ components:
         record, or right role but an insufficient disclosure tier (§7.7).
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+          schema:
+            $ref: "#/components/schemas/Error"
     NotFound:
       description: |
         No such record — **or** the caller is not entitled to know it exists. Hidden
@@ -1376,50 +525,417 @@ components:
         confirm that an invisible project exists.
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: No valid session.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
-
-    # ── Enumerations — §5.3, verbatim ──────────────────────────────────────────
-
-    Role:
+    Acknowledgement:
+      type: object
+      description: §5.2 `acknowledgements`.
+      required:
+        - id
+        - project_id
+        - user_id
+        - agreement_key
+        - typed_name
+        - acknowledged_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        agreement_key:
+          type: string
+          description: Identifies which agreement was acknowledged.
+        typed_name:
+          type: string
+        acknowledged_at:
+          type: string
+          format: date-time
+        ip_address:
+          type: string
+          nullable: true
+          description: Captured server-side; never accepted from the client.
+    Assessment:
+      type: object
+      description: |
+        §5.2 `assessments` — **append-only**; an operator override inserts a new row
+        rather than updating. All views read the latest row.
+      required:
+        - id
+        - site_id
+        - ruleset_version
+        - viability_status
+        - is_override
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        site_id:
+          type: string
+          format: uuid
+        ruleset_version:
+          type: string
+          description: §7.3 — displayed to the user alongside the factors used.
+        inputs_used:
+          type: object
+          additionalProperties: true
+          description: |
+            The exact site facts the ruleset consumed. **OQ-6** — shape owned by WS4;
+            not fixed by this contract.
+        estimated_system_size_kw_low:
+          type: number
+          format: double
+          nullable: true
+        estimated_system_size_kw_high:
+          type: number
+          format: double
+          nullable: true
+        estimated_annual_generation_kwh_low:
+          type: number
+          format: double
+          nullable: true
+        estimated_annual_generation_kwh_high:
+          type: number
+          format: double
+          nullable: true
+        preliminary_project_type:
+          type: string
+          nullable: true
+          description: "**OQ-6** — no enum is given anywhere in the design doc."
+        viability_status:
+          $ref: "#/components/schemas/ViabilityStatus"
+        flags:
+          type: array
+          items:
+            type: string
+          description: §7.3 missing-data and risk flags. **OQ-6** — vocabulary owned by WS4.
+        missing_information:
+          type: array
+          items:
+            type: string
+          description: "**OQ-6** — vocabulary owned by WS4."
+        is_override:
+          type: boolean
+        override_reason:
+          type: string
+          nullable: true
+        overridden_by_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    CreateProjectRequest:
+      type: object
+      required:
+        - site_id
+      description: >-
+        Accepts the submission for `site_id` and opens a project against it (section 7.5). One
+        project per site, so a repeat call returns 409.
+      properties:
+        site_id:
+          type: string
+          format: uuid
+          description: The submitted site being accepted.
+        name:
+          type: string
+          description: Project name. Defaults to the site label when omitted.
+        note:
+          type: string
+          description: Optional operator note, recorded on the activity log.
+        assigned_operator_user_id:
+          type: string
+          format: uuid
+          description: Optionally assign the new project to an internal owner (section 7.5).
+    CreateSubmissionRequest:
+      type: object
+      required:
+        - site_id
+      description: >-
+        Identifies the site being submitted. It must be owned by the caller and be in `draft`
+        (sections 6.1, 7.2).
+      properties:
+        site_id:
+          type: string
+          format: uuid
+          description: The draft site to submit.
+    DiligenceItemType:
       type: string
-      description: '§5.3 `users.role`.'
-      enum: [site_owner, operator, investor]
-
-    SiteType:
-      type: string
-      description: '§5.3 `sites.site_type`.'
-      enum: [rooftop, land]
-
-    OwnershipStatus:
-      type: string
-      description: '§5.3 `sites.ownership_status`.'
-      enum: [confirmed, pending, unverified]
-
-    SubmissionStatus:
+      description: §5.3 `diligence_requests.item_type`.
+      enum:
+        - document
+        - financial
+        - technical
+        - narrative
+        - site_access
+    Document:
+      type: object
+      description: |
+        §5.2 `documents` — metadata only; the file itself lives in Blob Storage.
+        `blob_path` is **not** serialised to clients: §7.6 requires a short-lived read
+        SAS instead, so a raw container path would be both useless and a disclosure.
+      required:
+        - id
+        - original_filename
+        - content_type
+        - size_bytes
+        - uploaded_by_user_id
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        site_id:
+          type: string
+          format: uuid
+          nullable: true
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        original_filename:
+          type: string
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        doc_type:
+          type: string
+          nullable: true
+          description: "**OQ-8** — the required-document checklist is config-driven (§7.6)."
+        uploaded_by_user_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        download_url:
+          type: string
+          format: uri
+          nullable: true
+          description: |
+            §7.6 — short-lived read SAS. Regenerated on every read; do not cache or
+            persist it. Absent when the caller's tier does not permit the file.
+        download_url_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+    EngagementState:
       type: string
       description: |
-        §5.3 `sites.submission_status`.
+        §5.3 `investor_engagements.state`. `prospect` is deliberately absent — §6.3:
+        "`Prospect` is implicit … The first persisted state is `interested`."
+      enum:
+        - interested
+        - committed
+        - underwriting
+        - approved
+        - funded
+        - declined
+        - withdrawn
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: |
+            Stable, machine-readable. Clients branch on this, never on `message`.
 
-        **OQ-1** — §5.3 spells the review state `in_review`, but §6.2's table, the
-        state diagram and every prose reference spell it `screening` (9 mentions to 1).
-        `screening` is used here.
-
-        **OQ-3** — `accepted` is retained: §7.5's accept transaction sets it, even
-        though §6.2's board table omits it.
-      enum: [draft, submitted, screening, info_requested, accepted, rejected]
-
-    ViabilityStatus:
+            Authorization codes map to the §8.2 matrix:
+            `forbidden_role` (wrong role), `forbidden_owner` (right role, not your
+            record), `forbidden_tier` (right role, insufficient disclosure tier),
+            `forbidden_visibility` (project not investor-visible).
+          example: forbidden_tier
+        message:
+          type: string
+          description: Human-readable. Not intended for client branching.
+        details:
+          type: object
+          additionalProperties: true
+          nullable: true
+    MissingField:
+      type: object
+      description: One outstanding item from the §7.2 computed "still missing" list.
+      required:
+        - field
+        - message
+      properties:
+        field:
+          type: string
+          description: Property name on `SiteUpdateRequest`, so the client can focus the right input.
+        message:
+          type: string
+    OutstandingItem:
+      type: object
+      description: |
+        §7.4 — "operator `request_info` items and, later, forwarded diligence items
+        appear in one list, **never a separate investor surface**."
+      required:
+        - id
+        - source
+        - message
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        source:
+          type: string
+          description: |
+            Where the ask came from. `diligence` items are forwarded **by the
+            operator** — the investor who raised them is never identified to the
+            owner (§7.8).
+          enum:
+            - request_info
+            - diligence
+        site_id:
+          type: string
+          format: uuid
+          nullable: true
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        message:
+          type: string
+        item_type:
+          allOf:
+            - $ref: "#/components/schemas/DiligenceItemType"
+          description: Present only when `source` is `diligence`.
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    OwnerDashboardItem:
+      type: object
+      description: |
+        §7.4 — "One composed endpoint returning: site, submission status, viability
+        result, outstanding information, documents and acknowledgements, project
+        stage, next expected action, contact."
+      required:
+        - site
+        - documents
+        - acknowledgements
+        - outstanding
+      properties:
+        site:
+          $ref: "#/components/schemas/Site"
+        assessment:
+          allOf:
+            - $ref: "#/components/schemas/Assessment"
+          description: The latest row. Absent before submission.
+        project:
+          allOf:
+            - $ref: "#/components/schemas/Project"
+          description: Absent until the submission is accepted.
+        stage:
+          allOf:
+            - $ref: "#/components/schemas/PipelineColumn"
+          description: |
+            **S7** — the single shared value all three roles read. Resolved from the
+            project stage once one exists, otherwise from the submission status.
+        next_action:
+          type: string
+          nullable: true
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Document"
+        acknowledgements:
+          type: array
+          items:
+            $ref: "#/components/schemas/Acknowledgement"
+        outstanding:
+          type: array
+          description: §7.4 — the owner's single inbox for this site.
+          items:
+            $ref: "#/components/schemas/OutstandingItem"
+        contact:
+          allOf:
+            - $ref: "#/components/schemas/User"
+          description: The assigned operator, once one is set.
+    OwnershipStatus:
       type: string
-      description: '§5.3 `assessments.viability_status` — the three §7.3 outcomes.'
-      enum: [potentially_viable, more_information_required, not_currently_eligible]
-
-    ProjectStage:
-      type: string
-      description: '§5.3 `projects.stage`. Five values. A project starts at `pre_development`.'
-      enum: [pre_development, development, construction, commissioning, operations]
-
+      description: §5.3 `sites.ownership_status`.
+      enum:
+        - confirmed
+        - pending
+        - unverified
+    PipelineBoard:
+      type: object
+      required:
+        - columns
+        - project_count
+        - total_estimated_capacity_kw
+      properties:
+        columns:
+          type: array
+          description: Seven columns, in the order of `PipelineColumn` (**OQ-2**).
+          items:
+            $ref: "#/components/schemas/PipelineColumnData"
+        project_count:
+          type: integer
+          description: §7.5 portfolio summary.
+        total_estimated_capacity_kw:
+          type: number
+          format: double
+          description: §7.5 — aggregate estimated capacity.
+    PipelineCard:
+      type: object
+      description: |
+        One card on the board. Carries `site_id` always and `project_id` only once the
+        submission has been accepted, because the first two columns are pre-project.
+      required:
+        - site_id
+        - title
+      properties:
+        site_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        title:
+          type: string
+        viability_status:
+          $ref: "#/components/schemas/ViabilityStatus"
+        site_type:
+          $ref: "#/components/schemas/SiteType"
+        estimated_capacity_kw:
+          type: number
+          format: double
+          nullable: true
+        assigned_operator_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        visible_to_investors:
+          type: boolean
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
     PipelineColumn:
       type: string
       description: |
@@ -1430,146 +946,217 @@ components:
         `draft`, `info_requested` and `rejected` are off-board states, reachable
         through `GET /submissions` filters.
       enum:
-        [submitted, screening, pre_development, development, construction, commissioning, operations]
-
-    InvestorType:
-      type: string
-      description: '§5.3 `investors.investor_type`.'
-      enum:
-        - philanthropy
-        - impact_investor
-        - nmtc
-        - cdfi_cde
-        - energy_equity_fund
-        - corporate
-        - special_community_endowment
-
-    CapitalType:
-      type: string
-      description: '§5.3 `investors.capital_type`.'
-      enum:
-        - grant
-        - recoverable_grant
-        - concessionary_debt
-        - senior_debt
-        - tax_equity
-        - sponsor_equity
-        - corporate_offtake
-
-    FundingStageFocus:
-      type: string
-      description: |
-        §5.3 `investors.funding_stage_focus`. Note this is **not** `ProjectStage`:
-        it adds `permanent` and omits `commissioning` and `operations`.
-      enum: [pre_development, development, construction, permanent]
-
-    FundingNeedType:
-      type: string
-      description: '§5.3 `funding_needs.need_type`.'
-      enum:
-        - feasibility_study
-        - engineering_assessment
-        - site_visit
-        - interconnection_study
-        - environmental_review
-        - reporting
+        - submitted
+        - screening
+        - pre_development
+        - development
         - construction
-        - permanent_financing
-
-    FundingNeedStatus:
-      type: string
-      description: '§5.3 `funding_needs.status`.'
-      enum: [open, partially_funded, funded, delivered, cancelled]
-
-    EngagementState:
-      type: string
-      description: |
-        §5.3 `investor_engagements.state`. `prospect` is deliberately absent — §6.3:
-        "`Prospect` is implicit … The first persisted state is `interested`."
-      enum: [interested, committed, underwriting, approved, funded, declined, withdrawn]
-
-    DiligenceAssignedRole:
-      type: string
-      description: '§5.3 `diligence_requests.assigned_to_role`.'
-      enum: [operator, site_owner]
-
-    DiligenceItemType:
-      type: string
-      description: '§5.3 `diligence_requests.item_type`.'
-      enum: [document, financial, technical, narrative, site_access]
-
-    DiligenceStatus:
-      type: string
-      description: '§5.3 `diligence_requests.status`.'
-      enum: [open, in_progress, submitted, accepted, rejected, waived]
-
-    DealRoomProfile:
-      type: string
-      description: |
-        §7.7 — "Two profiles ship; every other investor type gets the default."
-        Defaults from `investor_type`, overridable at onboarding.
-      enum: [philanthropy, debt_project_finance, default]
-
-    DealRoomPanelKey:
-      type: string
-      description: '§7.7 panel-order table.'
-      enum:
-        - funding_needs
-        - deliverables_milestones
-        - impact
-        - viability_and_site
-        - project_economics
-        - risk_register
-        - technical_package
-        - documents
-
-    AccessTier:
-      type: integer
-      description: |
-        §7.7 access tiers. `0` unlocked by onboarding, `1` by expressing interest,
-        `2` by commitment (post-MVP). §6.3 — access does **not** ratchet: declining
-        or withdrawing revokes tiers 1 and 2 immediately.
-      enum: [0, 1, 2]
-
-    SubmissionDecision:
-      type: string
-      description: '§10 and **S6** — the three operator outcomes.'
-      enum: [accept, reject, request_info]
-
-    # ── Entities — §5.2 field lists, verbatim ──────────────────────────────────
-
-    User:
+        - commissioning
+        - operations
+    PipelineColumnData:
       type: object
-      description: '§5.2 `users`. `password_hash` is never serialised.'
-      required: [id, name, email, role, created_at]
+      required:
+        - column
+        - items
       properties:
-        id: { type: string, format: uuid }
-        name: { type: string }
-        email: { type: string, format: email }
-        role: { $ref: '#/components/schemas/Role' }
-        created_at: { type: string, format: date-time }
+        column:
+          $ref: "#/components/schemas/PipelineColumn"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PipelineCard"
+    PortfolioItem:
+      type: object
+      description: |
+        §7.7 **tier 0**: "Neighbourhood location, capacity and production ranges,
+        project type, stage, viability. **No exact address, documents or owner
+        identity.**"
 
+        This schema deliberately has no `address_raw`, no `latitude`/`longitude`, no
+        `owner_user_id` and no documents, so tier 0 cannot leak them by accident.
+      required:
+        - project_id
+        - stage
+        - locality
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        locality:
+          type: string
+          description: Neighbourhood-level only — never the exact address.
+        stage:
+          $ref: "#/components/schemas/ProjectStage"
+        site_type:
+          $ref: "#/components/schemas/SiteType"
+        preliminary_project_type:
+          type: string
+          nullable: true
+        viability_status:
+          $ref: "#/components/schemas/ViabilityStatus"
+        estimated_system_size_kw_low:
+          type: number
+          format: double
+          nullable: true
+        estimated_system_size_kw_high:
+          type: number
+          format: double
+          nullable: true
+        estimated_annual_generation_kwh_low:
+          type: number
+          format: double
+          nullable: true
+        estimated_annual_generation_kwh_high:
+          type: number
+          format: double
+          nullable: true
+        open_funding_needs_count:
+          type: integer
+        my_engagement_state:
+          allOf:
+            - $ref: "#/components/schemas/EngagementState"
+          description: The caller's own engagement state, if any. Absent means tier 0.
+    PortfolioResponse:
+      type: object
+      required:
+        - items
+        - project_count
+        - total_estimated_capacity_kw
+        - mandate_match
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PortfolioItem"
+        project_count:
+          type: integer
+        total_estimated_capacity_kw:
+          type: number
+          format: double
+        mandate_match:
+          type: boolean
+          description: Whether the mandate filter was applied to this result.
+    Project:
+      type: object
+      description: §5.2 `projects` — created only when a submission is accepted.
+      required:
+        - id
+        - site_id
+        - name
+        - stage
+        - visible_to_investors
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        site_id:
+          type: string
+          format: uuid
+          description: Unique — one project per site (§5.2).
+        name:
+          type: string
+        assigned_operator_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        stage:
+          $ref: "#/components/schemas/ProjectStage"
+        estimated_capacity_kw:
+          type: number
+          format: double
+          nullable: true
+          description: §7.5 — set on accept from the **midpoint** of the latest assessment's size range.
+        next_action:
+          type: string
+          nullable: true
+        target_date:
+          type: string
+          format: date
+          nullable: true
+        visible_to_investors:
+          type: boolean
+          default: false
+          description: §5.2 / §7.5 — defaults off. Only the operator may change it (§8.2).
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProjectStage:
+      type: string
+      description: §5.3 `projects.stage`. Five values. A project starts at `pre_development`.
+      enum:
+        - pre_development
+        - development
+        - construction
+        - commissioning
+        - operations
+    ProjectUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        assigned_operator_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        next_action:
+          type: string
+          nullable: true
+        target_date:
+          type: string
+          format: date
+          nullable: true
+    Role:
+      type: string
+      description: §5.3 `users.role`.
+      enum:
+        - site_owner
+        - operator
+        - investor
     Site:
       type: object
-      description: '§5.2 `sites`.'
-      required: [id, owner_user_id, site_type, submission_status, created_at, updated_at]
+      description: §5.2 `sites`.
+      required:
+        - id
+        - owner_user_id
+        - site_type
+        - submission_status
+        - created_at
+        - updated_at
       properties:
-        id: { type: string, format: uuid }
-        owner_user_id: { type: string, format: uuid }
+        id:
+          type: string
+          format: uuid
+        owner_user_id:
+          type: string
+          format: uuid
         address_raw:
           type: string
           nullable: true
           description: As typed by the owner, before geocoding.
-        latitude: { type: number, format: double, nullable: true }
-        longitude: { type: number, format: double, nullable: true }
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
         geocode_confidence:
           type: number
           format: double
           nullable: true
           description: Confidence returned by the geocoding provider inside S-VIA (§9.2).
-        site_type: { $ref: '#/components/schemas/SiteType' }
+        site_type:
+          $ref: "#/components/schemas/SiteType"
         ownership_status:
-          $ref: '#/components/schemas/OwnershipStatus'
+          $ref: "#/components/schemas/OwnershipStatus"
         approximate_area_sqm:
           type: number
           format: double
@@ -1590,301 +1177,48 @@ components:
           format: uuid
           nullable: true
           description: References an uploaded `documents.id` (§7.2 "electricity usage or bill upload").
-        has_existing_solar: { type: boolean, nullable: true }
+        has_existing_solar:
+          type: boolean
+          nullable: true
         consent_given_at:
           type: string
           format: date-time
           nullable: true
           description: §7.2 — "Consent is required to submit and stamps `consent_given_at`."
-        submission_status: { $ref: '#/components/schemas/SubmissionStatus' }
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
-
-    Assessment:
-      type: object
-      description: |
-        §5.2 `assessments` — **append-only**; an operator override inserts a new row
-        rather than updating. All views read the latest row.
-      required: [id, site_id, ruleset_version, viability_status, is_override, created_at]
-      properties:
-        id: { type: string, format: uuid }
-        site_id: { type: string, format: uuid }
-        ruleset_version:
-          type: string
-          description: §7.3 — displayed to the user alongside the factors used.
-        inputs_used:
-          type: object
-          additionalProperties: true
-          description: |
-            The exact site facts the ruleset consumed. **OQ-6** — shape owned by WS4;
-            not fixed by this contract.
-        estimated_system_size_kw_low: { type: number, format: double, nullable: true }
-        estimated_system_size_kw_high: { type: number, format: double, nullable: true }
-        estimated_annual_generation_kwh_low: { type: number, format: double, nullable: true }
-        estimated_annual_generation_kwh_high: { type: number, format: double, nullable: true }
-        preliminary_project_type:
-          type: string
-          nullable: true
-          description: '**OQ-6** — no enum is given anywhere in the design doc.'
-        viability_status: { $ref: '#/components/schemas/ViabilityStatus' }
-        flags:
-          type: array
-          items: { type: string }
-          description: '§7.3 missing-data and risk flags. **OQ-6** — vocabulary owned by WS4.'
-        missing_information:
-          type: array
-          items: { type: string }
-          description: '**OQ-6** — vocabulary owned by WS4.'
-        is_override: { type: boolean }
-        override_reason: { type: string, nullable: true }
-        overridden_by_user_id: { type: string, format: uuid, nullable: true }
-        created_at: { type: string, format: date-time }
-
-    Project:
-      type: object
-      description: '§5.2 `projects` — created only when a submission is accepted.'
-      required: [id, site_id, name, stage, visible_to_investors, created_at, updated_at]
-      properties:
-        id: { type: string, format: uuid }
-        site_id:
-          type: string
-          format: uuid
-          description: Unique — one project per site (§5.2).
-        name: { type: string }
-        assigned_operator_user_id: { type: string, format: uuid, nullable: true }
-        stage: { $ref: '#/components/schemas/ProjectStage' }
-        estimated_capacity_kw:
-          type: number
-          format: double
-          nullable: true
-          description: §7.5 — set on accept from the **midpoint** of the latest assessment's size range.
-        next_action: { type: string, nullable: true }
-        target_date: { type: string, format: date, nullable: true }
-        visible_to_investors:
-          type: boolean
-          default: false
-          description: §5.2 / §7.5 — defaults off. Only the operator may change it (§8.2).
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
-
-    Activity:
-      type: object
-      description: '§5.2 `activity` — append-only; the shared project timeline (S7).'
-      required: [id, actor_user_id, action, created_at]
-      properties:
-        id: { type: string, format: uuid }
-        site_id: { type: string, format: uuid, nullable: true }
-        project_id: { type: string, format: uuid, nullable: true }
-        actor_user_id: { type: string, format: uuid }
-        action:
-          type: string
-          description: '**OQ-8** — open string; no vocabulary is given in the design doc.'
-        note: { type: string, nullable: true }
-        from_value: { type: string, nullable: true }
-        to_value: { type: string, nullable: true }
-        created_at: { type: string, format: date-time }
-
-    Document:
-      type: object
-      description: |
-        §5.2 `documents` — metadata only; the file itself lives in Blob Storage.
-        `blob_path` is **not** serialised to clients: §7.6 requires a short-lived read
-        SAS instead, so a raw container path would be both useless and a disclosure.
-      required: [id, original_filename, content_type, size_bytes, uploaded_by_user_id, created_at]
-      properties:
-        id: { type: string, format: uuid }
-        site_id: { type: string, format: uuid, nullable: true }
-        project_id: { type: string, format: uuid, nullable: true }
-        original_filename: { type: string }
-        content_type: { type: string }
-        size_bytes: { type: integer, format: int64 }
-        doc_type:
-          type: string
-          nullable: true
-          description: '**OQ-8** — the required-document checklist is config-driven (§7.6).'
-        uploaded_by_user_id: { type: string, format: uuid }
-        created_at: { type: string, format: date-time }
-        download_url:
-          type: string
-          format: uri
-          nullable: true
-          description: |
-            §7.6 — short-lived read SAS. Regenerated on every read; do not cache or
-            persist it. Absent when the caller's tier does not permit the file.
-        download_url_expires_at: { type: string, format: date-time, nullable: true }
-
-    Acknowledgement:
-      type: object
-      description: '§5.2 `acknowledgements`.'
-      required: [id, project_id, user_id, agreement_key, typed_name, acknowledged_at]
-      properties:
-        id: { type: string, format: uuid }
-        project_id: { type: string, format: uuid }
-        user_id: { type: string, format: uuid }
-        agreement_key:
-          type: string
-          description: Identifies which agreement was acknowledged.
-        typed_name: { type: string }
-        acknowledged_at: { type: string, format: date-time }
-        ip_address:
-          type: string
-          nullable: true
-          description: Captured server-side; never accepted from the client.
-
-    Investor:
-      type: object
-      description: '§5.2 `investors` — self-declared, not verified (§7.7).'
-      required: [id, user_id, investor_type, created_at]
-      properties:
-        id: { type: string, format: uuid }
-        user_id: { type: string, format: uuid }
-        organization_name: { type: string, nullable: true }
-        investor_type: { $ref: '#/components/schemas/InvestorType' }
-        capital_type:
-          $ref: '#/components/schemas/CapitalType'
-        funding_stage_focus:
-          type: array
-          items: { $ref: '#/components/schemas/FundingStageFocus' }
-        ticket_size_min: { type: number, format: double, nullable: true, minimum: 0 }
-        ticket_size_max: { type: number, format: double, nullable: true, minimum: 0 }
-        geographies:
-          type: array
-          items: { type: string }
-          description: '**OQ-7** — §7.7 requires a picklist but never lists the values.'
-        investment_objectives:
-          type: array
-          items: { type: string }
-          description: '**OQ-7**.'
-        impact_priorities:
-          type: array
-          items: { type: string }
-          description: '**OQ-7**.'
-        decision_criteria:
-          type: array
-          items: { type: string }
-          description: '**OQ-7**.'
-        deal_room_profile: { $ref: '#/components/schemas/DealRoomProfile' }
-        visible_portfolio_scope:
-          type: object
-          additionalProperties: true
-          nullable: true
-          description: §5.2 — the persisted shape of the investor's widened or narrowed portfolio filter.
-        onboarding_completed_at:
+        submission_status:
+          $ref: "#/components/schemas/SubmissionStatus"
+        created_at:
           type: string
           format: date-time
-          nullable: true
-          description: Null until onboarding completes. Tier 0 is gated on this being set (§7.7).
-        created_at: { type: string, format: date-time }
-
-    FundingNeed:
-      type: object
-      description: '§5.2 `funding_needs` — a need that can be funded on its own.'
-      required: [id, project_id, need_type, status, created_at]
-      properties:
-        id: { type: string, format: uuid }
-        project_id: { type: string, format: uuid }
-        need_type: { $ref: '#/components/schemas/FundingNeedType' }
-        stage:
-          $ref: '#/components/schemas/FundingStageFocus'
-        description: { type: string, nullable: true }
-        amount_requested: { type: number, format: double, nullable: true, minimum: 0 }
-        amount_committed:
-          type: number
-          format: double
-          nullable: true
-          minimum: 0
-          description: §6.3 — updated when an engagement reaches `funded`.
-        status: { $ref: '#/components/schemas/FundingNeedStatus' }
-        deliverable_doc_id: { type: string, format: uuid, nullable: true }
-        completed_at: { type: string, format: date-time, nullable: true }
-        created_at: { type: string, format: date-time }
-
-    InvestorEngagement:
-      type: object
-      description: |
-        §5.2 `investor_engagements` — one live engagement per investor per opportunity,
-        unique on (`investor_id`, `project_id`, `funding_need_id`).
-      required: [id, investor_id, project_id, state, state_changed_at, is_binding, created_at]
-      properties:
-        id: { type: string, format: uuid }
-        investor_id: { type: string, format: uuid }
-        project_id: { type: string, format: uuid }
-        funding_need_id:
+        updated_at:
           type: string
-          format: uuid
-          nullable: true
-          description: Null when evaluating the whole project (§5.2).
-        state: { $ref: '#/components/schemas/EngagementState' }
-        state_changed_at: { type: string, format: date-time }
-        committed_amount: { type: number, format: double, nullable: true, minimum: 0 }
-        commitment_instrument: { type: string, nullable: true }
-        is_binding:
-          type: boolean
-          default: false
-          description: §7.8 — "Commitment is non-binding; no capital moves."
-        commitment_terms:
-          type: object
-          additionalProperties: true
-          nullable: true
-        decline_reason: { type: string, nullable: true }
-        created_at: { type: string, format: date-time }
-
-    DiligenceRequest:
-      type: object
-      description: '§5.2 `diligence_requests` — design-only in the MVP (§7.8).'
-      required: [id, engagement_id, project_id, raised_by_user_id, assigned_to_role, item_type, title, status, created_at]
-      properties:
-        id: { type: string, format: uuid }
-        engagement_id: { type: string, format: uuid }
-        project_id: { type: string, format: uuid }
-        raised_by_user_id: { type: string, format: uuid }
-        assigned_to_role: { $ref: '#/components/schemas/DiligenceAssignedRole' }
-        item_type: { $ref: '#/components/schemas/DiligenceItemType' }
-        title: { type: string }
-        description: { type: string, nullable: true }
-        status: { $ref: '#/components/schemas/DiligenceStatus' }
-        due_date: { type: string, format: date, nullable: true }
-        resolved_document_id: { type: string, format: uuid, nullable: true }
-        resolved_at: { type: string, format: date-time, nullable: true }
-        created_at: { type: string, format: date-time }
-
-    # ── Requests ───────────────────────────────────────────────────────────────
-
-    LoginRequest:
-      type: object
-      required: [email, password]
-      properties:
-        email: { type: string, format: email }
-        password: { type: string, format: password }
-
-    DemoSwitchRequest:
-      type: object
-      required: [role]
-      properties:
-        role: { $ref: '#/components/schemas/Role' }
-        user_id:
-          type: string
-          format: uuid
-          nullable: true
-          description: Optional specific seeded demo user. Defaults to the canonical one for the role.
-
+          format: date-time
     SiteCreateRequest:
       type: object
       description: |
         Every field is optional so a partial draft can be saved (§7.2). Requirements
         are enforced at submit time, not at create time — unless `submit: true`.
       properties:
-        address_raw: { type: string }
-        site_type: { $ref: '#/components/schemas/SiteType' }
-        ownership_status: { $ref: '#/components/schemas/OwnershipStatus' }
+        address_raw:
+          type: string
+        site_type:
+          $ref: "#/components/schemas/SiteType"
+        ownership_status:
+          $ref: "#/components/schemas/OwnershipStatus"
         approximate_area_sqm:
           type: number
           format: double
           minimum: 0
-          description: '**Square metres** — see `Site.approximate_area_sqm`.'
-        electricity_usage_kwh_annual: { type: number, format: double, minimum: 0 }
-        electricity_bill_doc_id: { type: string, format: uuid }
-        has_existing_solar: { type: boolean }
+          description: "**Square metres** — see `Site.approximate_area_sqm`."
+        electricity_usage_kwh_annual:
+          type: number
+          format: double
+          minimum: 0
+        electricity_bill_doc_id:
+          type: string
+          format: uuid
+        has_existing_solar:
+          type: boolean
         consent_given:
           type: boolean
           description: Must be `true` to submit. Stamps `consent_given_at` server-side (§7.2).
@@ -1894,499 +1228,103 @@ components:
           description: |
             When `true`, validate and submit immediately rather than saving a draft —
             equivalent to `POST /sites` followed by `POST /sites/{siteId}/submit`.
-
-    SiteUpdateRequest:
-      type: object
-      description: Partial update of a draft. Omitted fields are left unchanged.
-      properties:
-        address_raw: { type: string, nullable: true }
-        site_type: { $ref: '#/components/schemas/SiteType' }
-        ownership_status: { $ref: '#/components/schemas/OwnershipStatus' }
-        approximate_area_sqm: { type: number, format: double, minimum: 0, nullable: true }
-        electricity_usage_kwh_annual: { type: number, format: double, minimum: 0, nullable: true }
-        electricity_bill_doc_id: { type: string, format: uuid, nullable: true }
-        has_existing_solar: { type: boolean, nullable: true }
-        consent_given: { type: boolean }
-
-    DocumentUpload:
-      type: object
-      required: [file]
-      properties:
-        file:
-          type: string
-          format: binary
-          description: The file. Type and size are validated server-side (§7.2, §8.3).
-        doc_type:
-          type: string
-          description: Which checklist slot this fills. **OQ-8**.
-
-    AcknowledgementRequest:
-      type: object
-      required: [agreement_key, typed_name]
-      properties:
-        agreement_key: { type: string }
-        typed_name:
-          type: string
-          minLength: 1
-          description: §7.6 — the typed-name signature. No e-signature dependency.
-
-    SubmissionDecisionRequest:
-      type: object
-      required: [decision]
-      properties:
-        decision: { $ref: '#/components/schemas/SubmissionDecision' }
-        note:
-          type: string
-          description: |
-            **Required** for `reject` and `request_info` — the owner must always get a
-            reason, and for `request_info` this text becomes their outstanding item
-            (§7.4). Optional for `accept`.
-        assigned_operator_user_id:
-          type: string
-          format: uuid
-          description: On `accept`, optionally assign the new project to an internal owner (§7.5).
-
-    AssessmentOverrideRequest:
-      type: object
-      description: |
-        Inserts a **new** assessment row (§7.3). Any field left absent is carried
-        forward from the current latest assessment, so an operator can correct one
-        number without restating the rest.
-      required: [override_reason]
-      properties:
-        override_reason:
-          type: string
-          minLength: 1
-          description: Mandatory. §7.3 — "with a recorded reason".
-        viability_status: { $ref: '#/components/schemas/ViabilityStatus' }
-        estimated_system_size_kw_low: { type: number, format: double }
-        estimated_system_size_kw_high: { type: number, format: double }
-        estimated_annual_generation_kwh_low: { type: number, format: double }
-        estimated_annual_generation_kwh_high: { type: number, format: double }
-        preliminary_project_type: { type: string }
-        flags:
-          type: array
-          items: { type: string }
-        missing_information:
-          type: array
-          items: { type: string }
-
-    StageChangeRequest:
-      type: object
-      required: [stage]
-      properties:
-        stage: { $ref: '#/components/schemas/ProjectStage' }
-        note: { type: string, description: Recorded on the activity row. }
-
-    ProjectUpdateRequest:
-      type: object
-      properties:
-        name: { type: string }
-        assigned_operator_user_id: { type: string, format: uuid, nullable: true }
-        next_action: { type: string, nullable: true }
-        target_date: { type: string, format: date, nullable: true }
-
-    VisibilityUpdateRequest:
-      type: object
-      required: [visible_to_investors]
-      properties:
-        visible_to_investors: { type: boolean }
-        note: { type: string, description: Recorded on the activity row. }
-
-    InvestorProfileRequest:
-      type: object
-      description: §7.7 onboarding. Replaces the profile wholesale.
-      required: [investor_type]
-      properties:
-        organization_name: { type: string }
-        investor_type: { $ref: '#/components/schemas/InvestorType' }
-        capital_type: { $ref: '#/components/schemas/CapitalType' }
-        funding_stage_focus:
-          type: array
-          items: { $ref: '#/components/schemas/FundingStageFocus' }
-        ticket_size_min: { type: number, format: double, minimum: 0 }
-        ticket_size_max: { type: number, format: double, minimum: 0 }
-        geographies:
-          type: array
-          items: { type: string }
-        investment_objectives:
-          type: array
-          items: { type: string }
-        impact_priorities:
-          type: array
-          items: { type: string }
-        decision_criteria:
-          type: array
-          items: { type: string }
-        deal_room_profile:
-          allOf: [{ $ref: '#/components/schemas/DealRoomProfile' }]
-          description: Optional override. Defaults from `investor_type` (§5.2).
-
-    EngagementCreateRequest:
-      type: object
-      description: Body is optional; omit it entirely to express interest in the whole project.
-      properties:
-        funding_need_id:
-          type: string
-          format: uuid
-          nullable: true
-          description: Target a specific funding need. Null or absent means the whole project.
-        note: { type: string }
-
-    EngagementStateRequest:
-      type: object
-      required: [state]
-      properties:
-        state: { $ref: '#/components/schemas/EngagementState' }
-        committed_amount: { type: number, format: double, minimum: 0 }
-        commitment_instrument: { type: string }
-        commitment_terms:
-          type: object
-          additionalProperties: true
-        decline_reason:
-          type: string
-          description: Required when `state` is `declined`.
-        note: { type: string }
-
-    FundingNeedCreateRequest:
-      type: object
-      required: [need_type]
-      properties:
-        need_type: { $ref: '#/components/schemas/FundingNeedType' }
-        stage: { $ref: '#/components/schemas/FundingStageFocus' }
-        description: { type: string }
-        amount_requested: { type: number, format: double, minimum: 0 }
-
-    DiligenceRequestCreate:
-      type: object
-      required: [item_type, title]
-      properties:
-        item_type: { $ref: '#/components/schemas/DiligenceItemType' }
-        title: { type: string }
-        description: { type: string }
-        due_date: { type: string, format: date }
-
-    DiligenceAssignRequest:
-      type: object
-      required: [assigned_to_role]
-      properties:
-        assigned_to_role: { $ref: '#/components/schemas/DiligenceAssignedRole' }
-        note: { type: string }
-
-    DiligenceResolveRequest:
-      type: object
-      required: [outcome]
-      properties:
-        outcome:
-          type: string
-          description: |
-            `submit` is the site owner's action and requires `document_id`.
-            `accept`, `reject` and `waive` are operator-only.
-          enum: [submit, accept, reject, waive]
-        document_id:
-          type: string
-          format: uuid
-          description: Required when `outcome` is `submit`.
-        note: { type: string }
-
-    # ── Composed responses ─────────────────────────────────────────────────────
-
-    MeResponse:
-      type: object
-      description: '§10 — "Identity + role + investor profile".'
-      required: [user]
-      properties:
-        user: { $ref: '#/components/schemas/User' }
-        investor:
-          allOf: [{ $ref: '#/components/schemas/Investor' }]
-          description: Present only when `user.role` is `investor` and onboarding has completed.
-
-    MissingField:
-      type: object
-      description: One outstanding item from the §7.2 computed "still missing" list.
-      required: [field, message]
-      properties:
-        field:
-          type: string
-          description: Property name on `SiteUpdateRequest`, so the client can focus the right input.
-        message: { type: string }
-
+    SiteType:
+      type: string
+      description: §5.3 `sites.site_type`.
+      enum:
+        - rooftop
+        - land
     SiteWithMissing:
       type: object
-      required: [site, missing_fields]
+      required:
+        - site
+        - missing_fields
       properties:
-        site: { $ref: '#/components/schemas/Site' }
+        site:
+          $ref: "#/components/schemas/Site"
         missing_fields:
           type: array
           description: §7.2 — the computed "still missing" list. Empty means the draft can be submitted.
-          items: { $ref: '#/components/schemas/MissingField' }
-
-    SubmitResult:
-      type: object
-      required: [site, assessment]
-      properties:
-        site: { $ref: '#/components/schemas/Site' }
-        assessment:
-          allOf: [{ $ref: '#/components/schemas/Assessment' }]
-          description: The row just inserted by the S-VIA call.
-
-    OwnerDashboardItem:
-      type: object
+          items:
+            $ref: "#/components/schemas/MissingField"
+    SubmissionStatus:
+      type: string
       description: |
-        §7.4 — "One composed endpoint returning: site, submission status, viability
-        result, outstanding information, documents and acknowledgements, project
-        stage, next expected action, contact."
-      required: [site, documents, acknowledgements, outstanding]
-      properties:
-        site: { $ref: '#/components/schemas/Site' }
-        assessment:
-          allOf: [{ $ref: '#/components/schemas/Assessment' }]
-          description: The latest row. Absent before submission.
-        project:
-          allOf: [{ $ref: '#/components/schemas/Project' }]
-          description: Absent until the submission is accepted.
-        stage:
-          allOf: [{ $ref: '#/components/schemas/PipelineColumn' }]
-          description: |
-            **S7** — the single shared value all three roles read. Resolved from the
-            project stage once one exists, otherwise from the submission status.
-        next_action: { type: string, nullable: true }
-        documents:
-          type: array
-          items: { $ref: '#/components/schemas/Document' }
-        acknowledgements:
-          type: array
-          items: { $ref: '#/components/schemas/Acknowledgement' }
-        outstanding:
-          type: array
-          description: §7.4 — the owner's single inbox for this site.
-          items: { $ref: '#/components/schemas/OutstandingItem' }
-        contact:
-          allOf: [{ $ref: '#/components/schemas/User' }]
-          description: The assigned operator, once one is set.
+        §5.3 `sites.submission_status`.
 
-    OutstandingItem:
-      type: object
-      description: |
-        §7.4 — "operator `request_info` items and, later, forwarded diligence items
-        appear in one list, **never a separate investor surface**."
-      required: [id, source, message, created_at]
-      properties:
-        id: { type: string, format: uuid }
-        source:
-          type: string
-          description: |
-            Where the ask came from. `diligence` items are forwarded **by the
-            operator** — the investor who raised them is never identified to the
-            owner (§7.8).
-          enum: [request_info, diligence]
-        site_id: { type: string, format: uuid, nullable: true }
-        project_id: { type: string, format: uuid, nullable: true }
-        message: { type: string }
-        item_type:
-          allOf: [{ $ref: '#/components/schemas/DiligenceItemType' }]
-          description: Present only when `source` is `diligence`.
-        due_date: { type: string, format: date, nullable: true }
-        created_at: { type: string, format: date-time }
+        **OQ-1** — §5.3 spells the review state `in_review`, but §6.2's table, the
+        state diagram and every prose reference spell it `screening` (9 mentions to 1).
+        `screening` is used here.
 
+        **OQ-3** — `accepted` is retained: §7.5's accept transaction sets it, even
+        though §6.2's board table omits it.
+      enum:
+        - draft
+        - submitted
+        - screening
+        - info_requested
+        - accepted
+        - rejected
     SubmissionSummary:
       type: object
       description: §7.5 — "Unconverted sites appear with their assessment attached."
-      required: [site]
+      required:
+        - site
       properties:
-        site: { $ref: '#/components/schemas/Site' }
+        site:
+          $ref: "#/components/schemas/Site"
         assessment:
-          $ref: '#/components/schemas/Assessment'
-        owner: { $ref: '#/components/schemas/User' }
-
-    SubmissionDetail:
-      allOf:
-        - $ref: '#/components/schemas/SubmissionSummary'
-        - type: object
-          description: §10 — "Detail + documents + activity".
-          required: [documents, activity]
-          properties:
-            assessment_history:
-              type: array
-              description: §7.3 — every assessment row, newest first. Operators keep the history.
-              items: { $ref: '#/components/schemas/Assessment' }
-            documents:
-              type: array
-              items: { $ref: '#/components/schemas/Document' }
-            activity:
-              type: array
-              items: { $ref: '#/components/schemas/Activity' }
-
-    SubmissionDecisionResult:
+          $ref: "#/components/schemas/Assessment"
+        owner:
+          $ref: "#/components/schemas/User"
+    SubmitResult:
       type: object
-      required: [site, activity]
+      required:
+        - site
+        - assessment
       properties:
-        site: { $ref: '#/components/schemas/Site' }
-        project:
-          allOf: [{ $ref: '#/components/schemas/Project' }]
-          description: Present only for `accept` — the project created by the §7.5 transaction.
-        activity:
-          allOf: [{ $ref: '#/components/schemas/Activity' }]
-          description: The single row written by this decision (**S6**).
-
-    PipelineBoard:
+        site:
+          $ref: "#/components/schemas/Site"
+        assessment:
+          allOf:
+            - $ref: "#/components/schemas/Assessment"
+          description: The row just inserted by the S-VIA call.
+    User:
       type: object
-      required: [columns, project_count, total_estimated_capacity_kw]
+      description: §5.2 `users`. `password_hash` is never serialised.
+      required:
+        - id
+        - name
+        - email
+        - role
+        - created_at
       properties:
-        columns:
-          type: array
-          description: Seven columns, in the order of `PipelineColumn` (**OQ-2**).
-          items: { $ref: '#/components/schemas/PipelineColumnData' }
-        project_count:
-          type: integer
-          description: §7.5 portfolio summary.
-        total_estimated_capacity_kw:
-          type: number
-          format: double
-          description: §7.5 — aggregate estimated capacity.
-
-    PipelineColumnData:
-      type: object
-      required: [column, items]
-      properties:
-        column: { $ref: '#/components/schemas/PipelineColumn' }
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/PipelineCard' }
-
-    PipelineCard:
-      type: object
-      description: |
-        One card on the board. Carries `site_id` always and `project_id` only once the
-        submission has been accepted, because the first two columns are pre-project.
-      required: [site_id, title]
-      properties:
-        site_id: { type: string, format: uuid }
-        project_id: { type: string, format: uuid, nullable: true }
-        title: { type: string }
-        viability_status:
-          $ref: '#/components/schemas/ViabilityStatus'
-        site_type: { $ref: '#/components/schemas/SiteType' }
-        estimated_capacity_kw: { type: number, format: double, nullable: true }
-        assigned_operator_user_id: { type: string, format: uuid, nullable: true }
-        visible_to_investors: { type: boolean, nullable: true }
-        updated_at: { type: string, format: date-time }
-
-    PortfolioResponse:
-      type: object
-      required: [items, project_count, total_estimated_capacity_kw, mandate_match]
-      properties:
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/PortfolioItem' }
-        project_count: { type: integer }
-        total_estimated_capacity_kw: { type: number, format: double }
-        mandate_match:
-          type: boolean
-          description: Whether the mandate filter was applied to this result.
-
-    PortfolioItem:
-      type: object
-      description: |
-        §7.7 **tier 0**: "Neighbourhood location, capacity and production ranges,
-        project type, stage, viability. **No exact address, documents or owner
-        identity.**"
-
-        This schema deliberately has no `address_raw`, no `latitude`/`longitude`, no
-        `owner_user_id` and no documents, so tier 0 cannot leak them by accident.
-      required: [project_id, stage, locality]
-      properties:
-        project_id: { type: string, format: uuid }
-        name: { type: string }
-        locality:
+        id:
           type: string
-          description: Neighbourhood-level only — never the exact address.
-        stage: { $ref: '#/components/schemas/ProjectStage' }
-        site_type: { $ref: '#/components/schemas/SiteType' }
-        preliminary_project_type: { type: string, nullable: true }
-        viability_status:
-          $ref: '#/components/schemas/ViabilityStatus'
-        estimated_system_size_kw_low: { type: number, format: double, nullable: true }
-        estimated_system_size_kw_high: { type: number, format: double, nullable: true }
-        estimated_annual_generation_kwh_low: { type: number, format: double, nullable: true }
-        estimated_annual_generation_kwh_high: { type: number, format: double, nullable: true }
-        open_funding_needs_count: { type: integer }
-        my_engagement_state:
-          allOf: [{ $ref: '#/components/schemas/EngagementState' }]
-          description: The caller's own engagement state, if any. Absent means tier 0.
-
-    DealRoom:
-      type: object
-      description: §7.7 / §7.8 — tier-composed, profile-ordered.
-      required: [project_id, tier, profile, panels]
-      properties:
-        project_id: { type: string, format: uuid }
-        tier: { $ref: '#/components/schemas/AccessTier' }
-        profile: { $ref: '#/components/schemas/DealRoomProfile' }
-        engagement_state:
-          $ref: '#/components/schemas/EngagementState'
-        panels:
-          type: array
-          description: |
-            Ordered by `profile`, filtered by `tier`. §7.7 — "A panel listed in a
-            profile stays hidden until the tier unlocks it", so a panel the caller may
-            not see is **absent**, not present-and-empty.
-          items: { $ref: '#/components/schemas/DealRoomPanel' }
-
-    DealRoomPanel:
-      type: object
-      required: [key, title, content]
-      properties:
-        key: { $ref: '#/components/schemas/DealRoomPanelKey' }
-        title: { type: string }
-        content:
-          type: object
-          additionalProperties: true
-          description: |
-            Panel payload. Shape varies by `key` and is a WS1/WS5 presentation concern;
-            deliberately not frozen here.
-
-    EngagementDetail:
-      allOf:
-        - $ref: '#/components/schemas/InvestorEngagement'
-        - type: object
-          description: §10 — "Engagement detail + diligence thread".
-          properties:
-            diligence_requests:
-              type: array
-              items: { $ref: '#/components/schemas/DiligenceRequest' }
-            funding_need:
-              $ref: '#/components/schemas/FundingNeed'
-
-    # ── Errors ─────────────────────────────────────────────────────────────────
-
-    Error:
-      type: object
-      required: [code, message]
-      properties:
-        code:
+          format: uuid
+        name:
           type: string
-          description: |
-            Stable, machine-readable. Clients branch on this, never on `message`.
-
-            Authorization codes map to the §8.2 matrix:
-            `forbidden_role` (wrong role), `forbidden_owner` (right role, not your
-            record), `forbidden_tier` (right role, insufficient disclosure tier),
-            `forbidden_visibility` (project not investor-visible).
-          example: forbidden_tier
-        message:
+        email:
           type: string
-          description: Human-readable. Not intended for client branching.
-        details:
-          type: object
-          additionalProperties: true
-          nullable: true
-
+          format: email
+        role:
+          $ref: "#/components/schemas/Role"
+        created_at:
+          type: string
+          format: date-time
     ValidationError:
       allOf:
-        - $ref: '#/components/schemas/Error'
+        - $ref: "#/components/schemas/Error"
         - type: object
           properties:
             missing_fields:
               type: array
-              items: { $ref: '#/components/schemas/MissingField' }
+              items:
+                $ref: "#/components/schemas/MissingField"
+    ViabilityStatus:
+      type: string
+      description: §5.3 `assessments.viability_status` — the three §7.3 outcomes.
+      enum:
+        - potentially_viable
+        - more_information_required
+        - not_currently_eligible

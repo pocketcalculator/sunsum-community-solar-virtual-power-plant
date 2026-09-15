@@ -99,7 +99,6 @@ tags:
     description: Liveness for a separately deployed service
 
 paths:
-
   /assess:
     post:
       tags: [Assessment]
@@ -123,35 +122,35 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/AssessRequest' }
+            schema: { $ref: "#/components/schemas/AssessRequest" }
       responses:
-        '200':
+        "200":
           description: |
             An assessment. **Any of the three verdicts, including the two negative
             ones** — missing area, pending ownership, absent consent and an
             ungeocodable address all resolve here, not to a 4xx.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AssessmentResult' }
-        '400':
+              schema: { $ref: "#/components/schemas/AssessmentResult" }
+        "400":
           description: |
             The body is malformed — bad JSON, wrong type, or an unknown enum value.
             Reserved for requests that cannot be evaluated at all. Absent *values*
             are the caller's normal case and must produce a `200`.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '401':
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
           description: Missing or invalid service credential.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '500':
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
           description: The ruleset failed to evaluate.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '503':
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
           description: |
             The geocoding provider is unreachable and no cached or caller-supplied
             coordinates were available. Distinct from `500` because it is transient
@@ -159,7 +158,7 @@ paths:
             addresses as the demo-day mitigation for exactly this.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+              schema: { $ref: "#/components/schemas/Error" }
 
   /health:
     get:
@@ -176,14 +175,13 @@ paths:
         a version string and no site data.
       security: []
       responses:
-        '200':
+        "200":
           description: Serving.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Health' }
+              schema: { $ref: "#/components/schemas/Health" }
 
 components:
-
   securitySchemes:
     serviceToken:
       type: http
@@ -211,18 +209,18 @@ components:
         a token, at the cost of a shared secret to store and rotate.
 
   schemas:
-
     ViabilityStatus:
       type: string
       description: |
         §5.3 `assessments.viability_status`, verbatim. Identical to the enum of the
         same name in `openapi.yaml` — the API passes it straight through to the
         `assessments` row, so the two must not drift.
-      enum: [potentially_viable, more_information_required, not_currently_eligible]
+      enum:
+        [potentially_viable, more_information_required, not_currently_eligible]
 
     SiteType:
       type: string
-      description: '§5.3 `sites.site_type`, verbatim.'
+      description: "§5.3 `sites.site_type`, verbatim."
       enum: [rooftop, land]
 
     OwnershipStatus:
@@ -250,8 +248,8 @@ components:
           type: string
           minLength: 1
           description: As typed by the owner. S-VIA geocodes it (§9.2).
-        site_type: { $ref: '#/components/schemas/SiteType' }
-        ownership_status: { $ref: '#/components/schemas/OwnershipStatus' }
+        site_type: { $ref: "#/components/schemas/SiteType" }
+        ownership_status: { $ref: "#/components/schemas/OwnershipStatus" }
         approximate_area_sqm:
           type: number
           format: double
@@ -342,14 +340,21 @@ components:
         `created_at`, `is_override`, `override_reason`, `overridden_by_user_id`.
         S-VIA never produces an override — §7.3 makes that an operator action that
         inserts its own row.
-      required: [ruleset_version, viability_status, flags, missing_information, inputs_used]
+      required:
+        [
+          ruleset_version,
+          viability_status,
+          flags,
+          missing_information,
+          inputs_used,
+        ]
       properties:
         ruleset_version:
           type: string
           description: |
             **Always present.** §7.3 requires it to be displayed, and it is what
             makes an assessment reproducible once thresholds are retuned.
-        viability_status: { $ref: '#/components/schemas/ViabilityStatus' }
+        viability_status: { $ref: "#/components/schemas/ViabilityStatus" }
         estimated_system_size_kw_low:
           type: number
           format: double
@@ -380,7 +385,7 @@ components:
         preliminary_project_type:
           type: string
           nullable: true
-          description: '**OQ-6** — WS4 owns the vocabulary; the design doc gives none.'
+          description: "**OQ-6** — WS4 owns the vocabulary; the design doc gives none."
         flags:
           type: array
           items: { type: string }
@@ -402,7 +407,7 @@ components:
             Free-form: the shape follows the ruleset, so freezing it here would
             constrain WS4 for no benefit.
         geocode:
-          allOf: [{ $ref: '#/components/schemas/Geocode' }]
+          allOf: [{ $ref: "#/components/schemas/Geocode" }]
           description: Absent when the address could not be geocoded.
 
     Health:
