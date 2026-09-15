@@ -1,5 +1,8 @@
 .ribbon {
   display: grid;
+  /* Single column until the desktop template below takes over; pinned to the
+     container so an enlarged root font size cannot widen the page. */
+  grid-template-columns: minmax(0, 1fr);
   margin: 0;
   padding: 0;
   list-style: none;

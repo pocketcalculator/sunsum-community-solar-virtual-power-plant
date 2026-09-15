@@ -40,6 +40,9 @@
 .plainList {
   composes: plainList from "../../../styles/layout.module.css";
   display: grid;
+  /* See FaqList: an untemplated grid column sizes to min-content and can
+     overflow the container at large root font sizes. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
 }
 

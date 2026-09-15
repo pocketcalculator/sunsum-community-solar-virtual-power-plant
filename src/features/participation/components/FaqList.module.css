@@ -1,5 +1,12 @@
 .list {
   display: grid;
+  /*
+   * Without an explicit template the single column sizes to min-content, which
+   * can exceed the container once the root font size is enlarged — the page
+   * then scrolls sideways. `overflow-wrap: break-word` does not help here: it
+   * wraps painted text but does not reduce intrinsic min-content width.
+   */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
   max-width: 56rem;
   margin: 0;
