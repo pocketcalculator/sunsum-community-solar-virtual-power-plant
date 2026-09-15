@@ -1,12 +1,20 @@
-# SunSum API contract — WS2 → WS1 handover
+# SunSum API contracts — WS2 handover
 
-`openapi.yaml` is the frontend-facing contract for the `sumsum-api` deployable
-(design doc §9.1). It is the artefact WS1's gate table calls **"Wire contract —
-WS2 with WS4 — Pending handoff."**
+Two contracts live here. Together they are the artefact WS1's gate table calls
+**"Wire contract — WS2 with WS4 — Pending handoff."**
+
+| File | Audience | Kind |
+|---|---|---|
+| **`openapi.yaml`** | WS1 (frontend) | *Derived* — every operation is a row of design doc §10 |
+| **`viability-openapi.yaml`** | WS4 (viability engine) | *Proposed* — the doc names S-VIA but never shapes it |
+
+**If you are on WS1, you only need `openapi.yaml`.** §4.1 puts the API between
+the browser and the engine; the frontend never calls S-VIA.
+
+## `openapi.yaml` at a glance
 
 | | |
 |---|---|
-| Spec | `docs/api/openapi.yaml` (OpenAPI 3.0.3) |
 | Source of truth | `docs/sunsum_technical_design_doc.md` §5.2, §5.3, §7, §8.2, §10 |
 | Operations | **34**, across 31 paths — every row of §10, nothing more |
 | Schemas | 68, including all 15 §5.3 enums verbatim |
@@ -40,6 +48,7 @@ type Decision = paths['/submissions/{siteId}/decision']['post'];
 
 ```bash
 npx @redocly/cli lint docs/api/openapi.yaml
+npx @redocly/cli lint docs/api/viability-openapi.yaml
 ```
 
 ---
@@ -142,7 +151,7 @@ These are not oversights. Closing them needs a decision from someone else.
 |---|---|---|
 | **OQ-4** | `snake_case` vs camelCase on the wire | WS1 + WS2 |
 | **OQ-5** | §8.1 *Authentication* is an empty heading. A session cookie is modelled because §10 and `users.password_hash` imply one. Real Entra wiring changes none of these paths | WS2 + WS3 |
-| **OQ-6** | `flags`, `missing_information`, `inputs_used` and `preliminary_project_type` are free-form. WS1's "Screening" gate — units, range shapes, ruleset version — is still pending from WS4. Inventing a vocabulary here would be guessing | **WS4** |
+| **OQ-6** | `flags`, `missing_information`, `inputs_used` and `preliminary_project_type` are free-form. WS1's "Screening" gate — units, range shapes, ruleset version — is still pending from WS4. Inventing a vocabulary here would be guessing. **`viability-openapi.yaml` is the concrete ask** | **WS4** |
 | **OQ-7** | Investor picklist *values* (`investment_objectives`, `impact_priorities`, `decision_criteria`, `geographies`). §7.7 mandates picklists but never lists the options, and they drive portfolio filters | WS5 + WS1 |
 | **OQ-8** | `documents.doc_type` and `activity.action` vocabularies. The document checklist is config-driven per §7.6 | WS2 |
 
@@ -168,12 +177,38 @@ entirely — worth revisiting when WS3 settles §8.1.
 
 ---
 
-## Out of scope
+## Out of scope for the frontend contract — but now specified
 
-The viability engine (`sumsum-viability` / S-VIA, WS4, Python) is **not** in this
-spec. Per §4.1 the web app never calls it — the API does, server-side, during
-`POST /sites/{siteId}/submit`. That internal contract is the other half of the
-wire-contract gate and belongs in its own document.
+The viability engine (`sumsum-viability` / S-VIA, WS4, Python) is deliberately
+**not** in `openapi.yaml`. Per §4.1 the web app never calls it — `sumsum-api`
+does, server-side, during `POST /sites/{siteId}/submit`. WS1 can ignore it.
+
+It now has its own contract: **`viability-openapi.yaml`**, the other half of the
+same gate.
+
+That file is a different kind of artefact and is labelled as such. `openapi.yaml`
+is *derived* — every operation is a §10 row. The design doc names S-VIA in four
+places but never gives it a request or response shape, so the viability spec is
+**WS2 proposing one to WS4**. It invents no output that §5.2 does not already
+persist, but WS4 owns the service and should push back where it is wrong.
+
+Three things it pins down that are easy to get wrong:
+
+- **Incomplete input is a result, not an error.** §7.3 returns
+  `more_information_required` for unknown area, pending ownership, missing consent
+  or absent usage data. Those are `200` responses carrying a verdict. There is
+  deliberately **no `422`** — only a malformed body gets a `400`.
+- **Geocoding happens inside S-VIA** (§9.2 — it is "an adapter inside S-VIA, not
+  a service"). The caller sends `address_raw` and gets `geocode` back, because
+  `sites.latitude`, `sites.longitude` and `sites.geocode_confidence` are persisted
+  by the API but produced by the engine.
+- **The request carries facts, not identifiers.** §9.1 requires S-VIA to stay
+  "stateless and independently testable by Workstream 4", so there is no
+  `site_id` — nothing can be looked up, and a WS4 unit test is a function call
+  over a fixture.
+
+`ViabilityStatus`, `SiteType` and `OwnershipStatus` are duplicated across the two
+files by necessity and checked to be identical. They must not drift.
 
 ---
 
@@ -213,7 +248,9 @@ permit the backend to import.
 ## Provenance
 
 Every operation traces to a row of §10; every enum value is copied from §5.3.
-Checked mechanically, not by eye:
+Checked mechanically, not by eye.
+
+**`openapi.yaml`**
 
 - 34/34 §10 operations present
 - 0 invented operations
@@ -224,7 +261,25 @@ Checked mechanically, not by eye:
   identity or documents; `Document` never exposes `blob_path`
 - every authenticated operation declares `401`
 - `redocly lint` passes with 0 errors and 0 warnings
+- `openapi-typescript` emits 3,141 lines that pass `tsc --noEmit --strict`
+
+**`viability-openapi.yaml`**
+
+- `ViabilityStatus`, `SiteType` and `OwnershipStatus` are byte-identical to
+  `openapi.yaml` — no drift between the two contracts
+- every output field maps to an `assessments` column in §5.2, plus `geocode`,
+  which the caller writes onto `sites`
+- none of the six API-owned columns (`id`, `site_id`, `created_at`,
+  `is_override`, `override_reason`, `overridden_by_user_id`) appear in the
+  engine's output
+- `AssessRequest` carries no site, project or user id — statelessness per §9.1
+- all five §7.3 charter outputs present; `ruleset_version` is required
+- the four "absence is a verdict" inputs are optional, so
+  `more_information_required` is reachable
+- `/assess` declares no `422`, so incomplete input is classified and not rejected
+- all three §7.3 verdict conditions reproduced verbatim
+- `redocly lint` passes with 0 errors
 
 > ⚠️ The design doc is still on the unmerged **PR #5** branch, not on `main`.
-> This contract depends on it. If PR #5 changes before merge, re-run the checks
+> Both contracts depend on it. If PR #5 changes before merge, re-run the checks
 > above.
