@@ -7,7 +7,34 @@
  * workflow rule can be exercised directly by a test. It may depend on
  * `@/domain` shared vocabulary.
  *
- * Nothing is exported yet.
+ * Authorization decisions live here rather than at the transport edge, so that
+ * a future job or CLI calling the same function is subject to the same rules.
  */
 
-export {};
+export {
+  DEFAULT_PORTFOLIO_QUERY,
+  getPortfolio,
+  type PortfolioItem,
+  type PortfolioQuery,
+  type PortfolioResponse,
+} from "./portfolio";
+export {
+  isProjectStage,
+  isViabilityStatus,
+  PROJECT_STAGES,
+  SITE_TYPES,
+  VIABILITY_STATUSES,
+  type ProjectRecord,
+  type ProjectStage,
+  type SiteType,
+  type ViabilityStatus,
+} from "./projects";
+export {
+  failure,
+  ok,
+  type Failure,
+  type FailureCode,
+  type Result,
+} from "./result";
+export { ROLES, type InvestorProfile, type Role, type Viewer } from "./viewer";
+export { mockProjectStore, type ProjectStore } from "./mock/projects";

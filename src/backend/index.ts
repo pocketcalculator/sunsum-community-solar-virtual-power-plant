@@ -5,8 +5,9 @@
  * boundary rejects `@/backend/handlers/...` and `@/backend/core/...` from a
  * route, so handler and core module paths stay free to move.
  *
- * Nothing is exported yet. This directory establishes the agreed structure for
- * the WS2 workflow boundary; it does not implement it.
+ * A route should be a one-line re-export of a wired handler from here. Anything
+ * it would otherwise decide — identity, validation, permission — belongs in the
+ * backend, where it is tested and cannot be bypassed by adding a second route.
  */
 
-export {};
+export { getPortfolioRoute } from "./handlers";
