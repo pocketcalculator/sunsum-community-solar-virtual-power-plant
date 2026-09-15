@@ -3,7 +3,7 @@
 }
 
 .inner {
-  composes: container from "../styles/layout.module.css";
+  composes: container from "../src/styles/layout.module.css";
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -12,7 +12,7 @@
 }
 
 .code {
-  composes: eyebrow from "../styles/layout.module.css";
+  composes: eyebrow from "../src/styles/layout.module.css";
   font-size: var(--text-sm);
 }
 
@@ -28,7 +28,7 @@
 }
 
 .links {
-  composes: plainList from "../styles/layout.module.css";
+  composes: plainList from "../src/styles/layout.module.css";
   display: grid;
   gap: var(--space-2);
   margin-top: var(--space-3);

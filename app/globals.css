@@ -1,4 +1,4 @@
-@import "../styles/tokens.css";
+@import "../src/styles/tokens.css";
 
 /* Base element styles only. Component appearance lives in scoped CSS Modules. */
 

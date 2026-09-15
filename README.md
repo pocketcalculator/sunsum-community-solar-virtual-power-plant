@@ -50,6 +50,27 @@ the project's VPP flow board. Team UX acceptance and the final Azure hosting
 choice remain open. There is no Azure deployment, database, identity provider,
 or hidden mock-service fallback in this increment.
 
+## Application structure
+
+| Path | Contains |
+| --- | --- |
+| `app/` | Routes, root layout and the shared `globals.css` |
+| `src/domain/` | Shared vocabulary: roles, journey stages, participant types, guided prompts |
+| `src/features/participation/` | Landing page, public shell and entry paths |
+| `src/features/onboarding/` | The create-profile flow, its step model and validation |
+| `src/components/ui/` | Domain-neutral controls and form primitives |
+| `src/styles/` | Design tokens and shared layout helpers |
+| `tests/` | Unit, component, boundary and browser tests |
+| `docs/ws1/` | Architecture boundaries and the contract register |
+| `infrastructure/` | Placeholders for templates, diagrams and infrastructure docs |
+
+Routes compose a feature's public entry point. Features never import each
+other's internals, and the domain layer depends on nothing above it. These
+boundaries are enforced by ESLint and asserted in `tests/unit/architecture.test.ts`.
+
+This replaces the earlier single-page template and its `app/api/submit` echo
+route; both were scaffolding for this interface rather than product behaviour.
+
 ## Local development
 
 Use Node.js 22.22.2 or newer within the Node 22 release line, and npm 10.

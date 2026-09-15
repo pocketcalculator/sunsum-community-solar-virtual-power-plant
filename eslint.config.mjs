@@ -24,7 +24,7 @@ export default defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    files: ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
+    files: ["app/**/*.{ts,tsx}", "src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/consistent-type-imports": "error",
@@ -41,8 +41,6 @@ export default defineConfig([
             nodeNamespace,
             {
               group: [
-                "@/app",
-                "@/app/**",
                 "@/features",
                 "@/features/**",
                 "@/domain",
@@ -70,7 +68,7 @@ export default defineConfig([
         {
           patterns: [
             {
-              group: ["@/app", "@/app/**", "**/app/**"],
+              group: ["**/app/**"],
               message: "Features must not depend on application routes.",
             },
           ],
@@ -89,8 +87,6 @@ export default defineConfig([
             nodeNamespace,
             {
               group: [
-                "@/app",
-                "@/app/**",
                 "@/features",
                 "@/features/**",
                 "@/components",
@@ -120,8 +116,6 @@ export default defineConfig([
             nodeNamespace,
             {
               group: [
-                "@/app",
-                "@/app/**",
                 "**/app/**",
                 "@/lib",
                 "@/lib/**",
@@ -153,8 +147,6 @@ export default defineConfig([
             nodeNamespace,
             {
               group: [
-                "@/app",
-                "@/app/**",
                 "**/app/**",
                 "@/lib",
                 "@/lib/**",
@@ -176,7 +168,7 @@ export default defineConfig([
     },
   },
   {
-    files: ["src/app/**/*.{ts,tsx}"],
+    files: ["app/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",

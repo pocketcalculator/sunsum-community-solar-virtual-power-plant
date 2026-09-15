@@ -24,7 +24,8 @@ installed, approved, or required by this foundation.
 ## Implemented responsibility boundaries
 
 ```text
-src/app routes and layout
+src/domain shared vocabulary  (no dependencies above it)
+app routes and layout
   -> feature public interfaces (participation, onboarding)
     -> src/domain shared vocabulary
     -> src/components/ui primitives
@@ -33,6 +34,11 @@ src/app routes and layout
 src/domain   roles, journey stages, participant taxonomy, guided intents
 src/styles   tokens + minimal app globals, not business policy
 ```
+
+Routes live in `app/` at the repository root, the location the project
+scaffold established. Everything they compose lives under `src/`, reached
+through the `@/*` alias, which maps only to `src`. Routes are therefore not
+importable through the alias at all.
 
 - Routes select and compose public feature interfaces. They own no business
   state, persistence or screening rules. `/join` validates its `?start=`

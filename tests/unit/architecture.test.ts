@@ -39,7 +39,7 @@ describe("the actual module-boundary configuration", () => {
   it.each([
     ["src/components/ui/probe.tsx", "@/features/participation"],
     ["src/components/ui/probe.tsx", "../../features/participation"],
-    ["src/components/ui/probe.tsx", "@/app/page"],
+    ["src/components/ui/probe.tsx", "../../app/page"],
     ["src/components/ui/probe.tsx", "@/lib/session"],
     ["src/components/ui/probe.tsx", "node:fs"],
     ["src/components/ui/probe.tsx", "node:sqlite"],
@@ -49,20 +49,19 @@ describe("the actual module-boundary configuration", () => {
     ["src/components/ui/probe.tsx", "fs/promises"],
     ["src/components/ui/probe.tsx", "server-only"],
     ["src/components/ui/probe.tsx", "next/headers"],
-    ["src/features/participation/probe.tsx", "@/app/page"],
     ["src/features/participation/probe.tsx", "../../app/page"],
     ["src/features/participation/probe.tsx", "@/features/onboarding"],
     [
       "src/features/participation/probe.tsx",
       "@/features/onboarding/model/steps",
     ],
-    ["src/features/onboarding/probe.tsx", "@/app/page"],
+    ["src/features/onboarding/probe.tsx", "../../app/page"],
     ["src/features/onboarding/probe.tsx", "@/features/participation"],
     ["src/features/onboarding/probe.tsx", "node:sqlite"],
     ["src/features/onboarding/probe.tsx", "next/headers"],
     ["src/domain/probe.ts", "@/features/participation"],
     ["src/domain/probe.ts", "@/components/ui/Badge"],
-    ["src/domain/probe.ts", "@/app/page"],
+    ["src/domain/probe.ts", "../app/page"],
     ["src/domain/probe.ts", "node:fs"],
     ["src/components/ui/probe.tsx", "@/domain/roles"],
     ["src/features/participation/index.ts", "node:sqlite"],
@@ -71,8 +70,8 @@ describe("the actual module-boundary configuration", () => {
     ["src/features/participation/components/probe.tsx", "node:sqlite"],
     ["src/features/participation/components/probe.tsx", "next/headers"],
     ["src/features/participation/components/probe.tsx", "@/lib/session"],
-    ["src/app/probe.tsx", "@/features/participation/paths"],
-    ["src/app/probe.tsx", "../features/participation/paths"],
+    ["app/probe.tsx", "@/features/participation/paths"],
+    ["app/probe.tsx", "../features/participation/paths"],
   ])(
     "rejects %s importing %s",
     async (file, dependency) => {
@@ -82,9 +81,9 @@ describe("the actual module-boundary configuration", () => {
   );
 
   it.each([
-    ["src/app/probe.tsx", "@/features/participation"],
-    ["src/app/probe.tsx", "@/features/onboarding"],
-    ["src/app/probe.tsx", "@/domain/roles"],
+    ["app/probe.tsx", "@/features/participation"],
+    ["app/probe.tsx", "@/features/onboarding"],
+    ["app/probe.tsx", "@/domain/roles"],
     ["src/features/participation/probe.tsx", "@/components/ui/icon"],
     ["src/features/participation/probe.tsx", "@/domain/journey"],
     ["src/features/onboarding/probe.tsx", "@/domain/userTypes"],
