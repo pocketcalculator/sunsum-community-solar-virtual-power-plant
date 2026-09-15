@@ -1,0 +1,21 @@
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.note {
+  max-width: 44rem;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  border-inline-start: 3px solid var(--border-positive);
+  padding-inline-start: var(--space-3);
+}

@@ -1,0 +1,11 @@
+# npm owns the lockfile's generated formatting.
+package-lock.json
+node_modules/
+.next/
+out/
+build/
+coverage/
+test-results/
+playwright-report/
+blob-report/
+next-env.d.ts

@@ -1,0 +1,72 @@
+/*
+ * Button appearance shared by the flow and its completion panel. A module
+ * rather than a component: there is no behaviour to share, only styling.
+ */
+
+.action {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: center;
+  min-height: var(--target-min);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-5);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  overflow-wrap: anywhere;
+  transition:
+    background-color var(--motion-base) var(--easing-standard),
+    border-color var(--motion-base) var(--easing-standard),
+    transform var(--motion-fast) var(--easing-standard);
+}
+
+.primary {
+  composes: action;
+  color: var(--text-on-accent);
+  background-color: var(--accent-solar);
+  box-shadow: var(--shadow-md);
+}
+
+.primary:hover {
+  background-color: var(--accent-solar-hover);
+  transform: translateY(-1px);
+}
+
+.secondary {
+  composes: action;
+  color: var(--text-primary);
+  background-color: var(--surface-neutral-soft);
+  border-color: var(--border-strong);
+}
+
+.secondary:hover {
+  background-color: var(--surface-neutral-hover);
+  border-color: var(--border-interactive-hover);
+  transform: translateY(-1px);
+}
+
+.quiet {
+  composes: action;
+  padding-inline: var(--space-3);
+  color: var(--text-accent);
+  background-color: transparent;
+  border-color: var(--border-accent);
+}
+
+.quiet:hover {
+  background-color: var(--surface-accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action,
+  .primary:hover,
+  .secondary:hover {
+    transition: none;
+    transform: none;
+  }
+}

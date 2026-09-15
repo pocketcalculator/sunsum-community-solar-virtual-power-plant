@@ -1,0 +1,34 @@
+.hint {
+  max-width: 44rem;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.error {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  max-width: 44rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-critical);
+  overflow-wrap: anywhere;
+}
+
+.icon {
+  flex: none;
+  margin-top: 0.25em;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip-path: inset(50%);
+}

@@ -1,0 +1,123 @@
+.stepper {
+  min-width: 0;
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+
+.item {
+  flex: 1 1 min(100%, 9rem);
+  min-width: 0;
+}
+
+.entry {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  width: 100%;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  text-align: start;
+  background-color: var(--surface-neutral-highlight);
+  border: 1px solid var(--border-subtle);
+  border-block-end: 3px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.trigger {
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--easing-standard),
+    border-color var(--motion-fast) var(--easing-standard);
+}
+
+.trigger:hover {
+  background-color: var(--surface-neutral-hover);
+  border-color: var(--border-interactive-hover);
+}
+
+.marker {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.status {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.completed .marker {
+  color: var(--text-positive);
+  background-color: var(--surface-positive-soft);
+  border-color: var(--border-positive);
+}
+
+.completed .status {
+  color: var(--text-positive);
+}
+
+.completed .entry {
+  border-block-end-color: var(--accent-community);
+}
+
+.current .entry {
+  background-color: var(--surface-accent-soft);
+  border-color: var(--border-accent);
+  border-block-end-color: var(--accent-solar);
+}
+
+.current .marker {
+  color: var(--text-on-accent);
+  background-color: var(--accent-solar);
+  border-color: var(--accent-solar);
+}
+
+.current .status {
+  color: var(--text-accent);
+}
+
+.upcoming .label,
+.upcoming .marker {
+  color: var(--text-muted);
+}
+
+.blocked .label,
+.blocked .marker,
+.blocked .status {
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trigger {
+    transition: none;
+  }
+}

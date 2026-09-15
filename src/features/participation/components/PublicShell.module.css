@@ -1,0 +1,162 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.skipLink {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 50;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-on-accent);
+  text-decoration: none;
+  background-color: var(--accent-solar);
+  border-radius: var(--radius-sm);
+  /* Off-screen until focused, then it lands in the top-left corner. */
+  transform: translateY(-160%);
+  transition: transform var(--motion-fast) var(--easing-standard);
+}
+
+.skipLink:focus-visible {
+  transform: translateY(0);
+}
+
+.header {
+  position: relative;
+  z-index: 20;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--surface-overlay);
+}
+
+.headerInner {
+  composes: container from "../../../styles/layout.module.css";
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--layout-header-height);
+  padding-block: var(--space-3);
+}
+
+.identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.brand {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.brandMark {
+  font-size: 1.75rem;
+}
+
+.brandName {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.nav {
+  flex: 1 1 auto;
+}
+
+.navList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  justify-content: flex-start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.navLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding-inline: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.navLink:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.main {
+  flex: 1 1 auto;
+}
+
+.main:focus-visible {
+  /* Focus lands here from the skip link; keep the ring inside the viewport. */
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}
+
+.footer {
+  margin-top: var(--space-8);
+  border-top: 1px solid var(--border-subtle);
+  background-color: var(--surface-sunken);
+}
+
+.footerInner {
+  composes: container from "../../../styles/layout.module.css";
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-block: var(--space-6);
+}
+
+.footerBrand {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.footerMark {
+  font-size: 1.5rem;
+}
+
+.footerText {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.footerNote {
+  max-width: 48rem;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+@media (min-width: 48rem) {
+  .header {
+    position: sticky;
+    top: 0;
+    backdrop-filter: blur(12px);
+  }
+
+  .headerInner {
+    flex-wrap: nowrap;
+  }
+
+  .navList {
+    justify-content: flex-end;
+  }
+}

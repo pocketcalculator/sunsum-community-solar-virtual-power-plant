@@ -1,0 +1,97 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background:
+    linear-gradient(180deg, var(--surface-neutral-highlight), transparent 55%),
+    var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  transition:
+    border-color var(--motion-base) var(--easing-standard),
+    transform var(--motion-base) var(--easing-standard);
+}
+
+.card:hover {
+  border-color: var(--border-accent);
+  transform: translateY(-2px);
+}
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  font-size: 1.5rem;
+  color: var(--text-accent);
+  background-color: var(--surface-accent-soft);
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-md);
+}
+
+.label {
+  font-size: var(--text-h3);
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.description {
+  flex: 1 1 auto;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.link {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  align-self: flex-start;
+  min-height: var(--target-min);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.25em;
+}
+
+/* Whole-card target: the link keeps the accessible name and the focus ring. */
+.link::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  border-radius: inherit;
+}
+
+.arrow {
+  flex: none;
+  transition: transform var(--motion-base) var(--easing-standard);
+}
+
+.card:hover .arrow {
+  transform: translateX(0.15rem);
+}
+
+@supports selector(:has(*)) {
+  .link:focus-visible {
+    outline: none;
+  }
+
+  .card:has(.link:focus-visible) {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+  }
+}

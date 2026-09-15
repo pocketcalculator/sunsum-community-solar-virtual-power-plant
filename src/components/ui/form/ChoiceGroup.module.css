@@ -1,0 +1,121 @@
+.group {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+/* Focused only by an error summary link, so the ring must show on plain focus. */
+.group:focus {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.legend {
+  padding: 0;
+  font-size: var(--text-h3);
+  font-weight: 650;
+  line-height: var(--line-snug);
+  color: var(--text-primary);
+}
+
+.group > p {
+  margin-top: var(--space-2);
+}
+
+.options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.option {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+  align-content: start;
+  padding: var(--space-4);
+  background-color: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition:
+    background-color var(--motion-fast) var(--easing-standard),
+    border-color var(--motion-fast) var(--easing-standard);
+}
+
+.option:hover {
+  border-color: var(--border-interactive-hover);
+}
+
+.input {
+  grid-row: 1;
+  grid-column: 1;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0.15rem 0 0;
+  accent-color: var(--control-mark);
+}
+
+.optionLabel,
+.tag,
+.description {
+  grid-column: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.optionLabel {
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+/* Whole card is the target; the label keeps the name and the control. */
+.optionLabel::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  border-radius: inherit;
+}
+
+.description {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.selected {
+  background-color: var(--surface-accent-soft);
+  border-color: var(--border-accent);
+}
+
+.unavailable {
+  background-color: var(--surface-field-disabled);
+  border-style: dashed;
+}
+
+.unavailable .optionLabel,
+.unavailable .description {
+  color: var(--text-muted);
+}
+
+.unavailable:hover {
+  border-color: var(--border-subtle);
+}
+
+@supports selector(:has(*)) {
+  .option:has(.input:focus-visible) {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+  }
+
+  .option:has(.input:focus-visible) .input {
+    outline: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .option {
+    transition: none;
+  }
+}

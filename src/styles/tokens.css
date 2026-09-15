@@ -1,0 +1,155 @@
+/*
+ * Semantic design tokens for the public Sunsum interface.
+ *
+ * Components reference semantic surface, state, brand and illustration tokens.
+ * This centralizes the current visual baseline; alternate themes still need
+ * their own contrast and layout review.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Palette (raw values — do not use directly in components) */
+  --palette-navy-950: #060b15;
+  --palette-navy-900: #0a101d;
+  --palette-navy-800: #101a2c;
+  --palette-navy-700: #16233a;
+  --palette-navy-600: #1e2f4d;
+  --palette-slate-300: #c8d2e4;
+  --palette-slate-400: #94a3bd;
+  --palette-white: #f4f7fc;
+  --palette-gold-400: #f4b63f;
+  --palette-gold-300: #ffd07a;
+  --palette-green-400: #4ec08f;
+  --palette-green-300: #86dcb6;
+  --palette-sky-300: #8fc8ff;
+
+  /* Surfaces */
+  --surface-page: var(--palette-navy-900);
+  --surface-sunken: var(--palette-navy-950);
+  --surface-raised: var(--palette-navy-800);
+  --surface-raised-strong: var(--palette-navy-700);
+  --surface-accent-soft: rgb(244 182 63 / 12%);
+  --surface-positive-soft: rgb(78 192 143 / 12%);
+  --surface-overlay: rgb(10 16 29 / 88%);
+  --surface-neutral-soft: rgb(148 163 189 / 8%);
+  --surface-neutral-hover: rgb(148 163 189 / 16%);
+  --surface-neutral-muted: rgb(148 163 189 / 10%);
+  --surface-neutral-highlight: rgb(148 163 189 / 6%);
+  --surface-section-veil: rgb(6 11 21 / 55%);
+  --wash-solar-strong: rgb(244 182 63 / 14%);
+  --wash-solar-soft: rgb(244 182 63 / 4%);
+  --wash-community-soft: rgb(78 192 143 / 10%);
+
+  /* Text */
+  --text-primary: var(--palette-white);
+  --text-secondary: var(--palette-slate-300);
+  --text-muted: var(--palette-slate-400);
+  --text-accent: var(--palette-gold-300);
+  --text-positive: var(--palette-green-300);
+  --text-on-accent: var(--palette-navy-950);
+
+  /* Borders and separators */
+  --border-subtle: rgb(148 163 189 / 18%);
+  --border-strong: rgb(148 163 189 / 34%);
+  --border-accent: rgb(244 182 63 / 45%);
+  --border-positive: rgb(78 192 143 / 40%);
+  --border-interactive-hover: var(--palette-slate-400);
+
+  /* Accents */
+  --accent-solar: var(--palette-gold-400);
+  --accent-community: var(--palette-green-400);
+  --accent-solar-hover: var(--palette-gold-300);
+
+  /* Existing brand and illustration uses, not a separate theme system. */
+  --brand-roof-secondary: var(--palette-slate-300);
+  --brand-baseline: var(--palette-slate-400);
+  --illustration-wash: rgb(244 182 63 / 8%);
+  --illustration-wall: var(--palette-navy-600);
+  --illustration-panel-stroke: var(--palette-gold-300);
+  --illustration-panel-seam: var(--palette-navy-950);
+  --illustration-line: var(--palette-slate-400);
+
+  /* Focus */
+  --focus-ring-color: var(--palette-sky-300);
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 3px;
+
+  /* Typography — system stacks only, so the build never fetches a font */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono:
+    ui-monospace, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", monospace;
+
+  --text-display: clamp(2.25rem, 1.55rem + 3vw, 3.75rem);
+  --text-h1: clamp(1.95rem, 1.45rem + 2.2vw, 3rem);
+  --text-h2: clamp(1.5rem, 1.28rem + 1vw, 2.125rem);
+  --text-h3: clamp(1.1rem, 1.04rem + 0.3vw, 1.3rem);
+  --text-lead: clamp(1.05rem, 1rem + 0.35vw, 1.25rem);
+  --text-body: 1rem;
+  --text-sm: 0.9375rem;
+  --text-xs: 0.8125rem;
+
+  --line-tight: 1.15;
+  --line-snug: 1.35;
+  --line-normal: 1.6;
+  --tracking-eyebrow: 0.12em;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+
+  /* Radii */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.75rem;
+  --radius-pill: 999rem;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgb(3 7 15 / 40%);
+  --shadow-md: 0 12px 28px -18px rgb(3 7 15 / 85%);
+  --shadow-lg: 0 32px 60px -34px rgb(3 7 15 / 95%);
+
+  /* Layout */
+  --layout-max: 72rem;
+  --layout-gutter: clamp(1rem, 0.55rem + 2vw, 2.5rem);
+  --layout-header-height: 4rem;
+  --target-min: 2.75rem;
+
+  /* Motion */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --easing-standard: cubic-bezier(0.2, 0.6, 0.3, 1);
+}
+
+/*
+ * Added for the form layer (fields, choices and validation messages).
+ * Additive only: nothing declared above is redefined here.
+ */
+
+:root {
+  /* Palette additions (raw values — do not use directly in components) */
+  --palette-rose-300: #ffb4a6;
+  --palette-rose-400: #f07a68;
+
+  /* Form controls */
+  --surface-field: var(--palette-navy-950);
+  --surface-field-disabled: var(--surface-neutral-highlight);
+  --border-field: var(--border-strong);
+  --control-mark: var(--accent-solar);
+
+  /* Validation */
+  --text-critical: var(--palette-rose-300);
+  --accent-critical: var(--palette-rose-400);
+  --border-critical: rgb(240 122 104 / 60%);
+  --surface-critical-soft: rgb(240 122 104 / 14%);
+}

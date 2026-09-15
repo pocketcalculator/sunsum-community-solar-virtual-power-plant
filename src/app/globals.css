@@ -1,0 +1,95 @@
+@import "../styles/tokens.css";
+
+/* Base element styles only. Component appearance lives in scoped CSS Modules. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--line-normal);
+  color: var(--text-primary);
+  background-color: var(--surface-page);
+  /* Static light wash: suggests sunlight without an image or animation. */
+  background-image:
+    radial-gradient(
+      70rem 40rem at 82% -10%,
+      var(--wash-solar-strong),
+      transparent 60%
+    ),
+    radial-gradient(
+      60rem 38rem at 6% 4%,
+      var(--wash-community-soft),
+      transparent 62%
+    );
+  background-attachment: fixed;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  line-height: var(--line-tight);
+  text-wrap: balance;
+}
+
+p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
+
+figure {
+  margin: 0;
+}
+
+a {
+  color: var(--text-accent);
+  text-underline-offset: 0.2em;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+@media (min-width: 48rem) {
+  html {
+    /* Keeps in-page anchor targets clear of the sticky header. */
+    scroll-padding-top: calc(var(--layout-header-height) + var(--space-5));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

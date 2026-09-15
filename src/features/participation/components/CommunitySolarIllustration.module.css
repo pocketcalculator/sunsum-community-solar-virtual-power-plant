@@ -1,0 +1,92 @@
+.figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background:
+    linear-gradient(160deg, var(--illustration-wash), transparent 46%),
+    var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.caption {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.sun {
+  fill: var(--accent-solar);
+}
+
+.rays {
+  stroke: var(--accent-solar);
+  stroke-width: 3;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+
+.wall {
+  fill: var(--illustration-wall);
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+
+.panel {
+  fill: var(--accent-solar);
+  stroke: var(--illustration-panel-stroke);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.panelSeam {
+  stroke: var(--illustration-panel-seam);
+  stroke-width: 1.5;
+  opacity: 0.55;
+}
+
+.window {
+  fill: var(--surface-accent-soft);
+  stroke: var(--border-accent);
+  stroke-width: 1.2;
+}
+
+.ground {
+  stroke: var(--illustration-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.6;
+}
+
+.feed {
+  fill: none;
+  stroke: var(--accent-community);
+  stroke-width: 2;
+  stroke-dasharray: 4 7;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.record {
+  fill: var(--surface-raised-strong);
+  stroke: var(--border-positive);
+  stroke-width: 1.5;
+}
+
+.recordDot {
+  fill: var(--accent-community);
+}
+
+.recordLine {
+  stroke: var(--illustration-line);
+  stroke-width: 4;
+  stroke-linecap: round;
+  opacity: 0.5;
+}

@@ -1,0 +1,125 @@
+.hero {
+  padding-block: clamp(var(--space-7), 6vw, var(--space-9));
+}
+
+.inner {
+  composes: container from "../../../styles/layout.module.css";
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  align-items: flex-start;
+  max-width: 38rem;
+  min-width: 0;
+}
+
+.copy > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.title {
+  font-size: var(--text-display);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.lead {
+  font-size: var(--text-lead);
+  color: var(--text-secondary);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.note {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background-color: var(--surface-neutral-soft);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.noteIcon {
+  flex: none;
+  margin-top: 0.25rem;
+  font-size: 1.05rem;
+  color: var(--text-accent);
+}
+
+.art {
+  align-self: center;
+  min-width: 0;
+}
+
+.scope {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+.scopeLabel {
+  composes: eyebrow from "../../../styles/layout.module.css";
+  color: var(--text-muted);
+}
+
+.scopeList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scopeItem {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.scopeValue {
+  font-size: 2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--text-accent);
+}
+
+.scopeText {
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+@media (min-width: 64rem) {
+  .inner {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    column-gap: var(--space-7);
+    align-items: center;
+  }
+
+  .scope {
+    grid-column: 1 / -1;
+    margin-top: var(--space-4);
+  }
+}

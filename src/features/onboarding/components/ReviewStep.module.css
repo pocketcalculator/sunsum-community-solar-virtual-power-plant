@@ -1,0 +1,66 @@
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+  background-color: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.amend {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.outstanding {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background-color: var(--surface-neutral-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.outstandingTitle {
+  font-size: var(--text-h3);
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.outstandingList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outstandingItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.outstandingStep {
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.messages {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
