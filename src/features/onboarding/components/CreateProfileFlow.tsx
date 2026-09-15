@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ErrorSummary } from "@/components/ui/form/ErrorSummary";
 import {
   Stepper,
@@ -180,6 +186,30 @@ export function CreateProfileFlow({
     requestFocus("errors");
   };
 
+  /**
+   * The password is not a draft field, so editing it cannot go through
+   * `updateDraft`. Without this, a password error stayed on screen — and the
+   * field stayed `aria-invalid` — after the person had already fixed it.
+   *
+   * Must stay referentially stable: the sign-in step lists it in an effect's
+   * dependencies, so a new identity each render would re-run that effect
+   * continuously.
+   */
+  const handlePasswordIssueChange = useCallback((issue: FieldIssue | null) => {
+    setPasswordIssue(issue);
+    setIssues((shown) =>
+      shown.some((candidate) => candidate.field === "password")
+        ? shown.flatMap((candidate) =>
+            candidate.field !== "password"
+              ? [candidate]
+              : issue !== null
+                ? [issue]
+                : [],
+          )
+        : shown,
+    );
+  }, []);
+
   const handleContinue = () => {
     const stepIssues = validateStep(stepId, flowState);
 
@@ -273,7 +303,7 @@ export function CreateProfileFlow({
         }
         onEmailChange={(email) => updateDraft({ email })}
         onFullNameChange={(fullName) => updateDraft({ fullName })}
-        onPasswordIssueChange={setPasswordIssue}
+        onPasswordIssueChange={handlePasswordIssueChange}
       />
     ),
     representation: (

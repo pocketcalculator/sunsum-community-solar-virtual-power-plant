@@ -95,6 +95,36 @@ const CHARACTER_CLASSES = [
 export const PASSWORD_MIN_VARIETY = 3;
 export const PASSWORD_CLASS_COUNT = CHARACTER_CLASSES.length;
 
+/**
+ * Shortest name that is worth looking for inside a password. Below this, common
+ * fragments produce more false accusations than real warnings.
+ */
+const NAME_MATCH_MIN = 3;
+
+/**
+ * The same idea for an email local part, but stricter. Short local parts are
+ * ordinary words — "sun@" would otherwise reject "MySunPower!23" on a solar
+ * platform, blaming the person for a word the product itself is named after.
+ */
+const EMAIL_MATCH_MIN = 5;
+
+/**
+ * Strips case, accents-as-written and every separator, so a match does not
+ * depend on how the person spaced or punctuated their own name. Without this,
+ * "Ada Lovelace" is caught but "AdaLovelace" is not, which makes the rule read
+ * as stricter than it behaves.
+ *
+ * Deliberately whole-string, never per-word: rejecting each name token would
+ * fail someone called Ann, Lee, Kim or Rose for a password they cannot see the
+ * problem with.
+ */
+function comparableText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
 export interface PasswordAssessment {
   readonly issue: FieldIssue | null;
   /**
@@ -150,19 +180,26 @@ export function assessPassword(
       };
     }
 
-    const lowered = value.toLowerCase();
-    const namePart = context.fullName.trim().toLowerCase();
-    const emailLocalPart =
-      context.email.trim().toLowerCase().split("@")[0] ?? "";
+    const comparablePassword = comparableText(value);
+    const namePart = comparableText(context.fullName);
+    const emailLocalPart = comparableText(
+      context.email.trim().split("@")[0] ?? "",
+    );
 
-    if (namePart.length >= 3 && lowered.includes(namePart)) {
+    if (
+      namePart.length >= NAME_MATCH_MIN &&
+      comparablePassword.includes(namePart)
+    ) {
       return {
         field: "password",
         message: "Do not include your name in your password.",
       };
     }
 
-    if (emailLocalPart.length >= 3 && lowered.includes(emailLocalPart)) {
+    if (
+      emailLocalPart.length >= EMAIL_MATCH_MIN &&
+      comparablePassword.includes(emailLocalPart)
+    ) {
       return {
         field: "password",
         message: "Do not include your email address in your password.",
@@ -185,7 +222,10 @@ export function validateOrganisationName(
 
   const trimmed = value.trim();
 
-  if (trimmed.length === 0) {
+  // Same rule as a personal name: invisible formatting characters survive
+  // trim(), so without this an organisation of only zero-width joiners would
+  // count as filled in and reach the summary looking blank.
+  if (visibleLength(value) === 0) {
     return {
       field: "organisationName",
       message: "Enter the organisation you represent.",

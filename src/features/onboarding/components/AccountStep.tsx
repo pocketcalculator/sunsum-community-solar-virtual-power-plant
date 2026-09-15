@@ -35,7 +35,7 @@ const UNAVAILABLE_NOTE =
   "Unavailable: no identity provider is connected yet, so this sign-in would not work.";
 
 const EMAIL_NOTE =
-  "The only method that works today. You choose a password on this step.";
+  "The only option this preview can check. It does not create an account or sign you in.";
 
 /**
  * Describes the mix of characters and nothing else.
@@ -144,10 +144,10 @@ export function AccountStep({
               value={password}
             />
             <p className={styles.note}>
-              Your password stays on this step. It is not added to your profile,
-              not shown on the review, and never sent to Sunsum. Your browser or
-              password manager may still offer to remember it, as it would on
-              any sign-up form.
+              Please make one up rather than reusing a real password. It stays
+              on this step, is not added to your profile, is not shown on the
+              review, and is never sent to Sunsum — but your browser or password
+              manager may still offer to remember it, as on any sign-up form.
             </p>
           </>
         ) : null}

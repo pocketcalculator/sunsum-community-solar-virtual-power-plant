@@ -50,6 +50,13 @@ function ChosenTypeNote({ type }: { type: UserType }) {
  * Participant type, grouped the way the taxonomy groups it. Suggestions from
  * the guided opening are marked on the options themselves rather than applied,
  * so the person always makes the choice.
+ *
+ * The groups share one radio name because they are one answer. Native radios
+ * already behave that way — a single tab stop, arrow keys crossing group
+ * boundaries — but a screen reader announces six groups, so each group's
+ * description says outright that only one answer is kept. Collapsing the
+ * taxonomy into a single fieldset would be worse: a fieldset takes only one
+ * legend, so every option would lose the category it belongs to.
  */
 export function ParticipantTypeStep({
   userTypeId,
@@ -66,13 +73,14 @@ export function ParticipantTypeStep({
 
   return (
     <div className={styles.step}>
-      {suggested.size > 0 ? (
-        <p className={styles.lead}>
-          Your earlier answers suggest the options marked {SUGGESTION_TAG}. It
-          is only a shortcut: choose whatever describes you best, or ignore the
-          marks entirely.
-        </p>
-      ) : null}
+      <p className={styles.lead}>
+        Pick the one description that fits you best. It is a single answer
+        across all {USER_TYPE_GROUPS.length} groups below, so choosing a type in
+        one group replaces any earlier choice.
+        {suggested.size > 0
+          ? ` Your earlier answers suggest the options marked ${SUGGESTION_TAG}, but you can ignore the marks entirely.`
+          : ""}
+      </p>
 
       <div className={styles.groups}>
         {USER_TYPE_GROUPS.map((group, index) => {
@@ -93,7 +101,10 @@ export function ParticipantTypeStep({
                * first group, which is also where the error summary links.
                */
               error={index === 0 ? error : undefined}
-              hint={group.summary}
+              // Each group is announced separately, so the single-answer rule
+              // is repeated in every group's description rather than stated
+              // once in a lead paragraph a screen reader may never reach.
+              hint={`${group.summary} One answer across all ${USER_TYPE_GROUPS.length} groups.`}
               id={
                 index === 0
                   ? FIELD_ANCHOR.userTypeId

@@ -124,6 +124,42 @@ describe("create profile flow", () => {
     expect(document.querySelector(href)).toBeNull();
   });
 
+  it("clears a password error as soon as the password is fixed", () => {
+    render(<CreateProfileFlow />);
+    continueFlow();
+
+    fireEvent.click(
+      screen.getByRole("radio", { name: /email address and password/i }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: /full name/i }), {
+      target: { value: "Ada Lovelace" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /email address/i }), {
+      target: { value: "ada@example.org" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "short" },
+    });
+    continueFlow();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/at least 12/i);
+    expect(screen.getByLabelText("Password")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+
+    // Every other field self-corrects while typing; the password must too,
+    // rather than keeping a resolved error on screen until the next submit.
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: PASSWORD },
+    });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByLabelText("Password")).not.toHaveAttribute(
+      "aria-invalid",
+    );
+  });
+
   it("keeps answers when moving backwards", () => {
     render(<CreateProfileFlow />);
     continueFlow();

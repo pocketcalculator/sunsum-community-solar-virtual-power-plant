@@ -134,10 +134,44 @@ describe("password assessment", () => {
     );
   });
 
-  it("rejects a password containing the email local part", () => {
-    expect(assessPassword("XadaX1!superlong", context).issue?.message).toMatch(
-      /not include your email/,
-    );
+  it("catches the name however the person spaced or punctuated it", () => {
+    // Reported on the pull request: the spaced spelling was caught but the
+    // run-together one was not, so the rule read stricter than it behaved.
+    for (const candidate of [
+      "AdaLovelace1!x",
+      "Ada.Lovelace1!x",
+      "ada-lovelace1!X",
+      "A d a L o v e l a c e 1 ! x",
+    ]) {
+      expect(assessPassword(candidate, context).issue?.message).toMatch(
+        /not include your name/,
+      );
+    }
+  });
+
+  it("does not accuse someone whose email local part is an ordinary word", () => {
+    // "sun@" would otherwise reject a password on a solar platform.
+    const result = assessPassword("MySunPower!23", {
+      fullName: "Mary Chen",
+      email: "sun@example.org",
+    });
+
+    expect(result.issue).toBeNull();
+  });
+
+  it("still rejects a distinctive email local part", () => {
+    expect(
+      assessPassword("lovelace-9!xy", {
+        fullName: "Mary Chen",
+        email: "lovelace@example.org",
+      }).issue?.message,
+    ).toMatch(/not include your email/);
+  });
+
+  it("ignores a short email local part on purpose", () => {
+    // "ada@" is three characters. Matching local parts this short produces more
+    // false accusations than real warnings, so the rule starts at five.
+    expect(assessPassword("XadaX1!superlong", context).issue).toBeNull();
   });
 
   it("accepts a strong passphrase and reports its variety", () => {
@@ -170,6 +204,16 @@ describe("organisation validation", () => {
     expect(
       validateOrganisationName("o".repeat(161), "organisation")?.message,
     ).toMatch(/160 characters/);
+  });
+
+  it("rejects a name made only of invisible formatting characters", () => {
+    // Reported on the pull request: these survive trim(), so the required-field
+    // check passed and the summary showed a blank-looking organisation.
+    for (const invisible of ["\u200d", "\u200b\u200d\u2060", "\u200d  \u200d"]) {
+      expect(validateOrganisationName(invisible, "organisation")?.field).toBe(
+        "organisationName",
+      );
+    }
   });
 });
 
