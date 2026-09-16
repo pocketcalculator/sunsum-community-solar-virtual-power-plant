@@ -1,5 +1,8 @@
 # npm owns the lockfile's generated formatting.
 package-lock.json
+# drizzle-kit owns the migration journal and snapshots; reformatting them here
+# only means the next `npm run db:generate` breaks the format check again.
+src/backend/db/migrations/meta/
 node_modules/
 .next/
 out/

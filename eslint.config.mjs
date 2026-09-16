@@ -101,6 +101,30 @@ const sharedIsDomainFree = {
     "core/shared must not depend on a service; a rule that needs one belongs in that service.",
 };
 
+/**
+ * The dependency between rules and storage runs one way. `db` imports domain
+ * vocabulary from `core`; `core` never imports `db`.
+ *
+ * This is what keeps `ProjectStore` an interface a domain owns rather than a
+ * shape the database dictates. Reverse it and the schema starts deciding what
+ * the rules can express, which is the failure ADR 0001 is trying to avoid.
+ */
+const persistenceImports = {
+  group: [
+    "@/backend/db",
+    "@/backend/db/**",
+    "**/backend/db/**",
+    "./db",
+    "./db/**",
+    "../db",
+    "../db/**",
+    "../../db",
+    "../../db/**",
+  ],
+  message:
+    "Persistence depends on core, never the reverse: a domain owns its store interface, so import the interface, not the table.",
+};
+
 const transportModules = [
   "next/server",
   "next/headers",
@@ -277,7 +301,7 @@ export default defineConfig([
         "error",
         {
           paths: transportModules,
-          patterns: [presentationImports, handlerImports, domainInternals],
+          patterns: [presentationImports, handlerImports, domainInternals, persistenceImports],
         },
       ],
     },
@@ -288,7 +312,7 @@ export default defineConfig([
       "no-restricted-imports": [
         "error",
         {
-          patterns: [presentationImports, domainInternals],
+          patterns: [presentationImports, domainInternals, persistenceImports],
         },
       ],
     },
@@ -305,6 +329,7 @@ export default defineConfig([
             presentationImports,
             handlerImports,
             domainInternals,
+            persistenceImports,
             sharedIsDomainFree,
           ],
         },
