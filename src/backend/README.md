@@ -29,6 +29,7 @@ src/backend/
     shared/             JSON, the error envelope, failure-code to status
     identity/           S-IAM   resolving the caller at the transport edge
     investors/          S-INV   query parsing and status mapping
+  db/                   the schema. Imports core; core never imports it
 ```
 
 Each directory's `index.ts` is its public face. A sibling imports
@@ -135,6 +136,8 @@ transitive imports.
 | `handlers/investors` -> `../../core/investors/x`    | Rejected service internals        |
 | `core/shared` -> `../investors`                     | Rejected shared must stay domain-free |
 | `core/` -> `../handlers` or `@/backend/handlers`    | Rejected upward dependency        |
+| `core/` or `handlers/` -> `@/backend/db`            | Rejected persistence must not invert |
+| `db/` -> `@/backend/core/projects`                  | Allowed schema uses domain vocabulary |
 | `core/` -> `next/server`, `next/headers`            | Rejected transport dependency     |
 | Backend -> `@/domain/roles`                         | Allowed shared vocabulary         |
 | Backend -> `@/features/...` or `@/components/...`   | Rejected upward dependency        |
@@ -166,6 +169,11 @@ Two seams allow those integrations without changing the workflow rules:
   PostgreSQL implementation behind this interface without moving persistence
   into the UI or route handlers. The interface is kept in its own file because
   it is the part that survives.
+
+  A schema now exists in [`db/`](./db/README.md) and
+  [ADR 0001](../../infrastructure/docs/adr-0001-database-and-persistence.md)
+  records the decision, but **nothing is wired up yet**: the running endpoint is
+  still served by the fixture.
 - **Identity.** `handlers/identity/viewer.ts` returns the same demo investor for
   every request. **It has no security value.** It reads nothing from the request
   on purpose, so it cannot be used to choose a role; a real session lookup drops

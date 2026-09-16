@@ -101,6 +101,52 @@ const sharedIsDomainFree = {
     "core/shared must not depend on a service; a rule that needs one belongs in that service.",
 };
 
+/**
+ * The dependency between rules and storage runs one way. `db` imports domain
+ * vocabulary from `core`; `core` never imports `db`.
+ *
+ * This is what keeps `ProjectStore` an interface a domain owns rather than a
+ * shape the database dictates. Reverse it and the schema starts deciding what
+ * the rules can express, which is the failure ADR 0001 is trying to avoid.
+ */
+const persistenceImports = {
+  group: [
+    "@/backend/db",
+    "@/backend/db/**",
+    "**/backend/db/**",
+    "./db",
+    "./db/**",
+    "../db",
+    "../db/**",
+    "../../db",
+    "../../db/**",
+  ],
+  message:
+    "Persistence depends on core, never the reverse: a domain owns its store interface, so import the interface, not the table.",
+};
+
+/**
+ * A database driver is persistence too.
+ *
+ * Blocking `@/backend/db` alone stopped being enough once a real driver was a
+ * dependency: core could import `pg` directly and write SQL in a rule, which is
+ * the same boundary violation with a shorter import path. Nothing outside
+ * `src/backend/db` has any business holding a connection.
+ */
+const driverImports = {
+  group: [
+    "pg",
+    "pg-*",
+    "postgres",
+    "drizzle-orm",
+    "drizzle-orm/**",
+    "drizzle-kit",
+    "drizzle-kit/**",
+  ],
+  message:
+    "Only src/backend/db may talk to a database driver. Depend on the store interface the domain owns.",
+};
+
 const transportModules = [
   "next/server",
   "next/headers",
@@ -277,7 +323,13 @@ export default defineConfig([
         "error",
         {
           paths: transportModules,
-          patterns: [presentationImports, handlerImports, domainInternals],
+          patterns: [
+            presentationImports,
+            handlerImports,
+            domainInternals,
+            persistenceImports,
+            driverImports,
+          ],
         },
       ],
     },
@@ -288,7 +340,7 @@ export default defineConfig([
       "no-restricted-imports": [
         "error",
         {
-          patterns: [presentationImports, domainInternals],
+          patterns: [presentationImports, domainInternals, persistenceImports, driverImports],
         },
       ],
     },
@@ -305,6 +357,8 @@ export default defineConfig([
             presentationImports,
             handlerImports,
             domainInternals,
+            persistenceImports,
+            driverImports,
             sharedIsDomainFree,
           ],
         },

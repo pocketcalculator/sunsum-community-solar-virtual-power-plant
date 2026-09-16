@@ -1,0 +1,10 @@
+{
+  // Rules live in .markdownlint.json; this file only narrows what is linted.
+  //
+  // `next build` copies the README of every traced server dependency into
+  // .next/node_modules, so the "**/*.md" glob that CI runs starts matching
+  // third-party Markdown as soon as anyone has built locally. CI never hits it
+  // — Markdown linting runs in a job that only checks out the repository — but
+  // a developer who builds first would see failures in files they cannot edit.
+  "ignores": [".next/**", "node_modules/**", "playwright-report/**", "test-results/**"]
+}
