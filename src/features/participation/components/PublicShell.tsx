@@ -6,6 +6,7 @@ import styles from "./PublicShell.module.css";
 
 interface PublicShellProps {
   children: ReactNode;
+  headerAction?: ReactNode;
 }
 
 const PRIMARY_NAV = [
@@ -18,7 +19,7 @@ const PRIMARY_NAV = [
  * Public site chrome: skip link, header, the `#main-content` landmark every
  * page shares, and the footer. Routes only supply the page body.
  */
-export function PublicShell({ children }: PublicShellProps) {
+export function PublicShell({ children, headerAction }: PublicShellProps) {
   return (
     <div className={styles.shell}>
       <a className={styles.skipLink} href="#main-content">
@@ -46,6 +47,10 @@ export function PublicShell({ children }: PublicShellProps) {
               ))}
             </ul>
           </nav>
+
+          {headerAction ? (
+            <div className={styles.headerAction}>{headerAction}</div>
+          ) : null}
         </div>
       </header>
 
