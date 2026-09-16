@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { toDomainRole, toWireRole } from "@/backend";
-import { journeyStageId, journeyStageIdForProject, PROJECT_STAGES } from "@/backend/core";
-import { PARTICIPANT_ROLES } from "@/domain/roles";
+import { journeyStageId, journeyStageIdForProject, PROJECT_STAGES, ROLES } from "@/backend/core";
+import { isParticipantRoleId, PARTICIPANT_ROLES } from "@/domain/roles";
 import { JOURNEY_STAGES } from "@/domain/journey";
 
 /**
@@ -31,6 +31,38 @@ describe("backend boundary vocabulary", () => {
       expect(wire, `no wire role for charter role ${role.id}`).toBeDefined();
       expect(toDomainRole(wire)).toBe(role.id);
     }
+  });
+
+  /**
+   * The adapter's only proof of correctness so far was that it agreed with a
+   * hand-written table in this file. These two tests check it against WS1's own
+   * runtime guard instead, which is the thing that actually rejects a value at
+   * the boundary, so the adapter cannot pass its tests while still handing the
+   * UI something the UI refuses.
+   */
+  it("produces charter ids that WS1's own guard accepts, for every wire role", () => {
+    expect(ROLES.length).toBeGreaterThan(0);
+    for (const wire of ROLES) {
+      const charter = toDomainRole(wire);
+      expect(isParticipantRoleId(charter), `WS1 rejects "${charter}" adapted from "${wire}"`).toBe(
+        true,
+      );
+      expect(toWireRole(charter)).toBe(wire);
+    }
+  });
+
+  it("confirms the adapter is load-bearing rather than decorative", () => {
+    /**
+     * `investor` is the wire token for the charter's `financier`. WS1's guard
+     * rejects it outright, so `User.role` — the one payload field carrying a
+     * raw role — cannot be passed into a charter-typed slot unadapted. If this
+     * ever starts passing, the two vocabularies have been silently merged and
+     * the adapter can be deleted.
+     */
+    expect(isParticipantRoleId("investor")).toBe(false);
+    expect(isParticipantRoleId("site_owner")).toBe(false);
+    expect(isParticipantRoleId(toDomainRole("investor"))).toBe(true);
+    expect(isParticipantRoleId(toDomainRole("site_owner"))).toBe(true);
   });
 
   it("maps every backend project stage onto a charter journey stage", () => {

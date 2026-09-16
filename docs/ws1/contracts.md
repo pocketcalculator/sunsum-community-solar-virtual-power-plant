@@ -61,7 +61,22 @@ Vocabulary translation between the WS1 charter ids (`site-owner`, `operator`,
 `financier`, and the seven journey stage ids) and the backend wire vocabulary
 (`site_owner`, `operator`, `investor`, five project stages) is the backend's
 responsibility and lives in `src/backend/handlers/shared/vocabulary.ts` and
-`journeyStageId` in `src/backend/core/views`. WS1 vocabulary is not renamed.
+`journeyStageId` in `src/backend/core/journey`. WS1 vocabulary is not renamed.
+
+The two vocabularies are translated at different points, because only one of
+them travels on the wire as a raw token:
+
+- **Journey stages are already translated for you.** Every response that places
+  something on the ribbon carries `journey_stage_id` in WS1's own kebab-case
+  ids, alongside the raw `submission_status` / `project_stage`. Render from
+  `journey_stage_id`; no adapter call is needed.
+- **Roles are not.** `Role` appears in exactly one payload field — `User.role`,
+  reached as `contact.role` on `GET /me/sites` — and it carries the wire token.
+  `isParticipantRoleId("investor")` is `false` by WS1's own test, so a consumer
+  must call `toDomainRole`, exported from `@/backend`, rather than passing that
+  value into a charter-typed slot. `tests/unit/backend/vocabulary.test.ts`
+  asserts the adapter's output satisfies `isParticipantRoleId` for every wire
+  role, so the two sides cannot drift apart silently.
 
 ## Questions the canonical contract must resolve
 
