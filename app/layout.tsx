@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { ThemeScript } from "@/components/ui/theme/ThemeScript";
 import { PublicShell } from "@/features/participation";
 import "./globals.css";
 
@@ -19,7 +20,12 @@ interface RootLayoutProps {
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en">
+    // The theme script sets `data-theme` here before React runs, so this
+    // element is expected to differ from what the server sent.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <ThemeScript />
+      </head>
       <body>
         <PublicShell>{children}</PublicShell>
       </body>
