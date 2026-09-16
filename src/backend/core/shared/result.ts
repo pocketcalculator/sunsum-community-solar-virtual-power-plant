@@ -14,9 +14,15 @@
  */
 export type FailureCode =
   | "invalid_query"
+  | "invalid_body"
   | "unauthenticated"
   | "forbidden_role"
-  | "forbidden_tier";
+  | "forbidden_owner"
+  | "forbidden_tier"
+  | "not_found"
+  | "conflict"
+  | "validation_failed"
+  | "service_unavailable";
 
 export interface Failure {
   readonly code: FailureCode;
@@ -46,4 +52,14 @@ export function failure<T>(
     ok: false,
     failure: details === undefined ? { code, message } : { code, message, details },
   };
+}
+
+export function isFailedResult(value: unknown): value is Result<never> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "ok" in value &&
+    value.ok === false &&
+    "failure" in value
+  );
 }

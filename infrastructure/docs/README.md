@@ -20,9 +20,15 @@ does not require Container Apps or a container registry. See the
 The [App Service / PostgreSQL operating guide](app-service-postgres.md) describes
 the prepared Bicep/Azure CLI foundation, local checks, exact-IP approval and explicit
 Entra SQL bootstrap. This preparation does not provision or connect a cloud
-database. The current domain APIs remain fixture-backed. F1 is the web-hosting
-tier only; PostgreSQL compute and storage costs must be confirmed separately.
-No orchestration framework is required.
+database. No orchestration framework is required.
+
+The separate [development deployment guide](deployment.md) records the existing
+Azure environment and its verified PostgreSQL-backed application deployment.
+That path uses managed identity rather than a database password. It also records
+the one-time database grant that a template cannot perform. These recorded
+results do not certify a new deployment of the broader preparation foundation.
+F1 is the web-hosting tier only; PostgreSQL compute and storage costs must be
+confirmed separately.
 
 If enabling [Fabric mirroring](https://learn.microsoft.com/en-us/fabric/mirroring/azure-database-postgresql),
 use a supported General Purpose or Memory Optimized PostgreSQL server.

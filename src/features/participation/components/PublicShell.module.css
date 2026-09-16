@@ -104,6 +104,41 @@
   margin-left: auto;
 }
 
+.roleNav {
+  border-top: 1px solid var(--border-subtle);
+  background-color: var(--surface-sunken);
+}
+
+.roleNavInner {
+  composes: container from "../../../styles/layout.module.css";
+}
+
+.roleNavList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: var(--space-1) 0;
+  list-style: none;
+}
+
+.roleNavLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding-inline: var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.roleNavLink:hover {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-solar-line);
+}
+
 .main {
   flex: 1 1 auto;
 }

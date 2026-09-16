@@ -88,6 +88,10 @@ export const SITE_TYPES = ["rooftop", "land"] as const;
 
 export type SiteType = (typeof SITE_TYPES)[number];
 
+export function isSiteType(value: string): value is SiteType {
+  return SITE_TYPES.some((siteType) => siteType === value);
+}
+
 /**
  * A project as the backend holds it.
  *
@@ -101,37 +105,42 @@ export type SiteType = (typeof SITE_TYPES)[number];
  * `null` means not yet estimated, which is different from zero.
  */
 export interface ProjectRecord {
-  readonly id: string;
-  readonly siteId: string;
-  readonly name: string;
-  readonly stage: ProjectStage;
+  id: string;
+  siteId: string;
+  name: string;
+  stage: ProjectStage;
 
   /** Operator-controlled, default false. Nothing reaches an investor without it. */
-  readonly visibleToInvestors: boolean;
+  visibleToInvestors: boolean;
 
   /** Tier-restricted. Never present in a tier 0 payload. */
-  readonly siteAddressRaw: string;
-  readonly siteLatitude: number;
-  readonly siteLongitude: number;
-  readonly ownerUserId: string;
+  siteAddressRaw: string;
+  siteLatitude: number;
+  siteLongitude: number;
+  ownerUserId: string;
 
   /** Neighbourhood-level only, safe at tier 0. */
-  readonly locality: string;
+  locality: string;
   /** Coarse region used for investor mandate matching, for example "GA". */
-  readonly region: string;
+  region: string;
 
-  readonly siteType: SiteType;
-  readonly preliminaryProjectType: string | null;
-  readonly viabilityStatus: ViabilityStatus;
+  siteType: SiteType;
+  preliminaryProjectType: string | null;
+  viabilityStatus: ViabilityStatus;
 
-  readonly estimatedSystemSizeKwLow: number | null;
-  readonly estimatedSystemSizeKwHigh: number | null;
-  readonly estimatedAnnualGenerationKwhLow: number | null;
-  readonly estimatedAnnualGenerationKwhHigh: number | null;
+  estimatedSystemSizeKwLow: number | null;
+  estimatedSystemSizeKwHigh: number | null;
+  estimatedAnnualGenerationKwhLow: number | null;
+  estimatedAnnualGenerationKwhHigh: number | null;
 
   /** Midpoint capacity carried on the project itself, in kW. */
-  readonly estimatedCapacityKw: number | null;
+  estimatedCapacityKw: number | null;
 
   /** Funding needs still open, which is what a mandate match looks at. */
-  readonly openFundingNeedsCount: number;
+  openFundingNeedsCount: number;
+  assignedOperatorUserId?: string | null;
+  nextAction?: string | null;
+  targetDate?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }

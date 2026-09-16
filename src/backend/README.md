@@ -5,10 +5,20 @@ service catalogue and API surface it is expected to grow into are described in
 sections 9 and 10 of
 [the technical design](../../docs/sunsum_technical_design_doc.md).
 
-**`GET /portfolio` is the worked example.** It is implemented end to end against
-mock data so that later endpoints have a pattern to copy; see
-[Adding an endpoint](#adding-an-endpoint). Persistence and identity are still
-not implemented, and the project store is an in-memory fixture.
+**`GET /portfolio` is the worked example.** The agreed owner, operator and
+investor workflow endpoints now follow the same handler/core split. It runs
+against either an in-memory fixture or a real PostgreSQL database, chosen by
+one environment variable, so that later endpoints have a pattern to copy; see
+[Adding an endpoint](#adding-an-endpoint). Identity is still a demo seam: each
+route uses a fixed role-specific identity.
+
+> [!WARNING]
+> **Do not expose these privileged demo routes as a production API.** They do
+> not authenticate requests: each route always resolves to a fixed demo owner,
+> operator, or investor. The core authorization checks and role-specific route
+> wiring must remain in place, but production exposure additionally requires
+> authenticated request-to-viewer resolution plus CSRF protection for
+> cookie-based sessions or appropriate bearer-token protection.
 
 ## Layout
 
@@ -20,18 +30,27 @@ code goes is a lookup rather than a judgement call.
 ```text
 src/backend/
   index.ts              the only entry point a route may use
+  composition.ts        the composition root — picks the store from the environment
   core/
     shared/             primitives with no domain meaning: Result, ok, failure
     identity/           S-IAM   who the caller is
-    projects/           S-PROJ  project records, vocabulary, the store seam
+    projects/           S-PROJ  project records, transitions and visibility
+    sites/              S-SITE  intake, assessments and submission queue
+    engagements/        S-ENG   interest and disclosure tier
+    views/              S-VIEW  owner dashboard and deal room
+    store/              shared in-memory persistence seam
     investors/          S-INV   portfolio, mandate matching, visibility rule
   handlers/
     shared/             JSON, the error envelope, failure-code to status
     identity/           S-IAM   resolving the caller at the transport edge
     investors/          S-INV   query parsing and status mapping
+    sites/              S-SITE  site body and submission query parsing
+    projects/           S-PROJ  decision, stage and visibility bodies
+    engagements/        S-ENG   interest and operator engagement reads
+    views/              S-VIEW  composed reads
+  db/                   schema, migrations, driver, store. Imports core; core never imports it
   infrastructure/
     database/           server-only PostgreSQL/Drizzle connection and tooling seam
-  db/                   the schema. Imports core; core never imports it
 ```
 
 Each directory's `index.ts` is its public face. A sibling imports
@@ -48,14 +67,14 @@ it is misplaced.
 | Service     | Directory      | Endpoints                                                                    | Status  |
 | ----------- | -------------- | ---------------------------------------------------------------------------- | ------- |
 | **S-IAM**   | `identity/`    | `/auth/*`, `/me`                                                             | seam    |
-| **S-SITE**  | `sites/`       | `/sites/*`, `/me/sites`, `/submissions/*`, `/me/outstanding`                 | to do   |
+| **S-SITE**  | `sites/`       | `/sites/*`, `/me/sites`, `/submissions/*`, `/me/outstanding`                 | done    |
 | **S-ASSESS**| `assessments/` | `/sites/{id}/assessments/override`                                           | to do   |
-| **S-PROJ**  | `projects/`    | `/pipeline`, `/projects/{id}`, `/projects/{id}/stage`, `.../visibility`      | partial |
+| **S-PROJ**  | `projects/`    | `/pipeline`, `/projects/{id}`, `/projects/{id}/stage`, `.../visibility`      | done    |
 | **S-INV**   | `investors/`   | `/portfolio`, `/investors/me/profile`                                        | done    |
-| **S-ENG**   | `engagements/` | `/projects/{id}/engagements`, `/engagements/*`, funding needs, diligence     | to do   |
-| **S-DOC**   | `documents/`   | `/sites/{id}/documents`, `/sites/{id}/acknowledgements`                      | to do   |
-| **S-ACT**   | `activity/`    | `/projects/{id}/activity`                                                    | to do   |
-| **S-VIEW**  | `views/`       | Composed reads: the site-owner dashboard, `/projects/{id}/deal-room`         | to do   |
+| **S-ENG**   | `engagements/` | `/projects/{id}/engagements`, `/me/engagements`, funding needs; engagement state and diligence later | partial |
+| **S-DOC**   | `documents/`   | `/sites/{id}/documents`, `/sites/{id}/acknowledgements`                      | partial |
+| **S-ACT**   | `activity/`    | `/projects/{id}/activity`                                                    | partial |
+| **S-VIEW**  | `views/`       | Composed reads: the site-owner dashboard, `/projects/{id}/deal-room`         | partial |
 
 S-VIA, the viability engine, is deliberately absent: the charter puts it in a
 separate Python deployable, so it will be reached as a client from
@@ -68,18 +87,56 @@ layers, each with an `index.ts`. An empty directory is not worth the import.
 
 | Directory   | Owns                                                                                                                                    | Must not                                                                       |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `handlers/` | The transport edge: establishing who is calling, validating the request into typed values, and turning a `Result` into a status code     | Decide permission, or hold workflow rules, stage transitions or solar math      |
+| `handlers/` | The transport edge: selecting the fixed demo principal, validating the request into typed values, and turning a `Result` into a status code | Decide permission, accept caller-selectable roles, or hold workflow rules, stage transitions or solar math |
 | `core/`     | Authorization, workflow rules, visibility scoping and the response payload, written as ordinary functions over plain values              | Import `handlers/`, or reach for `next/server`, `next/headers` or `next/cache` |
 
-Handlers **authenticate**; core **authorizes**. A handler establishes identity
-because that is a transport concern — a cookie, a header, a token. Core decides
-what that identity may see, because a permission that lived in the handler
-would be skipped the moment a scheduled job, the seeding CLI or a second route
-called the same function. This is what "enforce authorization at service
-boundaries, not only in the user interface" means here.
+Core **authorizes**. In this MVP, handlers do **not authenticate**; each route
+selects its fixed role-specific demo principal and never accepts a
+caller-supplied role. Replacing that seam with authenticated request-to-viewer
+resolution is future WS3 work. Core still decides what the resolved identity
+may see, because a permission that lived only in the handler would be skipped
+the moment a scheduled job, seeding CLI or second route called the same
+function. This is what "enforce authorization at service boundaries, not only
+in the user interface" means here.
 
 `index.ts` is the public entry point. Routes import `@/backend` and nothing
 deeper, which keeps handler and core module paths free to move.
+
+## The composition root
+
+Neither `core/` nor `handlers/` may import `db/`. Something has to, or the
+database would never be reached — so one module does, and only one:
+`composition.ts`, imported by `index.ts`.
+
+```text
+composition.ts  installSelectedStore()  reads SUNSUM_STORE, points core's seam at a BackendStore
+index.ts        re-exports the routes, having imported composition.ts first
+```
+
+Handlers export a **factory**, not a wired route:
+
+```ts
+export function createPortfolioRoute(store: BackendStore = demoBackendStore) { … }
+```
+
+The factory takes the store as an argument, so a test supplies a fixture
+without touching the environment. The default is `core`'s store seam rather
+than a concrete store, so a handler never learns which implementation it got —
+`installSelectedStore()` decides that once, at module load, and every handler
+follows.
+
+| `SUNSUM_STORE` | Store                     | Needs a database |
+| -------------- | ------------------------- | ---------------- |
+| unset, `mock`  | `core/store/index.ts`     | no               |
+| `db`           | `db/backend-store.ts`     | yes              |
+
+Both return the same payloads, and
+`tests/integration/store-parity.test.ts` asserts it against a live database.
+See [`db/README.md`](./db/README.md) for how to run one.
+
+This is the only exception to the persistence rule, and it is deliberate: the
+choice of implementation is made once, at the top, where it is visible — not
+by an import buried in a rule.
 
 ## Adding an endpoint
 
@@ -92,16 +149,21 @@ Follow `GET /portfolio`. Pick the service directory from
    internal records into the payload with an explicit field list, never a
    spread, so a new column cannot publish itself. Export it from the
    directory's `index.ts`.
-2. **Handler** — add a module under `handlers/<service>/` that validates the
-   request into typed values, calls core, and maps the result with
-   `jsonResponse` or `failureResponse`. Reject unknown input rather than
-   ignoring it: a silently dropped filter shows the caller more than they asked
-   for. Export it from the directory's `index.ts`.
-3. **Route** — add `app/api/<path>/route.ts` as a one-line re-export of the
+2. **Handler** — add a module under `handlers/<service>/` exporting a
+   `create<Name>Route(store?)` factory that validates the request into typed
+   values, calls core, and maps the result with `jsonResponse` or
+   `failureResponse`. Reject unknown input rather than ignoring it: a silently
+   dropped filter shows the caller more than they asked for. Export it from the
+   directory's `index.ts`.
+3. **Wire it** — in `src/backend/index.ts`, call the factory with no argument.
+   It picks up `core`'s store seam, which `composition.ts` has already pointed
+   at the selected implementation.
+4. **Route** — add `app/api/<path>/route.ts` as a one-line re-export of the
    wired handler from `@/backend`.
-4. **Tests** — cover the authorization paths, the visibility rule, the failure
+5. **Tests** — cover the authorization paths, the visibility rule, the failure
    statuses, and that the payload does not carry anything the caller's tier
-   forbids.
+   forbids. Pass a fixture store to the factory rather than setting
+   `SUNSUM_STORE`.
 
 Reading another service's data is a normal import of its barrel — as
 `core/investors` imports `../projects`. Keep it to the barrel and those
@@ -115,6 +177,10 @@ statuses once in `handlers/shared/http.ts`, where the mapping is a total
 
 - Payload properties are `snake_case`, matching the wire contract. Everything
   internal is `camelCase`. The projection function is the only place they meet.
+- UI charter role ids and backend wire roles intentionally differ; translate
+  them only with the boundary adapter exported from `@/backend`.
+- Do not overload lifecycle fields. Composed owner views expose
+  `submission_status`, `project_stage`, and `journey_stage_id` separately.
 - Physical quantities carry their unit in the name: `_kw` for capacity,
   `_kwh` for annual generation. `null` means "not yet estimated", never zero.
 - Core returns `Result` rather than throwing for outcomes a caller is expected
@@ -161,27 +227,28 @@ persistence and private Blob Storage for document files. Drizzle Kit is the sele
 validated server-only configuration, a pooled `pg`/Drizzle client, managed-identity
 token refresh and a read-only connectivity command. It reuses the canonical
 `db/` schema and migrations from main rather than maintaining a second schema.
-It does not implement a real `ProjectStore`, application-user mapping, or cloud
-provisioning. The proposed Entra application-user integration
-and the broader WS2 deployment topology remain separate.
+The `db/` directory also provides the PostgreSQL-backed `BackendStore` selected
+by the composition root. Application-user mapping remains separate from
+database access and Azure provisioning.
 
 Two seams allow those integrations without changing the workflow rules:
 
-- **Persistence.** `core/projects/mock-store.ts` is an in-memory fixture behind
-  the `ProjectStore` interface in `core/projects/store.ts`. The data is
-  invented for the demo and is not real customer data. Add the Drizzle-backed
-  PostgreSQL implementation behind this interface without moving persistence
-  into the UI or route handlers. The interface is kept in its own file because
-  it is the part that survives.
+- **Persistence.** `core/store/index.ts` provides the shared in-memory demo
+  implementation behind `BackendStore`; `createMemoryBackendStore` gives tests
+  isolated state and `resetDemoBackendStore` resets route-level state. Its
+  serialized transactions discard the working copy when the callback throws or
+  returns a failed `Result`, preventing partial mutations on domain failures.
 
   A schema now exists in [`db/`](./db/README.md) and
   [ADR 0001](../../infrastructure/docs/adr-0001-database-and-persistence.md)
-  records the decision, but **nothing is wired up yet**: the running endpoint is
-  still served by the fixture.
-- **Identity.** `handlers/identity/viewer.ts` returns the same demo investor for
-  every request. **It has no security value.** It reads nothing from the request
-  on purpose, so it cannot be used to choose a role; a real session lookup drops
-  into the same function.
+  records the decision. `composition.ts` selects the Drizzle-backed
+  `BackendStore` with `SUNSUM_STORE=db`; the default remains the explicit
+  in-memory fixture. Persistence stays outside the handlers.
+- **Identity.** `handlers/identity/viewer.ts` exposes fixed demo owner, operator
+  and investor resolvers. **They have no security value.** They read nothing
+  from the request, so a caller cannot choose a role. Before production, replace
+  them with authenticated request-to-viewer resolution and add CSRF protection
+  for cookie sessions or suitable bearer-token protection.
 
 Neither is production ready. The App Service smoke test exercises the existing
 fixture-backed API, not a real database, data set, or identity provider.
@@ -190,3 +257,36 @@ Infrastructure clients must not be constructed in `core/`, `handlers/`, routes,
 or presentation. The composition boundary supplies dependencies to adapters
 behind core interfaces; ESLint and the boundary tests enforce this separation.
 Database configuration is never a `NEXT_PUBLIC_*` value.
+
+### Reconciling with the database schema
+
+The schema landed on `main` in #19 and this branch has merged it. The two lines
+of work merged textually clean — including the funding-stage vocabulary, which
+was declared in both trees and so was exported twice without git noticing —
+so every mismatch below would have merged green and failed at runtime rather
+than being caught by the merge. #19 resolved its side; the rest were resolved
+here:
+
+| Concern | Resolution |
+| --- | --- |
+| Screening status token | #19 uses `screening`, matching this code and `src/domain/journey.ts`. |
+| Draft sites with null address/type/ownership | #19 made those columns nullable while `submission_status = 'draft'`, so saving an incomplete draft works as written. |
+| `amount_requested` | #19 relaxed to `IS NULL OR > 0`. An amountless feasibility need inserts cleanly. |
+| `amount_committed` | Fixed here: was written as `null` against a `NOT NULL DEFAULT '0'` column, and a column default does not apply to an explicitly inserted null. Now `0`, typed `number` rather than `number \| null` — nothing committed is zero, not unknown. |
+| Funding-need stage | Fixed here: typed `FundingStage` and written through `fundingStageForProject`, so `commissioning`/`operations` can no longer reach a column whose CHECK rejects them. |
+| `activity_single_parent_check` | Fixed here: activity rows carry exactly one parent, enforced by a discriminated `ActivityParent` rather than two independently nullable ids. Submission events are parented to the site, project events to the project, and both `listActivity` and `listSiteActivity` join across the boundary so no view lost history. |
+| Documents with two parents | Fixed here, in the seed and in `addSiteDocument`. A site upload is parented to the site; the demo project document to the project. `listDocuments` already matched either side. |
+| `documents.disclosure_class` | #19 added the column, `NOT NULL DEFAULT 'owner_private'` — it fails closed, and it is what the deal-room filter reads. |
+
+The investor mandate is typed `FundingStage[]` and matched against open funding
+needs rather than `project.stage`. Reinstating `ProjectStage[]` would silently
+restore a filter that never matches, because `permanent` is not a project stage
+and `commissioning`/`operations` are not funded stages.
+
+This branch's `core/projects/funding.ts` mirror has been deleted: the
+vocabulary now comes from `core/projects/types.ts`, which is what `db/enums.ts`
+re-exports, so there is one declaration rather than two that merge silently.
+`tests/unit/backend/workflows.test.ts` asserts the single-parent and
+funding-need invariants against those shared constants, so a future write that
+the CHECK constraints would reject fails in unit tests instead of at insert
+time.

@@ -10,7 +10,7 @@
  * `PATCH /projects/{id}`, `PATCH /projects/{id}/visibility`.
  */
 
-export { mockProjectStore } from "./mock-store";
+export { MOCK_PROJECTS, mockProjectStore } from "./mock-store";
 export { type ProjectStore } from "./store";
 export {
   FUNDING_STAGE_BY_PROJECT_STAGE,
@@ -18,6 +18,7 @@ export {
   fundingStageForProject,
   isFundingStage,
   isProjectStage,
+  isSiteType,
   isViabilityStatus,
   PROJECT_STAGES,
   SITE_TYPES,
@@ -28,3 +29,19 @@ export {
   type SiteType,
   type ViabilityStatus,
 } from "./types";
+export {
+  advanceProjectStage,
+  decideSubmission,
+  toProjectPayload,
+  getPipeline,
+  updateProject,
+  updateProjectVisibility,
+  type DecisionInput,
+  type DecisionResponse,
+  type PipelineCard,
+  type PipelineColumn,
+  type PipelineResponse,
+  type ProjectPayload,
+  type ProjectUpdateInput,
+  type SubmissionDecision,
+} from "./workflows";

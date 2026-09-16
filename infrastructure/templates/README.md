@@ -8,6 +8,19 @@ description: Deployable infrastructure templates and parameter examples for Suns
 Store infrastructure-as-code templates and non-sensitive parameter examples in
 this directory. Keep environment-specific values outside committed templates.
 
+## Development environment
+
+- `app-service.bicep` declares the App Service plan, web app, managed identity
+  and application settings for the existing development environment.
+- `app-service.dev.bicepparam` contains the non-secret shared development values
+  introduced on main. It does not contain a database password.
+
+See the [development deployment guide](../docs/deployment.md) for that path and
+the database grant required for a newly created web identity. This is distinct
+from the preparation entry points below; review which template owns a site's
+settings before applying either to the same app. Keep new approval records and
+identity details for the preparation workflow in ignored local configuration.
+
 ## Prepared entry points
 
 | Template | Scope | Use |

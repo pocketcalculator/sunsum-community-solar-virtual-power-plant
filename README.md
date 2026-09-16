@@ -120,6 +120,19 @@ The shared header offers light, dark, and system theme modes. The selected mode
 is stored in the browser and all application surfaces consume the same semantic
 design tokens.
 
+The secondary header navigation exposes the three role workspaces: Site Owner,
+Investor, and Platform Operator. Its labels, role IDs, and destinations are
+defined in `src/features/participation/components/PublicShell.tsx` in the
+`ROLE_NAV` collection. To connect a button to a new page, create the route under
+`app/` and update that item's `href` in `ROLE_NAV`.
+
+All role buttons are intentionally visible while authentication and participant
+data are unavailable. When identity is connected, resolve the signed-in user's
+authorized `ParticipantRoleId` values at the server boundary in
+`app/layout.tsx`, then pass them to `PublicShell` through its `visibleRoleIds`
+prop. Do not infer access from a hidden button: each role page and API must also
+enforce the same authorization at its service boundary.
+
 The public header also includes an **AI assistant** preview. It opens a
 right-side guidance drawer with the same rooftop, land and funding entry paths,
 plus deterministic replies for basic greetings and questions. This preview does

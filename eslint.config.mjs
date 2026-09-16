@@ -47,7 +47,7 @@ const nodeNamespace = {
  * honest by the browser-safety rules above. These describe its own boundary.
  */
 const backendModules = {
-  group: ["@/backend", "@/backend/**", "**/backend/**"],
+  group: ["@/backend", "@/backend/**", "**/backend", "**/backend/**"],
   message:
     "Server-side workflow code must not enter browser-safe presentation; reach the backend from a route instead.",
 };

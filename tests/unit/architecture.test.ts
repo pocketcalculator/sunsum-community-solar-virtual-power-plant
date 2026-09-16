@@ -128,6 +128,9 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/handlers/probe.ts", "@/backend/db"],
     ["src/backend/handlers/investors/probe.ts", "../../db"],
     ["src/backend/handlers/investors/probe.ts", "../../db/schema"],
+    /** A store implementation is persistence wherever it lives. */
+    ["src/backend/core/probe.ts", "@/backend/db/backend-store"],
+    ["src/backend/handlers/probe.ts", "@/backend/db/client"],
     /**
      * A driver is persistence too. Blocking `@/backend/db` alone stopped being
      * enough once `pg` was a real dependency: core could import it directly and
@@ -140,6 +143,17 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/core/shared/probe.ts", "pg"],
     ["src/backend/handlers/probe.ts", "pg"],
     ["src/backend/handlers/investors/probe.ts", "drizzle-orm"],
+    /**
+     * The bare directory, by relative path. A glob ending in `backend` plus a
+     * slash and a wildcard cannot match it, because there is no segment after
+     * `backend` — so until a pattern for the directory itself was added, a
+     * feature could have imported the composition root, the one module that
+     * knows how to reach PostgreSQL, and nothing would have said a word.
+     */
+    ["src/features/onboarding/probe.tsx", "../../backend"],
+    ["src/features/participation/probe.tsx", "../../backend"],
+    ["src/components/ui/probe.tsx", "../../backend"],
+    ["src/domain/probe.ts", "../backend"],
   ])(
     "rejects %s importing %s",
     async (file, dependency) => {
@@ -184,13 +198,20 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/db/probe.ts", "@/backend/core/identity"],
     ["src/backend/db/probe.ts", "@/backend/core/projects"],
     ["src/backend/db/probe.ts", "../core/projects"],
+    ["src/backend/db/probe.ts", "drizzle-orm/pg-core"],
     ["src/backend/db/probe.ts", "./enums"],
     /** Persistence owns the driver, and is the only place allowed to. */
-    ["src/backend/db/probe.ts", "drizzle-orm/pg-core"],
     ["src/backend/db/probe.ts", "pg"],
     ["src/backend/db/probe.ts", "drizzle-orm/node-postgres"],
     /** The single list behind `investor_type` and the sign-up form's funders. */
     ["src/backend/db/probe.ts", "@/domain/userTypes"],
+    /**
+     * The composition root is neither core nor handlers, which is exactly why
+     * it may see both sides and choose a store.
+     */
+    ["src/backend/probe.ts", "@/backend/db"],
+    ["src/backend/probe.ts", "./db/backend-store"],
+    ["src/backend/probe.ts", "./core/projects"],
   ])(
     "permits %s importing %s",
     async (file, dependency) => {
@@ -212,6 +233,10 @@ describe("the actual module-boundary configuration", () => {
     ["src/components/ui/probe.tsx", 'export * from "@/backend";'],
     ["src/domain/probe.ts", 'export * from "@/backend/core";'],
     ["src/backend/core/probe.ts", 'export * from "@/backend/handlers";'],
+    ["src/backend/core/probe.ts", 'export * from "@/backend/db";'],
+    ["src/backend/handlers/probe.ts", 'export * from "@/backend/db/schema";'],
+    ["src/backend/core/probe.ts", 'export * from "pg";'],
+    ["src/backend/handlers/probe.ts", 'export * from "drizzle-orm";'],
   ])("rejects prohibited re-exports from %s", async (file, source) => {
     expect(await lintBoundary(file, source)).not.toHaveLength(0);
   });

@@ -17,9 +17,15 @@ import type { Failure, FailureCode } from "../../core/shared";
  */
 const STATUS_BY_FAILURE_CODE: Record<FailureCode, number> = {
   invalid_query: 400,
+  invalid_body: 400,
   unauthenticated: 401,
   forbidden_role: 403,
+  forbidden_owner: 403,
   forbidden_tier: 403,
+  not_found: 404,
+  conflict: 409,
+  validation_failed: 422,
+  service_unavailable: 503,
 };
 
 /** The error envelope from the contract: a stable `code` clients branch on. */
@@ -27,6 +33,7 @@ interface ErrorBody {
   readonly code: FailureCode;
   readonly message: string;
   readonly details?: Readonly<Record<string, unknown>>;
+  readonly missing_fields?: unknown;
 }
 
 export function jsonResponse(body: unknown, status = 200): Response {
@@ -44,14 +51,13 @@ export function jsonResponse(body: unknown, status = 200): Response {
 }
 
 export function failureResponse(failure: Failure): Response {
-  const body: ErrorBody =
-    failure.details === undefined
-      ? { code: failure.code, message: failure.message }
-      : {
-          code: failure.code,
-          message: failure.message,
-          details: failure.details,
-        };
+  const missingFields = failure.details?.missing_fields;
+  const body: ErrorBody = {
+    code: failure.code,
+    message: failure.message,
+    ...(failure.details === undefined ? {} : { details: failure.details }),
+    ...(missingFields === undefined ? {} : { missing_fields: missingFields }),
+  };
 
   return jsonResponse(body, STATUS_BY_FAILURE_CODE[failure.code]);
 }

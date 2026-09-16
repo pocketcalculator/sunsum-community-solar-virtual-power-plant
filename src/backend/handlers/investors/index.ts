@@ -7,7 +7,12 @@
  */
 
 export {
+  getInvestorProfileRoute,
   getPortfolioRoute,
+  handleGetInvestorProfile,
   handleGetPortfolio,
+  handlePostInvestorProfile,
+  parseInvestorProfile,
   parsePortfolioQuery,
+  postInvestorProfileRoute,
 } from "./portfolio";
