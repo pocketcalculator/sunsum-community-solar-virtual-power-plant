@@ -1,0 +1,40 @@
+# Local PostgreSQL for development and the demo.
+#
+# The ADR's decision is PostgreSQL on Azure Database for PostgreSQL Flexible
+# Server. This runs the same engine and the same major version on a laptop, so
+# what passes here is what runs there — that is the whole reason for pinning the
+# major version rather than tracking `postgres:latest`.
+#
+#   docker compose up -d      start it
+#   npm run db:migrate        create the schema
+#   npm run db:seed           load the demo data
+#   docker compose down -v    throw it away, volume and all
+#
+# Port 55432, not 5432, so it does not collide with a PostgreSQL someone already
+# has installed. The credentials are development-only and are deliberately in
+# the repository: there is nothing here worth protecting, and a password nobody
+# can find is a password that stops the demo.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sunsum-postgres
+    environment:
+      POSTGRES_USER: sunsum
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: sunsum
+    ports:
+      - "55432:5432"
+    volumes:
+      - sunsum-pgdata:/var/lib/postgresql/data
+    # Compose waits for this before reporting the service healthy, so
+    # `docker compose up -d && npm run db:migrate` does not race the server's
+    # first start.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sunsum -d sunsum"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  sunsum-pgdata:

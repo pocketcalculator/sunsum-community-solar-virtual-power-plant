@@ -20,18 +20,24 @@ import {
   getPortfolio,
   type PortfolioQuery,
 } from "../../core/investors";
-import { isProjectStage, isViabilityStatus } from "../../core/projects";
+import { isProjectStage, isViabilityStatus, type ProjectStore } from "../../core/projects";
 import { failure, ok, type Result } from "../../core/shared";
 import { resolveDemoViewer } from "../identity";
 import { failureResponse, jsonResponse } from "../shared";
 
 /**
- * Exported with the viewer as a parameter so the authorization paths can be
- * tested directly. The route below supplies the real one.
+ * Exported with the viewer and the store as parameters so the authorization
+ * paths can be tested directly. The route factory below supplies the real ones.
+ *
+ * The store is an interface from `core`, never a concrete one: a handler must
+ * not be able to tell whether it is talking to fixtures or to PostgreSQL, which
+ * is what makes the two substitutable. Choosing between them happens once, in
+ * `src/backend/index.ts`.
  */
 export async function handleGetPortfolio(
   request: Request,
   viewer: Viewer,
+  store?: ProjectStore,
 ): Promise<Response> {
   const query = parsePortfolioQuery(new URL(request.url).searchParams);
 
@@ -39,16 +45,25 @@ export async function handleGetPortfolio(
     return failureResponse(query.failure);
   }
 
-  const result = await getPortfolio(viewer, query.value);
+  const result = await getPortfolio(viewer, query.value, store);
 
   return result.ok
     ? jsonResponse(result.value)
     : failureResponse(result.failure);
 }
 
-/** Wired for the route: the only export the app layer needs. */
-export function getPortfolioRoute(request: Request): Promise<Response> {
-  return handleGetPortfolio(request, resolveDemoViewer());
+/**
+ * Wires the handler to a store and returns the function a route exports.
+ *
+ * A factory rather than a constant so that the store is chosen by the
+ * composition root instead of being baked in here — the handler would otherwise
+ * have to import persistence to pick one, which is the boundary this layer
+ * exists to hold.
+ */
+export function createPortfolioRoute(
+  store?: ProjectStore,
+): (request: Request) => Promise<Response> {
+  return (request) => handleGetPortfolio(request, resolveDemoViewer(), store);
 }
 
 /**
