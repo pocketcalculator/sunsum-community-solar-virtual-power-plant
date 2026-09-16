@@ -108,11 +108,74 @@ hosting, and it does not provision anything.**
 
 ### Engine recommendation
 
-**Option A, PostgreSQL.** Driver 1 and driver 2 decide it: two-thirds of the
-tables carrying JSON, and the one query the investor experience is built around
-reading those columns. Driver 3 supports it. The Azure SQL advantages are real
-but land on maturity and on a NULL-comparison detail that a partial unique index
-handles in PostgreSQL in one line.
+**Option A, PostgreSQL.**
+
+The MVP argument is drivers 1 and 2: two-thirds of the tables carry JSON, and
+the one query the investor experience is built around reads those columns. But
+the MVP is the weakest reason, because the MVP is eleven tables and will be
+finished in days. The decision worth making is which engine this is still on in
+two years.
+
+#### The out-of-scope list is the roadmap
+
+§2.2 defers live utility integration, grid dispatch, **real-time inverter
+integration**, interconnection processing and REC settlement. None of that is
+rejected — the product is called a virtual power plant, and every one of those
+items is what a virtual power plant does once it stops being an origination
+tool. They are deferred scope, and they are overwhelmingly time-series: meter
+reads, generation curves, dispatch signals.
+
+PostgreSQL absorbs that without an architecture change. TimescaleDB 2.23 and
+native partitioning are available on Azure Database for PostgreSQL Flexible
+Server today. Telemetry on Azure SQL means a second store, and a second store
+means the first real distributed-systems problem this project would have.
+
+#### Equity targeting is a geospatial problem
+
+`sites` already carries latitude, longitude and a geocode confidence. The
+investor model carries `impact_priorities`, and the investor types include
+`energy_equity_fund`, `cdfi_cde`, `nmtc` and `special_community_endowment`.
+
+Every one of those designations is decided by where a site falls on a map:
+census tract, disadvantaged-community status, New Markets eligibility, utility
+service territory. That is point-in-polygon work, not arithmetic on a
+coordinate pair. PostGIS 3.6 is a supported extension on Flexible Server, is
+what the entire GIS tool ecosystem speaks, and is how the shapefiles those
+designations are published as get loaded at all. Azure SQL has spatial types,
+but they are not PostGIS, and the data will not arrive in a form they prefer.
+
+Nothing in the MVP needs this. The first investor who asks "which of these are
+in a disadvantaged community?" does.
+
+#### Who inherits this matters
+
+A community-owned solar platform plausibly ends up open-sourced, donated to a
+nonprofit or CDFI, or run by a municipality. PostgreSQL runs on every cloud, on
+a laptop, and on managed platforms a two-person community organization can
+afford. Azure SQL commits whoever inherits it to Azure and to SQL Server
+licensing permanently. For software whose stated purpose is community
+ownership, that is a design constraint, not only an operational one.
+
+#### The strongest argument the other way
+
+Azure SQL has **ledger tables**: cryptographically verifiable, tamper-evident
+history. Three tables here are append-only by design — `assessments`,
+`activity` and `acknowledgements` — and `acknowledgements` records a person
+typing their name to signify agreement. If SunSum ever carries binding
+commitments rather than §2.2's simulated signatures, verifiable audit stops
+being a nice property.
+
+This is a real advantage and PostgreSQL has no equivalent. It is outweighed
+because binding commitments are explicitly out of scope, real signatures would
+come from a third-party e-signature provider with its own audit trail, and
+append-only enforcement is achievable in PostgreSQL with permissions and
+triggers. It should be revisited if the product moves toward holding funds.
+
+#### What this does not rest on
+
+Not cost. The monthly difference is negligible and should not decide an
+architecture. Not the hackathon demo. Not the current eleven tables, which port
+either way.
 
 ## Persistence layer options
 
@@ -205,6 +268,45 @@ What would be expensive to reverse is spreading SQL through handlers or core
 rules. The import boundary in `eslint.config.mjs` already prevents the shape of
 that mistake, and store interfaces keep the rest of it out.
 
+## The two decisions are not independent
+
+Choosing Azure SQL does not mean rewriting the schema against the same tool. It
+means **losing the tool**. Drizzle ships PostgreSQL, MySQL, SQLite, SingleStore
+and Gel dialects; there is no SQL Server dialect. Azure SQL therefore forces
+Prisma or a raw `mssql` client as well.
+
+What survives either way is the design — eleven tables, their columns,
+relationships, indexes and the intent behind all twenty-nine constraints. That
+lives in §5.2 and in this record, not in a tool.
+
+What would have to be rewritten:
+
+| | PostgreSQL today | Azure SQL equivalent |
+| --- | --- | --- |
+| Query layer | Drizzle | Prisma or raw `mssql` |
+| JSON columns | `jsonb`, indexable | `nvarchar(max)` with `ISJSON` |
+| Identifiers | `uuid` / `gen_random_uuid()` | `uniqueidentifier` / `NEWID()` |
+| Timestamps | `timestamptz` | `datetimeoffset` |
+| Booleans, text | `boolean`, `text` | `bit`, `nvarchar(max)` |
+| "Exactly one parent" checks | `(x IS NOT NULL)::int + ...` | `CASE WHEN ... THEN 1 ELSE 0 END` |
+| "Is a JSON array" checks | `jsonb_typeof(x) = 'array'` | `ISJSON` only; weaker |
+| Case-insensitive email | Index on `lower(email)` | Computed column plus index |
+| Idempotent seed | `ON CONFLICT DO UPDATE` | `MERGE` |
+| Seed assertions | `DO $$ ... RAISE $$` | `IF ... THROW` |
+
+One thing gets simpler: SQL Server treats NULLs as equal in a unique
+constraint, so the duplicate-engagement problem that needs
+`UNIQUE NULLS NOT DISTINCT` here would not arise.
+
+One thing gets worse beyond the table: Prisma keeps its own schema language, so
+the `as const` vocabulary arrays in `core/` could no longer generate the
+database constraints. The single-source property — a stage cannot reach the
+database without reaching TypeScript — is a Drizzle property, not a portable
+one.
+
+Estimated cost of the switch: roughly a day, and best spent now rather than
+after a store implementation and several endpoints depend on it.
+
 ## Hosting
 
 An Azure subscription is available, which settles open question 1. It does not
@@ -227,17 +329,16 @@ So on the subscription this team already has, Azure SQL is free indefinitely and
 PostgreSQL is not. That is a real cost difference and it is recorded here rather
 than argued away.
 
-The recommendation is unchanged for two reasons. The first is proportion: the
-difference is roughly the price of two coffees a month against a JSON ergonomics
-cost paid on every one of the roughly thirty-four endpoints still to be written.
-The second is more specific to this project — **the free Azure SQL offer
-auto-pauses when idle**, and a database that has been idle overnight is exactly
-the state it will be in when a live demo starts. A cold start in front of judges
-is a worse outcome than a small monthly charge.
+It does not change the recommendation, because cost is not what the
+recommendation rests on — see
+[the engine recommendation](#engine-recommendation), which turns on deferred
+telemetry scope, geospatial equity targeting and who can run this in five years.
+A difference of this size should not decide an architecture in either direction.
 
-If the team would rather not spend anything, Azure SQL is a defensible choice and
-the schema ports with dialect edits. That trade should be made deliberately,
-with the demo cold-start risk understood, rather than by default.
+One operational note does matter for the demo rather than the decision: **the
+free Azure SQL offer auto-pauses when idle**, which is the state any database
+will be in when a live demo begins. Whichever engine is chosen, the demo should
+not be the first request after a night of inactivity.
 
 ## Open questions
 
