@@ -16,4 +16,21 @@ export {
   type PortfolioItem,
   type PortfolioQuery,
   type PortfolioResponse,
+  type PortfolioStore,
 } from "./portfolio";
+export {
+  CAPITAL_TYPES,
+  FUNDING_STAGES,
+  INVESTOR_TYPES,
+  getMyInvestorProfile,
+  isCapitalType,
+  isFundingStage,
+  isInvestorType,
+  toInvestorProfilePayload,
+  upsertMyInvestorProfile,
+  type CapitalType,
+  type FundingStage,
+  type InvestorProfileInput,
+  type InvestorProfilePayload,
+  type InvestorType,
+} from "./profile";

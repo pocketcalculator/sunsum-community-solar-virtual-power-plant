@@ -10,4 +10,28 @@
  * backend, where it is tested and cannot be bypassed by adding a second route.
  */
 
-export { getPortfolioRoute } from "./handlers";
+export {
+  getInvestorProfileRoute,
+  getPipelineRoute,
+  getMyEngagementsRoute,
+  getOwnerOutstandingRoute,
+  getProjectFundingNeedsRoute,
+  getSubmissionDetailRoute,
+  patchProjectRoute,
+  patchSiteRoute,
+  postInvestorProfileRoute,
+  postSiteDocumentRoute,
+  postSiteSubmitRoute,
+  getDealRoomRoute,
+  getOwnerSitesRoute,
+  getPortfolioRoute,
+  getProjectEngagementsRoute,
+  getSubmissionsRoute,
+  patchProjectVisibilityRoute,
+  postEngagementRoute,
+  postProjectStageRoute,
+  postSiteRoute,
+  postSubmissionDecisionRoute,
+  toDomainRole,
+  toWireRole,
+} from "./handlers";
