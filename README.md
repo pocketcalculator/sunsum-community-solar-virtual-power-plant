@@ -140,10 +140,18 @@ Site submission, screening, persistence, operator decisions, private documents,
 and investor authorization require the backend and domain handoffs described in
 [the contract register](docs/ws1/contracts.md).
 
-The visual baseline is provisional, informed by earlier SolarEase mockups and
-the project's VPP flow board. Team UX acceptance and the final Azure hosting
-choice remain open. There is no Azure deployment, database, identity provider,
-or hidden mock-service fallback in this increment.
+**Azure Database for PostgreSQL Flexible Server with Drizzle ORM is the
+selected persistence stack**, with Drizzle Kit for schema and migrations.
+It is not yet provisioned, installed, or connected; the portfolio API uses
+explicit in-memory demo fixtures. The public preview has been smoke-tested on
+Linux Azure App Service F1, without adding a database or identity provider.
+
+The visual baseline remains provisional, informed by earlier SolarEase mockups
+and the project's VPP flow board. Hosting the preview does not establish a
+persisted or authenticated three-role MVP. See the
+[technical design](docs/sunsum_technical_design_doc.md) and
+[resource-provider registration table](infrastructure/docs/README.md) for the
+selected services and remaining infrastructure prerequisites.
 
 ## Application structure
 
@@ -158,7 +166,7 @@ or hidden mock-service fallback in this increment.
 | `src/styles/` | Design tokens and shared layout helpers |
 | `tests/` | Unit, component, boundary and browser tests |
 | `docs/ws1/` | Architecture boundaries and the contract register |
-| `infrastructure/` | Placeholders for templates, diagrams and infrastructure docs |
+| `infrastructure/` | Templates, diagrams, infrastructure decisions and provider prerequisites |
 
 Routes compose a feature's public entry point. Features never import each
 other's internals, and the domain layer depends on nothing above it. These

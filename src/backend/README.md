@@ -147,27 +147,29 @@ imported by a component.
 Unlike presentation code, the backend may use Node built-ins. That is the point
 of the separate boundary.
 
-## Not decided here
+## Selected persistence and remaining integration
 
-[The technical design](../../docs/sunsum_technical_design_doc.md) proposes
-Azure SQL or PostgreSQL, Blob Storage and Entra ID. None of that is selected,
-installed or configured here, and
-[the WS1 architecture note](../../docs/ws1/architecture.md) is explicit that the
-WS2 topology — an in-process Next.js module or a separate service — remains
-open.
+[The technical design](../../docs/sunsum_technical_design_doc.md) selects
+**Azure Database for PostgreSQL Flexible Server with Drizzle ORM** for
+persistence and private Blob Storage for document files. Drizzle Kit is the
+selected schema/migration tooling. None of the database packages, schema,
+migrations, provisioning, or authentication is implemented yet; the PostgreSQL
+driver and connection configuration remain to be selected. The proposed Entra
+integration and the broader WS2 deployment topology also remain separate from
+this scaffold.
 
-Two seams exist specifically so those decisions can land without touching any
-rule:
+Two seams allow those integrations without changing the workflow rules:
 
 - **Persistence.** `core/projects/mock-store.ts` is an in-memory fixture behind
   the `ProjectStore` interface in `core/projects/store.ts`. The data is
-  invented for the demo and is not real customer data. Replacing the
-  implementation is the whole change; the interface is kept in its own file
-  because it is the part that survives.
+  invented for the demo and is not real customer data. Add the Drizzle-backed
+  PostgreSQL implementation behind this interface without moving persistence
+  into the UI or route handlers. The interface is kept in its own file because
+  it is the part that survives.
 - **Identity.** `handlers/identity/viewer.ts` returns the same demo investor for
   every request. **It has no security value.** It reads nothing from the request
   on purpose, so it cannot be used to choose a role; a real session lookup drops
   into the same function.
 
-Neither is production ready, and nothing here has been reviewed against a
-deployment, a real data set or an identity provider.
+Neither is production ready. The App Service smoke test exercises the existing
+fixture-backed API, not a real database, data set, or identity provider.

@@ -2,10 +2,10 @@
  * In-memory stand-in for the projects table.
  *
  * **This is mock data.** It exists so the portfolio endpoint can demonstrate
- * the handler/core pattern before persistence is chosen — the design document
- * proposes Azure SQL or PostgreSQL, and neither is wired up. Replacing this
- * file with a real query is meant to be the whole change: core depends on the
- * `ProjectStore` interface in `store.ts`, not on this array.
+ * the handler/core pattern before the selected PostgreSQL/Drizzle persistence
+ * is wired up. Replacing this file with a real query is meant to be the whole
+ * change: core depends on the `ProjectStore` interface in `store.ts`, not on
+ * this array.
  *
  * The addresses and owner ids are invented for the demo. Nothing here is real
  * customer data, and nothing here should ever be treated as a real site.
