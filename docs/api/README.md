@@ -7,15 +7,22 @@ the proposed internal S-VIA contract.
 
 | Role | Operation |
 | --- | --- |
-| Site owner | `POST /sites`, `GET /me/sites` |
-| Operator | `GET /submissions`, `POST /submissions/{id}/decision` |
-| Operator | `POST /projects/{id}/stage`, `PATCH /projects/{id}/visibility` |
+| Site owner | `POST /sites`, `PATCH /sites/{id}`, `POST /sites/{id}/submit`, `GET /me/sites`, `GET /me/outstanding` |
+| Site owner / Operator | `POST /sites/{id}/documents` |
+| Operator | `GET /submissions`, `GET /submissions/{id}`, `POST /submissions/{id}/decision` |
+| Operator | `GET /pipeline`, `PATCH /projects/{id}`, `POST /projects/{id}/stage`, `PATCH /projects/{id}/visibility` |
 | Operator | `GET /projects/{id}/engagements` |
-| Investor | `GET /portfolio`, `POST /projects/{id}/engagements` |
-| Investor | `GET /projects/{id}/deal-room` |
+| Investor | `GET /investors/me/profile`, `POST /investors/me/profile`, `GET /portfolio` |
+| Investor | `POST /projects/{id}/engagements`, `GET /me/engagements`, `GET /projects/{id}/funding-needs`, `GET /projects/{id}/deal-room` |
 
-Wire properties use `snake_case`. Handlers reject unknown input; core services
-authorize and enforce workflow rules.
+## Section 10 paths not in the MVP slice
+
+`/auth/*`, `/me`, `/sites/{id}/acknowledgements`, `/sites/{id}/assessments/override`, `/engagements/{id}/state`, `/engagements/{id}`, `/projects/{id}/funding-needs` `POST`, `/engagements/{id}/diligence-requests`, `/diligence-requests/{id}/assign`, `/diligence-requests/{id}/resolve`, and `/projects/{id}/activity` are not in the MVP slice.
+
+Wire properties use `snake_case`. Role ids crossing between the UI charter
+vocabulary and backend wire vocabulary go through the `@/backend` adapter.
+Handlers reject unknown input; core services authorize and enforce workflow
+rules.
 
 > **Demo identity only — not authentication.** Every implemented route currently
 > runs under a fixed, role-specific demo principal selected by server code. No
@@ -47,9 +54,11 @@ omitted. Its timeline contains shared
 project stage/status events plus the current investor's own interest event,
 without other investors' activity or internal free-text notes.
 
-In this scoped implementation, `request_info` transitions a submission to
-`info_requested` and records the owner's outstanding item. Owner resubmission
-and the rest of that loop are not implemented.
+`request_info` transitions a submission to `info_requested`, records the owner's outstanding item, and the owner can resubmit through `POST /sites/{id}/submit`.
+
+Owner dashboard items keep `submission_status`, `project_stage`, and
+`journey_stage_id` separate. `journey_stage_id` uses the exact seven literals in
+`src/domain/journey.ts` and is `null` for off-ribbon submission states.
 
 For the demo's live submit-to-portfolio storyline, accepting a submission
 creates one amountless open feasibility-study need. Until structured locality

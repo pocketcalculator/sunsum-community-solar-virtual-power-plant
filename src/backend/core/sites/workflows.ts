@@ -1,12 +1,15 @@
+import type { ActivityRecord } from "../activity";
 import type { Viewer } from "../identity";
 import { isSiteType, type SiteType, type ViabilityStatus } from "../projects";
 import { failure, ok, type Result } from "../shared";
 import { demoBackendStore, type BackendStore } from "../store";
 import type {
   AssessmentRecord,
+  DocumentRecord,
   MissingField,
   SiteCreateInput,
   SiteRecord,
+  SiteUpdateInput,
   SubmissionStatus,
   UserRecord,
   ViabilityClient,
@@ -50,6 +53,31 @@ export interface AssessmentPayload {
   readonly created_at: string;
 }
 
+export interface DocumentPayload {
+  readonly id: string;
+  readonly site_id: string | null;
+  readonly project_id: string | null;
+  readonly original_filename: string;
+  readonly content_type: string;
+  readonly size_bytes: number;
+  readonly doc_type: string | null;
+  readonly disclosure_class: string;
+  readonly uploaded_by_user_id: string;
+  readonly created_at: string;
+}
+
+export interface ActivityPayload {
+  readonly id: string;
+  readonly site_id: string | null;
+  readonly project_id: string | null;
+  readonly actor_user_id: string;
+  readonly action: string;
+  readonly note: string | null;
+  readonly from_value: string | null;
+  readonly to_value: string | null;
+  readonly created_at: string;
+}
+
 export interface CreateSiteResponse {
   readonly site: SitePayload;
   readonly missing_fields: readonly MissingField[];
@@ -61,6 +89,15 @@ export interface SubmissionQuery {
   readonly siteType: SiteType | null;
   readonly viability: ViabilityStatus | null;
   readonly location: string | null;
+}
+
+export interface SubmissionDetail {
+  readonly site: SitePayload;
+  readonly assessment: AssessmentPayload | null;
+  readonly assessment_history: readonly AssessmentPayload[];
+  readonly owner: UserPayload | null;
+  readonly documents: readonly DocumentPayload[];
+  readonly activity: readonly ActivityPayload[];
 }
 
 export interface SubmissionSummary {
@@ -222,6 +259,192 @@ export async function listSubmissions(
   );
 }
 
+
+export async function updateDraftSite(
+  viewer: Viewer,
+  siteId: string,
+  input: SiteUpdateInput,
+  store: BackendStore = demoBackendStore,
+): Promise<Result<CreateSiteResponse>> {
+  if (viewer.role !== "site_owner") {
+    return failure("forbidden_role", "Only a site owner can update a site.");
+  }
+
+  return store.transaction(async (transaction) => {
+    const site = await transaction.getSite(siteId);
+    if (site === null) return failure("not_found", "Site not found.");
+    if (site.ownerUserId !== viewer.userId) {
+      return failure("forbidden_owner", "Only the site owner can update this site.");
+    }
+    if (site.submissionStatus !== "draft") {
+      return failure("conflict", "Only draft sites can be updated.", {
+        current_status: site.submissionStatus,
+      });
+    }
+    const now = new Date().toISOString();
+    const updated: SiteRecord = {
+      id: site.id,
+      ownerUserId: site.ownerUserId,
+      addressRaw: input.addressRaw === undefined ? site.addressRaw : input.addressRaw,
+      latitude: site.latitude,
+      longitude: site.longitude,
+      geocodeConfidence: site.geocodeConfidence,
+      siteType: input.siteType === undefined ? site.siteType : input.siteType,
+      ownershipStatus:
+        input.ownershipStatus === undefined ? site.ownershipStatus : input.ownershipStatus,
+      approximateAreaSqm:
+        input.approximateAreaSqm === undefined ? site.approximateAreaSqm : input.approximateAreaSqm,
+      electricityUsageKwhAnnual:
+        input.electricityUsageKwhAnnual === undefined
+          ? site.electricityUsageKwhAnnual
+          : input.electricityUsageKwhAnnual,
+      electricityBillDocId:
+        input.electricityBillDocId === undefined ? site.electricityBillDocId : input.electricityBillDocId,
+      hasExistingSolar:
+        input.hasExistingSolar === undefined ? site.hasExistingSolar : input.hasExistingSolar,
+      consentGivenAt:
+        input.consentGiven === undefined
+          ? site.consentGivenAt
+          : input.consentGiven
+            ? now
+            : null,
+      submissionStatus: site.submissionStatus,
+      createdAt: site.createdAt,
+      updatedAt: now,
+    };
+    await transaction.updateSite(updated);
+    return ok({ site: toSitePayload(updated), missing_fields: getMissingFields(updated) });
+  });
+}
+
+export async function submitSite(
+  viewer: Viewer,
+  siteId: string,
+  store: BackendStore = demoBackendStore,
+  viabilityClient: ViabilityClient = demoViabilityClient,
+): Promise<Result<CreateSiteResponse>> {
+  if (viewer.role !== "site_owner") {
+    return failure("forbidden_role", "Only a site owner can submit a site.");
+  }
+
+  const site = await store.getSite(siteId);
+  if (site === null) return failure("not_found", "Site not found.");
+  if (site.ownerUserId !== viewer.userId) {
+    return failure("forbidden_owner", "Only the site owner can submit this site.");
+  }
+  if (site.submissionStatus !== "draft" && site.submissionStatus !== "info_requested") {
+    return failure("conflict", "Only draft or info-requested sites can be submitted.", {
+      current_status: site.submissionStatus,
+      allowed_statuses: ["draft", "info_requested"],
+    });
+  }
+  const missingFields = getMissingFields(site);
+  if (missingFields.length > 0) {
+    return failure("validation_failed", "The site is not ready to submit.", {
+      missing_fields: missingFields,
+    });
+  }
+
+  let result;
+  try {
+    result = await viabilityClient.assess({ site });
+  } catch {
+    return failure(
+      "service_unavailable",
+      "The viability service is unavailable. The site was not submitted.",
+    );
+  }
+
+  return store.transaction(async (transaction) => {
+    const current = await transaction.getSite(siteId);
+    if (current === null) return failure("not_found", "Site not found.");
+    if (current.ownerUserId !== viewer.userId) {
+      return failure("forbidden_owner", "Only the site owner can submit this site.");
+    }
+    if (current.submissionStatus !== "draft" && current.submissionStatus !== "info_requested") {
+      return failure("conflict", "Only draft or info-requested sites can be submitted.", {
+        current_status: current.submissionStatus,
+        allowed_statuses: ["draft", "info_requested"],
+      });
+    }
+    const currentMissing = getMissingFields(current);
+    if (currentMissing.length > 0) {
+      return failure("validation_failed", "The site is not ready to submit.", {
+        missing_fields: currentMissing,
+      });
+    }
+    const now = new Date().toISOString();
+    const updatedSite = {
+      ...current,
+      submissionStatus: "submitted" as const,
+      updatedAt: now,
+    };
+    const assessment: AssessmentRecord = {
+      id: transaction.nextId("assessment"),
+      siteId: current.id,
+      rulesetVersion: result.rulesetVersion,
+      inputsUsed: result.inputsUsed,
+      estimatedSystemSizeKwLow: result.estimatedSystemSizeKwLow,
+      estimatedSystemSizeKwHigh: result.estimatedSystemSizeKwHigh,
+      estimatedAnnualGenerationKwhLow: result.estimatedAnnualGenerationKwhLow,
+      estimatedAnnualGenerationKwhHigh: result.estimatedAnnualGenerationKwhHigh,
+      preliminaryProjectType: result.preliminaryProjectType,
+      viabilityStatus: result.viabilityStatus,
+      flags: result.flags,
+      missingInformation: result.missingInformation,
+      isOverride: false,
+      overrideReason: null,
+      overriddenByUserId: null,
+      createdAt: now,
+    };
+    await transaction.updateSite(updatedSite);
+    await transaction.addAssessment(assessment);
+    await transaction.addActivity({
+      id: transaction.nextId("activity"),
+      siteId: current.id,
+      projectId: null,
+      actorUserId: viewer.userId,
+      action: current.submissionStatus === "info_requested" ? "site_resubmitted" : "site_submitted",
+      note: null,
+      fromValue: current.submissionStatus,
+      toValue: "submitted",
+      createdAt: now,
+    });
+    return ok({
+      site: toSitePayload(updatedSite),
+      missing_fields: [],
+      assessment: toAssessmentPayload(assessment),
+    });
+  });
+}
+
+export async function getSubmissionDetail(
+  viewer: Viewer,
+  siteId: string,
+  store: BackendStore = demoBackendStore,
+): Promise<Result<SubmissionDetail>> {
+  if (viewer.role !== "operator") {
+    return failure("forbidden_role", "Only an operator can read submission detail.");
+  }
+  const site = await store.getSite(siteId);
+  if (site === null || site.submissionStatus === "draft") {
+    return failure("not_found", "Submission not found.");
+  }
+  const project = await store.getProjectBySite(site.id);
+  const assessments = await store.listAssessments(site.id);
+  const owner = await store.getUser(site.ownerUserId);
+  const documents = await store.listDocuments(site.id, project?.id ?? null);
+  const siteActivity = await store.listSiteActivity(site.id);
+  return ok({
+    site: toSitePayload(site),
+    assessment: assessments.at(-1) === undefined ? null : toAssessmentPayload(assessments.at(-1)!),
+    assessment_history: assessments.map(toAssessmentPayload),
+    owner: owner === null ? null : toUserPayload(owner),
+    documents: documents.map(toDocumentPayload),
+    activity: siteActivity.map(toActivityPayload),
+  });
+}
+
 export function getMissingFields(site: SiteRecord): readonly MissingField[] {
   const missing: MissingField[] = [];
   if (!site.addressRaw?.trim()) {
@@ -309,7 +532,36 @@ export function toAssessmentPayload(
   };
 }
 
-function toUserPayload(user: UserRecord): UserPayload {
+export function toDocumentPayload(document: DocumentRecord): DocumentPayload {
+  return {
+    id: document.id,
+    site_id: document.siteId,
+    project_id: document.projectId,
+    original_filename: document.originalFilename,
+    content_type: document.contentType,
+    size_bytes: document.sizeBytes,
+    doc_type: document.docType,
+    disclosure_class: document.disclosureClass,
+    uploaded_by_user_id: document.uploadedByUserId,
+    created_at: document.createdAt,
+  };
+}
+
+export function toActivityPayload(activity: ActivityRecord): ActivityPayload {
+  return {
+    id: activity.id,
+    site_id: activity.siteId,
+    project_id: activity.projectId,
+    actor_user_id: activity.actorUserId,
+    action: activity.action,
+    note: activity.note,
+    from_value: activity.fromValue,
+    to_value: activity.toValue,
+    created_at: activity.createdAt,
+  };
+}
+
+export function toUserPayload(user: UserRecord): UserPayload {
   return {
     id: user.id,
     name: user.name,

@@ -1,7 +1,13 @@
 import type { ActivityRecord } from "../activity";
 import type { EngagementRecord, FundingNeedRecord } from "../engagements";
-import { MOCK_PROJECTS, type ProjectRecord, type ProjectStore } from "../projects";
+import {
+  FUNDING_STAGE_BY_PROJECT_STAGE,
+  MOCK_PROJECTS,
+  type ProjectRecord,
+  type ProjectStore,
+} from "../projects";
 import { isFailedResult } from "../shared";
+import type { InvestorProfile } from "../identity";
 import type {
   AcknowledgementRecord,
   AssessmentRecord,
@@ -10,6 +16,7 @@ import type {
   UserRecord,
 } from "../sites";
 import {
+  DEMO_INVESTOR_ID,
   DEMO_INVESTOR_USER_ID,
   DEMO_OPERATOR_USER_ID,
   DEMO_SITE_OWNER_USER_ID,
@@ -37,11 +44,14 @@ export interface BackendStore extends ProjectStore {
   ): Promise<EngagementRecord | null>;
   addEngagement(engagement: EngagementRecord): Promise<void>;
   getFundingNeed(id: string): Promise<FundingNeedRecord | null>;
+  listFundingNeeds(projectId: string): Promise<readonly FundingNeedRecord[]>;
   addFundingNeed(fundingNeed: FundingNeedRecord): Promise<void>;
   listDocuments(siteId: string, projectId: string | null): Promise<readonly DocumentRecord[]>;
   addDocument(document: DocumentRecord): Promise<void>;
   listAcknowledgements(projectId: string): Promise<readonly AcknowledgementRecord[]>;
   getUser(id: string): Promise<UserRecord | null>;
+  getInvestorProfileByUserId(userId: string): Promise<InvestorProfile | null>;
+  upsertInvestorProfile(profile: InvestorProfile): Promise<void>;
   transaction<T>(operation: (store: BackendStore) => Promise<T>): Promise<T>;
   nextId(prefix: string): string;
 }
@@ -56,6 +66,7 @@ interface StoreState {
   documents: DocumentRecord[];
   acknowledgements: AcknowledgementRecord[];
   users: UserRecord[];
+  investorProfiles: InvestorProfile[];
 }
 
 export interface MemoryStoreOptions {
@@ -144,7 +155,7 @@ function demoState(seedDemoProjects: boolean): StoreState {
         id: demoFundingNeedId(projectIndex, needIndex),
         projectId: project.id,
         needType: "feasibility_study",
-        stage: project.stage,
+        stage: FUNDING_STAGE_BY_PROJECT_STAGE[project.stage],
         description: "Demo-only funding need.",
         amountRequested: null,
         amountCommitted: null,
@@ -166,6 +177,29 @@ function demoState(seedDemoProjects: boolean): StoreState {
       createdAt: DEMO_CREATED_AT,
     })),
     acknowledgements: [],
+    investorProfiles: seedDemoProjects
+      ? [
+          {
+            id: DEMO_INVESTOR_ID,
+            userId: DEMO_INVESTOR_USER_ID,
+            organizationName: "Demo Community Endowment",
+            investorType: "special_community_endowment",
+            capitalType: "grant",
+            fundingStageFocus: ["pre_development", "development", "construction"],
+            ticketSizeMin: null,
+            ticketSizeMax: null,
+            geographies: ["GA"],
+            investmentObjectives: [],
+            impactPriorities: [],
+            decisionCriteria: [],
+            dealRoomProfile: "default",
+            visiblePortfolioScope: [],
+            onboardingCompletedAt: DEMO_CREATED_AT,
+            createdAt: DEMO_CREATED_AT,
+            updatedAt: DEMO_CREATED_AT,
+          },
+        ]
+      : [],
     users: [
       {
         id: DEMO_SITE_OWNER_USER_ID,
@@ -314,6 +348,12 @@ class MemoryBackendStore implements BackendStore {
     );
   }
 
+  listFundingNeeds(projectId: string): Promise<readonly FundingNeedRecord[]> {
+    return Promise.resolve(
+      this.state.fundingNeeds.filter((item) => item.projectId === projectId),
+    );
+  }
+
   addFundingNeed(fundingNeed: FundingNeedRecord): Promise<void> {
     return this.mutate(() => this.state.fundingNeeds.push(fundingNeed));
   }
@@ -345,6 +385,25 @@ class MemoryBackendStore implements BackendStore {
 
   getUser(id: string): Promise<UserRecord | null> {
     return Promise.resolve(this.state.users.find((item) => item.id === id) ?? null);
+  }
+
+  getInvestorProfileByUserId(userId: string): Promise<InvestorProfile | null> {
+    return Promise.resolve(
+      this.state.investorProfiles.find((item) => item.userId === userId) ?? null,
+    );
+  }
+
+  upsertInvestorProfile(profile: InvestorProfile): Promise<void> {
+    return this.mutate(() => {
+      const index = this.state.investorProfiles.findIndex(
+        (item) => item.userId === profile.userId,
+      );
+      if (index >= 0) {
+        this.state.investorProfiles[index] = profile;
+      } else {
+        this.state.investorProfiles.push(profile);
+      }
+    });
   }
 
   async transaction<T>(

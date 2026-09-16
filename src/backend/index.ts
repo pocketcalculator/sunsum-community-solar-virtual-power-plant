@@ -11,6 +11,17 @@
  */
 
 export {
+  getInvestorProfileRoute,
+  getPipelineRoute,
+  getMyEngagementsRoute,
+  getOwnerOutstandingRoute,
+  getProjectFundingNeedsRoute,
+  getSubmissionDetailRoute,
+  patchProjectRoute,
+  patchSiteRoute,
+  postInvestorProfileRoute,
+  postSiteDocumentRoute,
+  postSiteSubmitRoute,
   getDealRoomRoute,
   getOwnerSitesRoute,
   getPortfolioRoute,
@@ -21,4 +32,6 @@ export {
   postProjectStageRoute,
   postSiteRoute,
   postSubmissionDecisionRoute,
+  toDomainRole,
+  toWireRole,
 } from "./handlers";

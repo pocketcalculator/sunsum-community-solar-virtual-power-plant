@@ -21,6 +21,7 @@
  */
 
 import type { InvestorProfile, Viewer } from "../identity";
+import type { FundingNeedRecord } from "../engagements";
 import {
   type ProjectRecord,
   type ProjectStage,
@@ -30,6 +31,10 @@ import {
 } from "../projects";
 import { failure, ok, type Result } from "../shared";
 import { demoBackendStore } from "../store";
+
+export interface PortfolioStore extends ProjectStore {
+  listFundingNeeds(projectId: string): Promise<readonly FundingNeedRecord[]>;
+}
 
 /**
  * One project at disclosure tier 0.
@@ -88,7 +93,7 @@ export const DEFAULT_PORTFOLIO_QUERY: PortfolioQuery = {
 export async function getPortfolio(
   viewer: Viewer,
   query: PortfolioQuery,
-  store: ProjectStore = demoBackendStore,
+  store: PortfolioStore = demoBackendStore,
 ): Promise<Result<PortfolioResponse>> {
   /**
    * Authorization first, before any data is read. The union narrows on `role`,
@@ -112,7 +117,7 @@ export async function getPortfolio(
 
   const entitled = projects.filter(isVisibleToInvestors);
   const matching = query.mandateMatch
-    ? entitled.filter((project) => matchesMandate(project, viewer.investor))
+    ? await filterMandateMatches(entitled, viewer.investor, store)
     : entitled;
   const selected = matching.filter((project) => matchesQuery(project, query));
 
@@ -142,13 +147,37 @@ function isVisibleToInvestors(project: ProjectRecord): boolean {
  * expressed no preference, which widens rather than excludes — an unanswered
  * onboarding question must not silently empty someone's portfolio.
  */
+async function filterMandateMatches(
+  projects: readonly ProjectRecord[],
+  investor: InvestorProfile,
+  store: PortfolioStore,
+): Promise<readonly ProjectRecord[]> {
+  const decisions = await Promise.all(
+    projects.map(async (project) => ({
+      project,
+      matches: matchesMandate(
+        (await store.listFundingNeeds(project.id)).filter(isOpenFundingNeed),
+        project,
+        investor,
+      ),
+    })),
+  );
+
+  return decisions
+    .filter((decision) => decision.matches)
+    .map((decision) => decision.project);
+}
+
 function matchesMandate(
+  openFundingNeeds: readonly FundingNeedRecord[],
   project: ProjectRecord,
   investor: InvestorProfile,
 ): boolean {
   const fundsThisStage =
     investor.fundingStageFocus.length === 0 ||
-    investor.fundingStageFocus.includes(project.stage);
+    openFundingNeeds.some((need) =>
+      investor.fundingStageFocus.includes(need.stage),
+    );
 
   const fundsThisRegion =
     investor.geographies.length === 0 ||
@@ -156,9 +185,13 @@ function matchesMandate(
     investor.geographies.includes(project.region);
 
   /** "Mandate match against open funding needs" — nothing open, nothing to fund. */
-  const hasSomethingToFund = project.openFundingNeedsCount > 0;
+  const hasSomethingToFund = openFundingNeeds.length > 0;
 
   return fundsThisStage && fundsThisRegion && hasSomethingToFund;
+}
+
+function isOpenFundingNeed(need: FundingNeedRecord): boolean {
+  return need.status === "open";
 }
 
 /** The explicit filters an investor set on the request. */

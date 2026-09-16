@@ -1,5 +1,7 @@
 import {
   expressInterest,
+  listMyEngagements,
+  listProjectFundingNeeds,
   listProjectEngagements,
 } from "../../core/engagements";
 import type { Viewer } from "../../core/identity";
@@ -58,9 +60,40 @@ export async function postEngagementRoute(
 ): Promise<Response> {
   return handlePostEngagement(
     request,
-    resolveDemoInvestor(),
+    await resolveDemoInvestor(),
     (await context.params).id,
   );
+}
+
+
+export async function handleGetProjectFundingNeeds(
+  viewer: Viewer,
+  projectId: string,
+  store: BackendStore = demoBackendStore,
+): Promise<Response> {
+  const id = validatePathId(projectId, "invalid_query");
+  if (!id.ok) return failureResponse(id.failure);
+  const result = await listProjectFundingNeeds(viewer, projectId, store);
+  return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
+}
+
+export async function getProjectFundingNeedsRoute(
+  _request: Request,
+  context: RouteContext,
+): Promise<Response> {
+  return handleGetProjectFundingNeeds(await resolveDemoInvestor(), (await context.params).id);
+}
+
+export async function handleGetMyEngagements(
+  viewer: Viewer,
+  store: BackendStore = demoBackendStore,
+): Promise<Response> {
+  const result = await listMyEngagements(viewer, store);
+  return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
+}
+
+export async function getMyEngagementsRoute(): Promise<Response> {
+  return handleGetMyEngagements(await resolveDemoInvestor());
 }
 
 export async function handleGetProjectEngagements(

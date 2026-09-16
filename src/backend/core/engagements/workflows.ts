@@ -2,7 +2,7 @@ import type { ActivityRecord } from "../activity";
 import type { Viewer } from "../identity";
 import { failure, ok, type Result } from "../shared";
 import { demoBackendStore, type BackendStore } from "../store";
-import type { EngagementRecord, EngagementState } from "./types";
+import type { EngagementRecord, EngagementState, FundingNeedRecord } from "./types";
 
 const LIVE_STATES: readonly EngagementState[] = [
   "interested",
@@ -11,6 +11,24 @@ const LIVE_STATES: readonly EngagementState[] = [
   "approved",
   "funded",
 ];
+
+export interface FundingNeedPayload {
+  readonly id: string;
+  readonly project_id: string;
+  readonly need_type: string;
+  readonly stage: string;
+  readonly description: string;
+  readonly amount_requested: number | null;
+  readonly amount_committed: number | null;
+  readonly status: string;
+  readonly created_at: string;
+}
+
+export interface EngagementPipelineItem extends EngagementPayload {
+  readonly project_name: string;
+  readonly project_stage: string;
+  readonly funding_need_id: string | null;
+}
 
 export interface EngagementPayload {
   readonly id: string;
@@ -112,6 +130,79 @@ export async function listProjectEngagements(
   }
   const engagements = await store.listEngagements(projectId);
   return ok(engagements.map(toEngagementPayload));
+}
+
+
+export async function listProjectFundingNeeds(
+  viewer: Viewer,
+  projectId: string,
+  store: BackendStore = demoBackendStore,
+): Promise<Result<readonly FundingNeedPayload[]>> {
+  if (viewer.role !== "investor" && viewer.role !== "operator") {
+    return failure("forbidden_role", "Only an investor or operator can read funding needs.");
+  }
+  const project = await store.getProject(projectId);
+  if (project === null) return failure("not_found", "Project not found.");
+  if (viewer.role === "investor") {
+    if (viewer.investor.onboardingCompletedAt === null) {
+      return failure("forbidden_tier", "Complete investor onboarding to read funding needs.");
+    }
+    if (!project.visibleToInvestors) return failure("not_found", "Project not found.");
+  }
+  const needs = await store.listFundingNeeds(projectId);
+  return ok(needs.filter((need) => need.status === "open" || need.status === "partially_funded").map(toFundingNeedPayload));
+}
+
+export async function listMyEngagements(
+  viewer: Viewer,
+  store: BackendStore = demoBackendStore,
+): Promise<Result<readonly EngagementPipelineItem[]>> {
+  if (viewer.role !== "investor") {
+    return failure("forbidden_role", "Only an investor can read their engagements.");
+  }
+  const projects = await store.listProjects();
+  const items: EngagementPipelineItem[] = [];
+  for (const project of projects) {
+    /**
+     * `visibleToInvestors` is the operator's only lever for pulling a project
+     * back. Every other investor-facing read honours it, so this one must too:
+     * without it, revoking visibility would still leak the project's name and
+     * its continuing stage transitions to anyone already engaged.
+     */
+    if (!project.visibleToInvestors) continue;
+    const engagements = (await store.listEngagements(project.id)).filter(
+      (item) => item.investorId === viewer.investor.id,
+    );
+    for (const engagement of engagements) {
+      items.push({
+        id: engagement.id,
+        investor_id: engagement.investorId,
+        project_id: engagement.projectId,
+        funding_need_id: engagement.fundingNeedId,
+        state: engagement.state,
+        state_changed_at: engagement.stateChangedAt,
+        is_binding: engagement.isBinding,
+        created_at: engagement.createdAt,
+        project_name: project.name,
+        project_stage: project.stage,
+      });
+    }
+  }
+  return ok(items);
+}
+
+export function toFundingNeedPayload(need: FundingNeedRecord): FundingNeedPayload {
+  return {
+    id: need.id,
+    project_id: need.projectId,
+    need_type: need.needType,
+    stage: need.stage,
+    description: need.description,
+    amount_requested: need.amountRequested,
+    amount_committed: need.amountCommitted,
+    status: need.status,
+    created_at: need.createdAt,
+  };
 }
 
 export function toEngagementPayload(

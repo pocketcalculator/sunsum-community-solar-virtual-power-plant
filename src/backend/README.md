@@ -61,12 +61,12 @@ it is misplaced.
 | Service     | Directory      | Endpoints                                                                    | Status  |
 | ----------- | -------------- | ---------------------------------------------------------------------------- | ------- |
 | **S-IAM**   | `identity/`    | `/auth/*`, `/me`                                                             | seam    |
-| **S-SITE**  | `sites/`       | `/sites/*`, `/me/sites`, `/submissions/*`, `/me/outstanding`                 | partial |
+| **S-SITE**  | `sites/`       | `/sites/*`, `/me/sites`, `/submissions/*`, `/me/outstanding`                 | done    |
 | **S-ASSESS**| `assessments/` | `/sites/{id}/assessments/override`                                           | to do   |
-| **S-PROJ**  | `projects/`    | `/pipeline`, `/projects/{id}`, `/projects/{id}/stage`, `.../visibility`      | partial |
+| **S-PROJ**  | `projects/`    | `/pipeline`, `/projects/{id}`, `/projects/{id}/stage`, `.../visibility`      | done    |
 | **S-INV**   | `investors/`   | `/portfolio`, `/investors/me/profile`                                        | done    |
-| **S-ENG**   | `engagements/` | `/projects/{id}/engagements`, `/engagements/*`, funding needs, diligence     | partial |
-| **S-DOC**   | `documents/`   | `/sites/{id}/documents`, `/sites/{id}/acknowledgements`                      | to do   |
+| **S-ENG**   | `engagements/` | `/projects/{id}/engagements`, `/me/engagements`, funding needs; engagement state and diligence later | partial |
+| **S-DOC**   | `documents/`   | `/sites/{id}/documents`, `/sites/{id}/acknowledgements`                      | partial |
 | **S-ACT**   | `activity/`    | `/projects/{id}/activity`                                                    | partial |
 | **S-VIEW**  | `views/`       | Composed reads: the site-owner dashboard, `/projects/{id}/deal-room`         | partial |
 
@@ -130,6 +130,10 @@ statuses once in `handlers/shared/http.ts`, where the mapping is a total
 
 - Payload properties are `snake_case`, matching the wire contract. Everything
   internal is `camelCase`. The projection function is the only place they meet.
+- UI charter role ids and backend wire roles intentionally differ; translate
+  them only with the boundary adapter exported from `@/backend`.
+- Do not overload lifecycle fields. Composed owner views expose
+  `submission_status`, `project_stage`, and `journey_stage_id` separately.
 - Physical quantities carry their unit in the name: `_kw` for capacity,
   `_kwh` for annual generation. `null` means "not yet estimated", never zero.
 - Core returns `Result` rather than throwing for outcomes a caller is expected
@@ -190,3 +194,24 @@ rule:
 
 Neither is production ready, and nothing here has been reviewed against a
 deployment, a real data set or an identity provider.
+
+### Reconciling with the Drizzle schema PR
+
+PR #11 introduces the real database schema. The two branches merge textually
+clean (the only file conflict is this README), but the following semantic
+mismatches will break at runtime and must be settled before or during that
+merge. They are listed here so the decision is deliberate rather than
+discovered in the demo:
+
+| Concern | This branch | PR #11 schema | Proposed resolution |
+| --- | --- | --- | --- |
+| Screening status token | `screening` | `in_review` | Use `screening`. `src/domain/journey.ts` already names the ribbon stage `screening`, and the UI is the vocabulary authority. |
+| Draft sites | `addressRaw`, `siteType`, `ownershipStatus` may be null while `submission_status = 'draft'` | all `.notNull()` | Relax to nullable, or gate the not-null constraint on leaving `draft`. A draft that cannot be saved half-finished removes the save-and-resume requirement in Feature B. |
+| Funding amounts | `amountRequested` / `amountCommitted` nullable | `NOT NULL` with `CHECK (> 0)` | Allow null. A funding need can legitimately be published before an amount is set; the seed data relies on this. |
+| Activity parent | rows written with both `site_id` and `project_id` | `activity_single_parent_check` permits only one | Decide whether an activity row hangs off the site or the project. Writing both is what the check rejects; the audit trail currently wants both, so the check likely needs to allow a site+project pair. |
+| Document disclosure | `documents.disclosureClass` (`owner_private` \| `investor_tier_1`) drives every investor-facing projection | column absent | Add the column. Without it there is no way to express which documents a tier-1 investor may see, and the disclosure tiers collapse. |
+
+`core/projects/funding.ts` mirrors PR #11's `src/backend/db/enums.ts` funding
+stage vocabulary so the two agree on day one; it should be deleted in favour of
+that module once #11 merges.
+

@@ -27,16 +27,39 @@ this increment.
 
 | Gate                     | Owner                  | Required evidence                                                             | Status                     |
 | ------------------------ | ---------------------- | ----------------------------------------------------------------------------- | -------------------------- |
-| Wire contract            | WS2 with WS4           | Versioned machine-readable inputs/outputs/errors and ownership                | Pending handoff            |
+| Wire contract            | WS2 with WS4           | Versioned machine-readable inputs/outputs/errors and ownership                | Published, awaiting WS1 acceptance |
 | Screening                | WS4                    | Units, range shapes, rules/assumptions/version, and three outcome examples    | Pending handoff            |
-| Demo data                | WS2/WS4                | Approved synthetic Atlanta examples and repeatable seed mechanism             | Pending handoff            |
-| Identity and permissions | WS2/WS3                | Actor/session semantics, object ownership, investor scope and document access | Pending handoff            |
+| Demo data                | WS2/WS4                | Approved synthetic Atlanta examples and repeatable seed mechanism             | Published, awaiting WS1 acceptance |
+| Identity and permissions | WS2/WS3                | Actor/session semantics, object ownership, investor scope and document access | Published, awaiting WS1 acceptance |
 | Azure delivery           | WS3                    | Selected service/artifact/startup, access, configuration and budget           | Pending handoff            |
 | UX                       | WS5                    | Shared design decision and review disposition                                 | Provisional local baseline |
 | Core acceptance          | WS6 and service owners | Actual persisted/deployed three-role journey and adverse cases                | Blocked on integration     |
 
 Pending means no accepted artifact is present in this contribution. It does not
 assert that another contributor has done no work.
+
+"Published, awaiting WS1 acceptance" means WS2 has produced the artifact named
+below and it is reviewable in this repository. WS2 cannot mark a gate accepted
+on WS1's behalf; flipping these rows to accepted is WS1's call.
+
+### WS2 artifacts offered against these gates
+
+| Gate                     | Artifact                                                           | Version |
+| ------------------------ | ------------------------------------------------------------------ | ------- |
+| Wire contract            | `docs/api/openapi.yaml` (21 operations) with `docs/api/README.md`   | 0.1.0   |
+| Demo data                | `src/backend/core/store` seed — five Atlanta/Chattanooga pilot sites, deterministic on process start | 0.1.0   |
+| Identity and permissions | `src/backend/README.md` role/disclosure model; `src/backend/handlers/identity` demo principals | 0.1.0   |
+
+Known limitation carried by the identity gate: the MVP resolves a fixed demo
+principal per role and performs no authentication. Roles are chosen by route,
+never by caller-supplied input, so the disclosure tiers are still enforced —
+but this is a demo-role switch, not sign-in, and WS3 owns replacing it.
+
+Vocabulary translation between the WS1 charter ids (`site-owner`, `operator`,
+`financier`, and the seven journey stage ids) and the backend wire vocabulary
+(`site_owner`, `operator`, `investor`, five project stages) is the backend's
+responsibility and lives in `src/backend/handlers/shared/vocabulary.ts` and
+`journeyStageId` in `src/backend/core/views`. WS1 vocabulary is not renamed.
 
 ## Questions the canonical contract must resolve
 

@@ -12,30 +12,51 @@
  */
 
 export {
+  getInvestorProfileRoute,
   getPortfolioRoute,
+  handleGetInvestorProfile,
   handleGetPortfolio,
+  handlePostInvestorProfile,
+  parseInvestorProfile,
   parsePortfolioQuery,
+  postInvestorProfileRoute,
 } from "./investors";
 export {
+  getSubmissionDetailRoute,
   getSubmissionsRoute,
+  handleGetSubmissionDetail,
   handleGetSubmissions,
+  handlePatchSite,
   handlePostSite,
+  handlePostSiteSubmit,
   parseSiteCreate,
+  parseSiteUpdate,
   parseSubmissionQuery,
+  patchSiteRoute,
   postSiteRoute,
+  postSiteSubmitRoute,
 } from "./sites";
 export {
+  getPipelineRoute,
+  handleGetPipeline,
+  handlePatchProject,
   handlePatchProjectVisibility,
   handlePostProjectStage,
   handlePostSubmissionDecision,
   parseDecision,
+  parseProjectUpdate,
+  patchProjectRoute,
   patchProjectVisibilityRoute,
   postProjectStageRoute,
   postSubmissionDecisionRoute,
 } from "./projects";
 export {
+  getMyEngagementsRoute,
   getProjectEngagementsRoute,
+  getProjectFundingNeedsRoute,
+  handleGetMyEngagements,
   handleGetProjectEngagements,
+  handleGetProjectFundingNeeds,
   handlePostEngagement,
   postEngagementRoute,
 } from "./engagements";
@@ -43,7 +64,9 @@ export {
   getDealRoomRoute,
   getOwnerSitesRoute,
   handleGetDealRoom,
+  handleGetOwnerOutstanding,
   handleGetOwnerSites,
+  getOwnerOutstandingRoute,
 } from "./views";
 export {
   resolveDemoInvestor,
@@ -57,5 +80,9 @@ export {
   jsonResponse,
   readJsonObject,
   rejectUnknownKeys,
+  toDomainRole,
+  toWireRole,
   validatePathId,
 } from "./shared";
+
+export { handlePostSiteDocument, parseDocumentCreate, postSiteDocumentRoute } from "./documents";

@@ -366,7 +366,7 @@ stateDiagram-v2
 
 - One composed endpoint returning: site, submission status, viability result, outstanding information, documents and acknowledgements, project stage, next expected action, contact.
 - Outstanding information is the owner's single inbox - operator `request_info` items and, later, forwarded diligence items appear in one list, never a separate investor surface.
-- **Scoped implementation limit.** `request_info` currently ends at `info_requested`; owner resubmission is not implemented, so this release does not provide a complete request-information loop.
+- `request_info` items appear in the owner inbox and can be closed by resubmitting the site through `POST /sites/{id}/submit`.
 
 **Done when** the owner sees the same stage the operator and investor see (S7).
 

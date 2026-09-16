@@ -1,8 +1,14 @@
+import type { JourneyStageId } from "@/domain/journey";
+
 import { unlocksTierOne } from "../engagements";
 import type { Viewer } from "../identity";
-import { toProjectPayload } from "../projects";
+import { toProjectPayload, type ProjectStage } from "../projects";
 import { failure, ok, type Result } from "../shared";
-import { toAssessmentPayload, toSitePayload } from "../sites";
+import {
+  toAssessmentPayload,
+  toSitePayload,
+  type SubmissionStatus,
+} from "../sites";
 import { demoBackendStore, type BackendStore } from "../store";
 
 const SHARED_DEAL_ROOM_ACTIONS = new Set([
@@ -46,7 +52,9 @@ export async function getOwnerSites(
             ? {}
             : { assessment: toAssessmentPayload(assessment) }),
           ...(project === null ? {} : { project: toProjectPayload(project) }),
-          stage: project?.stage ?? site.submissionStatus,
+          submission_status: site.submissionStatus,
+          project_stage: project?.stage ?? null,
+          journey_stage_id: journeyStageId(site.submissionStatus, project?.stage ?? null),
           next_action: project?.nextAction ?? null,
           documents: documents.map((document) => ({
             id: document.id,
@@ -93,6 +101,60 @@ export async function getOwnerSites(
     ),
   );
 }
+
+
+export async function getOwnerOutstanding(
+  viewer: Viewer,
+  store: BackendStore = demoBackendStore,
+): Promise<Result<readonly Record<string, unknown>[]>> {
+  if (viewer.role !== "site_owner") {
+    return failure("forbidden_role", "Only a site owner can read outstanding items.");
+  }
+  const sites = (await store.listSites()).filter((site) => site.ownerUserId === viewer.userId);
+  const items = await Promise.all(
+    sites.map(async (site) =>
+      (await store.listSiteActivity(site.id))
+        .filter((activity) => activity.action === "submission_info_requested")
+        .map((activity) => ({
+          id: activity.id,
+          source: "request_info",
+          site_id: activity.siteId,
+          project_id: activity.projectId,
+          message: activity.note ?? "",
+          created_at: activity.createdAt,
+        })),
+    ),
+  );
+  return ok(items.flat());
+}
+
+export function journeyStageId(
+  submissionStatus: SubmissionStatus,
+  projectStage: ProjectStage | null,
+): JourneyStageId | null {
+  if (projectStage !== null) {
+    return JOURNEY_STAGE_BY_PROJECT_STAGE[projectStage];
+  }
+
+  return JOURNEY_STAGE_BY_SUBMISSION_STATUS[submissionStatus];
+}
+
+const JOURNEY_STAGE_BY_SUBMISSION_STATUS = {
+  draft: null,
+  submitted: "submitted",
+  screening: "screening",
+  info_requested: null,
+  accepted: null,
+  rejected: null,
+} as const satisfies Record<SubmissionStatus, JourneyStageId | null>;
+
+const JOURNEY_STAGE_BY_PROJECT_STAGE = {
+  pre_development: "pre-development",
+  development: "development",
+  construction: "construction",
+  commissioning: "commissioning",
+  operations: "operations",
+} as const satisfies Record<ProjectStage, JourneyStageId>;
 
 export async function getDealRoom(
   viewer: Viewer,

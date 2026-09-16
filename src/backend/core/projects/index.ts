@@ -11,6 +11,11 @@
  */
 
 export { MOCK_PROJECTS, mockProjectStore } from "./mock-store";
+export {
+  FUNDING_STAGE_BY_PROJECT_STAGE,
+  FUNDING_STAGES,
+  type FundingStage,
+} from "./funding";
 export { type ProjectStore } from "./store";
 export {
   isProjectStage,
@@ -28,9 +33,15 @@ export {
   advanceProjectStage,
   decideSubmission,
   toProjectPayload,
+  getPipeline,
+  updateProject,
   updateProjectVisibility,
   type DecisionInput,
   type DecisionResponse,
+  type PipelineCard,
+  type PipelineColumn,
+  type PipelineResponse,
   type ProjectPayload,
+  type ProjectUpdateInput,
   type SubmissionDecision,
 } from "./workflows";

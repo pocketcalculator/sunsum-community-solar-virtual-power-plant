@@ -6,16 +6,24 @@ import { parseDecision } from "@/backend/handlers/projects";
 import {
   handleGetDealRoom,
   handleGetProjectEngagements,
+  handleGetProjectFundingNeeds,
   handlePatchProjectVisibility,
+  handlePatchProject,
+  handlePatchSite,
   handlePostEngagement,
+  handlePostSiteDocument,
+  handlePostSiteSubmit,
   handlePostProjectStage,
   handlePostSubmissionDecision,
 } from "@/backend/handlers";
-import { parsePortfolioQuery } from "@/backend/handlers/investors";
+import { parseInvestorProfile, parsePortfolioQuery } from "@/backend/handlers/investors";
 import {
   parseSiteCreate,
+  parseSiteUpdate,
   parseSubmissionQuery,
 } from "@/backend/handlers/sites";
+import { parseDocumentCreate } from "@/backend/handlers/documents";
+import { parseProjectUpdate } from "@/backend/handlers/projects";
 
 const operator: Viewer = {
   role: "operator",
@@ -53,6 +61,14 @@ describe("backend input validation", () => {
     expect(parseDecision({ decision: "maybe" }).ok).toBe(false);
   });
 
+
+  it("rejects unknown fields and enum values on new endpoint bodies", () => {
+    expect(parseSiteUpdate({ submit: true }).ok).toBe(false);
+    expect(parseDocumentCreate({ original_filename: "x.exe", content_type: "application/octet-stream", size_bytes: 1 }).ok).toBe(false);
+    expect(parseProjectUpdate({ stage: "development" }).ok).toBe(false);
+    expect(parseInvestorProfile({ organization_name: "Fund", investor_type: "unknown", capital_type: "grant", funding_stage_focus: [], ticket_size_min: null, ticket_size_max: null, geographies: [], investment_objectives: [], impact_priorities: [], decision_criteria: [] }).ok).toBe(false);
+  });
+
   it("rejects unknown portfolio query parameters", () => {
     const result = parsePortfolioQuery(new URLSearchParams("extra=1"));
     expect(result.ok).toBe(false);
@@ -75,6 +91,60 @@ describe("backend input validation", () => {
           createMemoryBackendStore(),
         ),
       "invalid_body",
+    ],
+    [
+      "site patch",
+      () =>
+        handlePatchSite(
+          jsonRequest({ site_type: "land" }),
+          operator,
+          "not-a-uuid",
+          createMemoryBackendStore(),
+        ),
+      "invalid_body",
+    ],
+    [
+      "site submit",
+      () =>
+        handlePostSiteSubmit(
+          new Request("https://sunsum.test/api/sites/not-a-uuid/submit", { method: "POST" }),
+          operator,
+          "not-a-uuid",
+          createMemoryBackendStore(),
+        ),
+      "invalid_body",
+    ],
+    [
+      "site document",
+      () =>
+        handlePostSiteDocument(
+          jsonRequest({ original_filename: "bill.pdf", content_type: "application/pdf", size_bytes: 1 }),
+          operator,
+          "not-a-uuid",
+          createMemoryBackendStore(),
+        ),
+      "invalid_body",
+    ],
+    [
+      "project patch",
+      () =>
+        handlePatchProject(
+          jsonRequest({ next_action: "x" }),
+          operator,
+          "not-a-uuid",
+          createMemoryBackendStore(),
+        ),
+      "invalid_body",
+    ],
+    [
+      "project funding needs",
+      () =>
+        handleGetProjectFundingNeeds(
+          investor,
+          "not-a-uuid",
+          createMemoryBackendStore(),
+        ),
+      "invalid_query",
     ],
     [
       "project stage",

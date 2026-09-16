@@ -1,5 +1,5 @@
 import type { Viewer } from "../../core/identity";
-import { getDealRoom, getOwnerSites } from "../../core/views";
+import { getDealRoom, getOwnerOutstanding, getOwnerSites } from "../../core/views";
 import { demoBackendStore, type BackendStore } from "../../core/store";
 import { resolveDemoInvestor, resolveDemoSiteOwner } from "../identity";
 import { failureResponse, jsonResponse, validatePathId } from "../shared";
@@ -20,6 +20,19 @@ export function getOwnerSitesRoute(): Promise<Response> {
   return handleGetOwnerSites(resolveDemoSiteOwner());
 }
 
+
+export async function handleGetOwnerOutstanding(
+  viewer: Viewer,
+  store: BackendStore = demoBackendStore,
+): Promise<Response> {
+  const result = await getOwnerOutstanding(viewer, store);
+  return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
+}
+
+export function getOwnerOutstandingRoute(): Promise<Response> {
+  return handleGetOwnerOutstanding(resolveDemoSiteOwner());
+}
+
 export async function handleGetDealRoom(
   viewer: Viewer,
   projectId: string,
@@ -35,5 +48,5 @@ export async function getDealRoomRoute(
   _request: Request,
   context: RouteContext,
 ): Promise<Response> {
-  return handleGetDealRoom(resolveDemoInvestor(), (await context.params).id);
+  return handleGetDealRoom(await resolveDemoInvestor(), (await context.params).id);
 }

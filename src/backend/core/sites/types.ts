@@ -59,6 +59,17 @@ export interface AssessmentRecord {
   createdAt: string;
 }
 
+export interface SiteUpdateInput {
+  readonly addressRaw?: string | null;
+  readonly siteType?: SiteType | null;
+  readonly ownershipStatus?: OwnershipStatus | null;
+  readonly approximateAreaSqm?: number | null;
+  readonly electricityUsageKwhAnnual?: number | null;
+  readonly electricityBillDocId?: string | null;
+  readonly hasExistingSolar?: boolean | null;
+  readonly consentGiven?: boolean;
+}
+
 export interface SiteCreateInput {
   readonly addressRaw?: string;
   readonly siteType?: SiteType;

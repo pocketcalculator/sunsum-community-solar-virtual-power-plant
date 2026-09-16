@@ -4,13 +4,18 @@ import type { Viewer } from "@/backend/core/identity";
 import {
   advanceProjectStage,
   decideSubmission,
+  getPipeline,
+  updateProject,
   updateProjectVisibility,
 } from "@/backend/core/projects";
 import { MOCK_PROJECTS } from "@/backend/core/projects/mock-store";
 import { failure } from "@/backend/core/shared";
 import {
   createSite,
+  getSubmissionDetail,
   listSubmissions,
+  submitSite,
+  updateDraftSite,
   type SiteCreateInput,
   type ViabilityClient,
 } from "@/backend/core/sites";
@@ -20,8 +25,10 @@ import {
   demoFundingNeedId,
   DEMO_DOCUMENT_ID,
 } from "@/backend/core/store";
-import { expressInterest, listProjectEngagements } from "@/backend/core/engagements";
-import { getDealRoom, getOwnerSites } from "@/backend/core/views";
+import { expressInterest, listMyEngagements, listProjectEngagements, listProjectFundingNeeds } from "@/backend/core/engagements";
+import { getDealRoom, getOwnerOutstanding, getOwnerSites, journeyStageId } from "@/backend/core/views";
+import { addSiteDocument } from "@/backend/core/documents";
+import { DEFAULT_PORTFOLIO_QUERY, getPortfolio, getMyInvestorProfile, upsertMyInvestorProfile } from "@/backend/core/investors";
 import {
   handleGetPortfolio,
   handlePostEngagement,
@@ -143,8 +150,26 @@ describe("site creation and owner views", () => {
     const dashboard = await getOwnerSites(owner, store);
     expect(dashboard.ok).toBe(true);
     if (dashboard.ok) {
-      expect(dashboard.value[0]).toMatchObject({ stage: "draft" });
+      expect(dashboard.value[0]).toMatchObject({
+        submission_status: "draft",
+        project_stage: null,
+        journey_stage_id: null,
+      });
+      expect(dashboard.value[0]).not.toHaveProperty("stage");
     }
+  });
+
+  it("maps submission and project states to UI journey stages", () => {
+    expect(journeyStageId("submitted", null)).toBe("submitted");
+    expect(journeyStageId("screening", null)).toBe("screening");
+    expect(journeyStageId("draft", null)).toBeNull();
+    expect(journeyStageId("info_requested", null)).toBeNull();
+    expect(journeyStageId("rejected", null)).toBeNull();
+    expect(journeyStageId("accepted", null)).toBeNull();
+    expect(journeyStageId("accepted", "pre_development")).toBe(
+      "pre-development",
+    );
+    expect(journeyStageId("rejected", "operations")).toBe("operations");
   });
 
   it("does not persist anything when viability is unavailable", async () => {
@@ -587,7 +612,8 @@ describe("demo funding needs", () => {
     const store = createMemoryBackendStore({ seedDemoProjects: true });
     const demoOwner = resolveDemoSiteOwner();
     const demoOperator = resolveDemoOperator();
-    const demoInvestor = resolveDemoInvestor();
+    const demoInvestor = await resolveDemoInvestor(store);
+    if (demoInvestor.role !== "investor") throw new Error("expected investor");
     const uuid =
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -659,7 +685,7 @@ describe("demo funding needs", () => {
         method: "POST",
         body: JSON.stringify({ funding_need_id: fundingNeedId }),
       }),
-      resolveDemoInvestor(),
+      await resolveDemoInvestor(),
       project.id,
       store,
     );
@@ -1024,3 +1050,220 @@ describe("engagements and deal room", () => {
     if (!declined.ok) expect(declined.failure.code).toBe("forbidden_tier");
   });
 });
+
+
+describe("new endpoint workflows", () => {
+  it("updates only draft sites, refreshes missing fields, and enforces ownership", async () => {
+    const store = createMemoryBackendStore();
+    const draft = await createSite(owner, { addressRaw: "Old", submit: false }, store, viability);
+    if (!draft.ok) throw new Error(draft.failure.code);
+    const updated = await updateDraftSite(owner, draft.value.site.id, { siteType: "land" }, store);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.value.site).toMatchObject({ address_raw: "Old", site_type: "land" });
+    expect(updated.value.missing_fields.map((item) => item.field)).toContain("ownership_status");
+
+    const otherOwner: Viewer = { role: "site_owner", userId: "f98dc14c-e7a8-45f1-9310-27b8f490169d" };
+    const denied = await updateDraftSite(otherOwner, draft.value.site.id, { siteType: "rooftop" }, store);
+    expect(denied.ok).toBe(false);
+    if (!denied.ok) expect(denied.failure.code).toBe("forbidden_owner");
+
+    const submitted = await submitSite(owner, draft.value.site.id, store, viability);
+    expect(submitted.ok).toBe(false);
+    const completeDraft = await createSite(owner, { ...completeSite, submit: false }, store, viability);
+    if (!completeDraft.ok) throw new Error(completeDraft.failure.code);
+    await submitSite(owner, completeDraft.value.site.id, store, viability);
+    const conflict = await updateDraftSite(owner, completeDraft.value.site.id, { siteType: "land" }, store);
+    expect(conflict.ok).toBe(false);
+    if (!conflict.ok) expect(conflict.failure.code).toBe("conflict");
+  });
+
+  it("submits drafts and resubmits info requests with assessment and activity", async () => {
+    const store = createMemoryBackendStore();
+    const draft = await createSite(owner, { ...completeSite, submit: false }, store, viability);
+    if (!draft.ok) throw new Error(draft.failure.code);
+    expect((await submitSite(operator, draft.value.site.id, store, viability)).ok).toBe(false);
+    const submitted = await submitSite(owner, draft.value.site.id, store, viability);
+    expect(submitted.ok).toBe(true);
+    if (submitted.ok) expect(submitted.value.assessment?.viability_status).toBe("potentially_viable");
+
+    const { store: infoStore, siteId } = await submittedStore();
+    await decideSubmission(operator, siteId, { decision: "request_info", note: "Need bill", projectName: null, assignedOperatorUserId: null }, infoStore);
+    const resubmitted = await submitSite(owner, siteId, infoStore, viability);
+    expect(resubmitted.ok).toBe(true);
+    expect((await infoStore.listSiteActivity(siteId)).map((item) => item.action)).toContain("site_resubmitted");
+  });
+
+  it("records document metadata without exposing blob paths and validates inputs", async () => {
+    const { store, siteId } = await submittedStore();
+    const added = await addSiteDocument(owner, siteId, {
+      originalFilename: "bill.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 2048,
+      docType: "electricity_bill",
+      disclosureClass: "owner_private",
+    }, store);
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    expect(JSON.stringify(added.value)).not.toContain("blob");
+    expect(added.value.disclosure_class).toBe("owner_private");
+    const otherOwner: Viewer = { role: "site_owner", userId: "f98dc14c-e7a8-45f1-9310-27b8f490169d" };
+    const denied = await addSiteDocument(otherOwner, siteId, {
+      originalFilename: "other.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 10,
+      docType: null,
+      disclosureClass: "owner_private",
+    }, store);
+    expect(denied.ok).toBe(false);
+    if (!denied.ok) expect(denied.failure.code).toBe("forbidden_owner");
+  });
+
+  it("refuses to let a site owner disclose their own document to investors", async () => {
+    const { store, siteId } = await submittedStore();
+    const leaked = await addSiteDocument(owner, siteId, {
+      originalFilename: "electricity-bill.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 2048,
+      docType: "electricity_bill",
+      disclosureClass: "investor_tier_1",
+    }, store);
+    expect(leaked.ok).toBe(false);
+    if (!leaked.ok) expect(leaked.failure.code).toBe("forbidden_role");
+    expect(await store.listDocuments(siteId, null)).toHaveLength(0);
+
+    const disclosed = await addSiteDocument(operator, siteId, {
+      originalFilename: "teaser.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 2048,
+      docType: "site_summary",
+      disclosureClass: "investor_tier_1",
+    }, store);
+    expect(disclosed.ok).toBe(true);
+    if (disclosed.ok) expect(disclosed.value.disclosure_class).toBe("investor_tier_1");
+  });
+
+  it("returns operator submission detail with history documents owner and activity", async () => {
+    const { store, siteId } = await submittedStore();
+    await addSiteDocument(owner, siteId, { originalFilename: "bill.pdf", contentType: "application/pdf", sizeBytes: 1, docType: null, disclosureClass: "owner_private" }, store);
+    const detail = await getSubmissionDetail(operator, siteId, store);
+    expect(detail.ok).toBe(true);
+    if (!detail.ok) return;
+    expect(detail.value.site.id).toBe(siteId);
+    expect(detail.value.assessment_history).toHaveLength(1);
+    expect(detail.value.documents).toHaveLength(1);
+    expect(detail.value.owner).toBeNull();
+    expect(await getSubmissionDetail(owner, siteId, store)).toMatchObject({ ok: false });
+  });
+
+  it("updates project assignment and next action but not restricted fields", async () => {
+    const { store, projectId } = await acceptedStore();
+    const demoOp = resolveDemoOperator();
+    const updated = await updateProject(operator, projectId, {
+      assignedOperatorUserId: demoOp.userId,
+      nextAction: "Schedule visit",
+      targetDate: "2026-10-01",
+    }, store);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.value).toMatchObject({ assigned_operator_user_id: demoOp.userId, next_action: "Schedule visit", target_date: "2026-10-01" });
+    expect((await store.listActivity(projectId)).map((item) => item.action)).toEqual(expect.arrayContaining(["project_assignee_changed", "project_next_action_changed", "project_target_date_changed"]));
+    const denied = await updateProject(owner, projectId, { nextAction: "Nope" }, store);
+    expect(denied.ok).toBe(false);
+    const invalid = await updateProject(operator, projectId, { assignedOperatorUserId: owner.userId }, store);
+    expect(invalid.ok).toBe(false);
+    if (!invalid.ok) expect(invalid.failure.code).toBe("validation_failed");
+  });
+
+  it("returns all seven pipeline columns in order and places site/project cards correctly", async () => {
+    const { store, siteId } = await submittedStore();
+    const { projectId } = await acceptedStoreWithStore(store);
+    const board = await getPipeline(operator, { statuses: [], siteType: null, viability: null, location: null }, store);
+    expect(board.ok).toBe(true);
+    if (!board.ok) return;
+    expect(board.value.columns.map((column) => column.journey_stage_id)).toEqual(["submitted", "screening", "pre-development", "development", "construction", "commissioning", "operations"]);
+    expect(board.value.columns[0]?.items.map((item) => item.site_id)).toContain(siteId);
+    expect(board.value.columns[2]?.items.map((item) => item.project_id)).toContain(projectId);
+    expect((await getPipeline(owner, { statuses: [], siteType: null, viability: null, location: null }, store)).ok).toBe(false);
+  });
+
+  it("persists investor profiles and unlocks mandate-matched portfolio", async () => {
+    const store = createMemoryBackendStore({ seedDemoProjects: true });
+    const pending: Viewer = { ...investor, investor: { ...investor.investor, onboardingCompletedAt: null, fundingStageFocus: ["permanent"], geographies: ["TN"] } };
+    expect((await getPortfolio(pending, DEFAULT_PORTFOLIO_QUERY, store)).ok).toBe(false);
+    const saved = await upsertMyInvestorProfile(pending, {
+      organizationName: "New Fund",
+      investorType: "impact_investor",
+      capitalType: "concessionary_debt",
+      fundingStageFocus: ["permanent"],
+      ticketSizeMin: null,
+      ticketSizeMax: null,
+      geographies: ["TN"],
+      investmentObjectives: [],
+      impactPriorities: [],
+      decisionCriteria: [],
+    }, store);
+    expect(saved.ok).toBe(true);
+    const profile = await getMyInvestorProfile(pending, store);
+    expect(profile.ok).toBe(true);
+    if (!profile.ok) return;
+    const onboarded: Viewer = { ...pending, investor: { ...pending.investor, onboardingCompletedAt: profile.value.onboarding_completed_at, fundingStageFocus: profile.value.funding_stage_focus, geographies: profile.value.geographies } };
+    const portfolio = await getPortfolio(onboarded, DEFAULT_PORTFOLIO_QUERY, store);
+    expect(portfolio.ok).toBe(true);
+    if (portfolio.ok) expect(portfolio.value.items.map((item) => item.stage)).toEqual(["operations"]);
+    expect((await upsertMyInvestorProfile(owner, saved.ok ? {
+      organizationName: "Bad", investorType: "impact_investor", capitalType: "grant", fundingStageFocus: [], ticketSizeMin: null, ticketSizeMax: null, geographies: [], investmentObjectives: [], impactPriorities: [], decisionCriteria: []
+    } : {} as never, store)).ok).toBe(false);
+  });
+
+  it("returns open funding needs for visible projects and current investor engagements only", async () => {
+    const { store, projectId } = await acceptedStore();
+    let needs = await listProjectFundingNeeds(investor, projectId, store);
+    expect(needs.ok).toBe(false);
+    await updateProjectVisibility(operator, projectId, true, store);
+    needs = await listProjectFundingNeeds(investor, projectId, store);
+    expect(needs.ok).toBe(true);
+    if (needs.ok) expect(needs.value[0]?.project_id).toBe(projectId);
+    expect((await listProjectFundingNeeds(owner, projectId, store)).ok).toBe(false);
+
+    await expressInterest(investor, projectId, null, store);
+    await store.addEngagement({ id: store.nextId("engagement"), investorId: "other", investorUserId: "other-user", projectId, fundingNeedId: null, state: "interested", stateChangedAt: new Date().toISOString(), committedAmount: null, commitmentInstrument: null, isBinding: false, declineReason: null, createdAt: new Date().toISOString() });
+    const mine = await listMyEngagements(investor, store);
+    expect(mine.ok).toBe(true);
+    if (mine.ok) expect(mine.value).toHaveLength(1);
+    expect((await listMyEngagements(operator, store)).ok).toBe(false);
+  });
+
+  it("stops listing an engagement once the operator revokes investor visibility", async () => {
+    const { store, projectId } = await acceptedStore();
+    await updateProjectVisibility(operator, projectId, true, store);
+    await expressInterest(investor, projectId, null, store);
+
+    const before = await listMyEngagements(investor, store);
+    expect(before.ok).toBe(true);
+    if (before.ok) expect(before.value).toHaveLength(1);
+
+    await updateProjectVisibility(operator, projectId, false, store);
+
+    const after = await listMyEngagements(investor, store);
+    expect(after.ok).toBe(true);
+    if (after.ok) expect(after.value).toEqual([]);
+  });
+
+  it("returns only the owner's outstanding request-info items", async () => {
+    const { store, siteId } = await submittedStore();
+    await decideSubmission(operator, siteId, { decision: "request_info", note: "Need bill", projectName: null, assignedOperatorUserId: null }, store);
+    const inbox = await getOwnerOutstanding(owner, store);
+    expect(inbox.ok).toBe(true);
+    if (inbox.ok) expect(inbox.value).toEqual([expect.objectContaining({ site_id: siteId, message: "Need bill" })]);
+    expect((await getOwnerOutstanding(operator, store)).ok).toBe(false);
+  });
+});
+
+async function acceptedStoreWithStore(store: ReturnType<typeof createMemoryBackendStore>) {
+  const created = await createSite(owner, { ...completeSite, addressRaw: "2 Accepted Street", submit: true }, store, viability);
+  if (!created.ok) throw new Error(created.failure.code);
+  const accepted = await decideSubmission(operator, created.value.site.id, { decision: "accept", note: null, projectName: "Accepted Solar", assignedOperatorUserId: null }, store);
+  if (!accepted.ok || accepted.value.project === undefined) throw new Error("accept failed");
+  return { siteId: created.value.site.id, projectId: accepted.value.project.id };
+}

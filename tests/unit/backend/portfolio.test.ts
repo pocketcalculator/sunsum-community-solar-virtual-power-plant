@@ -7,7 +7,10 @@ import {
   type PortfolioResponse,
 } from "@/backend/core/investors";
 import type { InvestorProfile, Viewer } from "@/backend/core/identity";
-import type { ProjectRecord, ProjectStore } from "@/backend/core/projects";
+import { FUNDING_STAGE_BY_PROJECT_STAGE } from "@/backend/core/projects";
+import type { FundingStage, ProjectRecord } from "@/backend/core/projects";
+import type { FundingNeedRecord } from "@/backend/core/engagements";
+import type { PortfolioStore } from "@/backend/core/investors";
 import {
   handleGetPortfolio,
   parsePortfolioQuery,
@@ -62,8 +65,38 @@ function project(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
   };
 }
 
-function storeOf(...projects: readonly ProjectRecord[]): ProjectStore {
-  return { listProjects: () => Promise.resolve(projects) };
+function fundingNeed(
+  projectId: string,
+  stage: FundingStage,
+  overrides: Partial<FundingNeedRecord> = {},
+): FundingNeedRecord {
+  return {
+    id: `funding-${projectId}-${stage}`,
+    projectId,
+    needType: "feasibility_study",
+    stage,
+    description: "Test funding need.",
+    amountRequested: null,
+    amountCommitted: null,
+    status: "open",
+    createdAt: "2026-09-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function storeOf(...projects: readonly ProjectRecord[]): PortfolioStore {
+  const needs = projects.flatMap((item) =>
+    Array.from({ length: item.openFundingNeedsCount }, (_unused, index) =>
+      fundingNeed(item.id, FUNDING_STAGE_BY_PROJECT_STAGE[item.stage], {
+        id: `funding-${item.id}-${index}`,
+      }),
+    ),
+  );
+  return {
+    listProjects: () => Promise.resolve(projects),
+    listFundingNeeds: (projectId) =>
+      Promise.resolve(needs.filter((need) => need.projectId === projectId)),
+  };
 }
 
 function query(overrides: Partial<PortfolioQuery> = {}): PortfolioQuery {
@@ -73,7 +106,7 @@ function query(overrides: Partial<PortfolioQuery> = {}): PortfolioQuery {
 async function expectPortfolio(
   viewer: Viewer,
   q: PortfolioQuery,
-  store: ProjectStore,
+  store: PortfolioStore,
 ): Promise<PortfolioResponse> {
   const result = await getPortfolio(viewer, q, store);
   if (!result.ok) {
@@ -110,11 +143,12 @@ describe("portfolio authorization", () => {
 
   it("decides permission before reading any project", async () => {
     let reads = 0;
-    const counting: ProjectStore = {
+    const counting: PortfolioStore = {
       listProjects: () => {
         reads += 1;
         return Promise.resolve([project()]);
       },
+      listFundingNeeds: () => Promise.resolve([]),
     };
 
     await getPortfolio(operator, query(), counting);
@@ -234,6 +268,30 @@ describe("mandate matching", () => {
     const portfolio = await expectPortfolio(focused, query(), store);
 
     expect(portfolio.items.map((item) => item.project_id)).toEqual(["match"]);
+  });
+
+  it("matches permanent mandates against open permanent funding needs", async () => {
+    const permanentInvestor: Viewer = {
+      role: "investor",
+      userId: "92accb1b-62f8-4585-8db6-b207636c3f29",
+      investor: {
+        ...onboardedInvestor,
+        fundingStageFocus: ["permanent"],
+      },
+    };
+    const store = storeOf(
+      project({
+        id: "operating-with-permanent-need",
+        stage: "operations",
+        openFundingNeedsCount: 1,
+      }),
+    );
+
+    const portfolio = await expectPortfolio(permanentInvestor, query(), store);
+
+    expect(portfolio.items.map((item) => item.project_id)).toEqual([
+      "operating-with-permanent-need",
+    ]);
   });
 
   it("treats an unanswered onboarding question as no preference", async () => {

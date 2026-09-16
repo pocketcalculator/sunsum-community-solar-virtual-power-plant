@@ -1,13 +1,17 @@
 import type { Viewer } from "../../core/identity";
 import {
   advanceProjectStage,
+  getPipeline,
   decideSubmission,
   isProjectStage,
+  updateProject,
   updateProjectVisibility,
   type DecisionInput,
+  type ProjectUpdateInput,
 } from "../../core/projects";
 import { failure, ok, type Result } from "../../core/shared";
 import { demoBackendStore, type BackendStore } from "../../core/store";
+import { parseSubmissionQuery } from "../sites";
 import { resolveDemoOperator } from "../identity";
 import {
   failureResponse,
@@ -126,6 +130,78 @@ export async function patchProjectVisibilityRoute(
     resolveDemoOperator(),
     (await context.params).id,
   );
+}
+
+
+export async function handlePatchProject(
+  request: Request,
+  viewer: Viewer,
+  projectId: string,
+  store: BackendStore = demoBackendStore,
+): Promise<Response> {
+  const id = validatePathId(projectId, "invalid_body");
+  if (!id.ok) return failureResponse(id.failure);
+  const body = await readJsonObject(request);
+  if (!body.ok) return failureResponse(body.failure);
+  const input = parseProjectUpdate(body.value);
+  if (!input.ok) return failureResponse(input.failure);
+  const result = await updateProject(viewer, projectId, input.value, store);
+  return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
+}
+
+export async function patchProjectRoute(
+  request: Request,
+  context: RouteContext,
+): Promise<Response> {
+  return handlePatchProject(request, resolveDemoOperator(), (await context.params).id);
+}
+
+export async function handleGetPipeline(
+  request: Request,
+  viewer: Viewer,
+  store: BackendStore = demoBackendStore,
+): Promise<Response> {
+  const query = parseSubmissionQuery(new URL(request.url).searchParams);
+  if (!query.ok) return failureResponse(query.failure);
+  const result = await getPipeline(viewer, query.value, store);
+  return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
+}
+
+export function getPipelineRoute(request: Request): Promise<Response> {
+  return handleGetPipeline(request, resolveDemoOperator());
+}
+
+
+export function parseProjectUpdate(body: JsonObject): Result<ProjectUpdateInput> {
+  const keys = rejectUnknownKeys(body, [
+    "assigned_operator_user_id",
+    "next_action",
+    "target_date",
+  ]);
+  if (!keys.ok) return keys;
+  const assigned = nullableString(body.assigned_operator_user_id, "assigned_operator_user_id");
+  if (!assigned.ok) return assigned;
+  if (assigned.value !== undefined && assigned.value !== null && !isUuid(assigned.value)) {
+    return failure("invalid_body", "Expected a UUID or null.", { field: "assigned_operator_user_id" });
+  }
+  const nextAction = nullableString(body.next_action, "next_action");
+  if (!nextAction.ok) return nextAction;
+  const targetDate = nullableString(body.target_date, "target_date");
+  if (!targetDate.ok) return targetDate;
+  if (targetDate.value !== undefined && targetDate.value !== null && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate.value)) {
+    return failure("invalid_body", "Expected an ISO date.", { field: "target_date" });
+  }
+  return ok({
+    ...(assigned.value === undefined ? {} : { assignedOperatorUserId: assigned.value }),
+    ...(nextAction.value === undefined ? {} : { nextAction: nextAction.value }),
+    ...(targetDate.value === undefined ? {} : { targetDate: targetDate.value }),
+  });
+}
+
+function nullableString(value: unknown, field: string): Result<string | null | undefined> {
+  return value === undefined || value === null || typeof value === "string"
+    ? ok(value)
+    : failure("invalid_body", "Expected a string or null.", { field });
 }
 
 export function parseDecision(body: JsonObject): Result<DecisionInput> {

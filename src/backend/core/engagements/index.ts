@@ -6,8 +6,12 @@ export {
 } from "./types";
 export {
   expressInterest,
+  listMyEngagements,
   listProjectEngagements,
+  listProjectFundingNeeds,
   toEngagementPayload,
   unlocksTierOne,
+  type EngagementPipelineItem,
   type EngagementPayload,
+  type FundingNeedPayload,
 } from "./workflows";

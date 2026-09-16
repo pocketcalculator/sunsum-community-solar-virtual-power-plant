@@ -1,3 +1,5 @@
+import type { FundingStage } from "../projects";
+
 export const ENGAGEMENT_STATES = [
   "interested",
   "committed",
@@ -29,7 +31,7 @@ export interface FundingNeedRecord {
   id: string;
   projectId: string;
   needType: string;
-  stage: string;
+  stage: FundingStage;
   description: string;
   amountRequested: number | null;
   amountCommitted: number | null;
