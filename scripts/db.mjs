@@ -149,6 +149,17 @@ const tasks = {
     process.exit(result.status ?? 1);
   },
 
+  async studio() {
+    assertLocal("open studio against");
+    const result = spawnSync("npx", ["drizzle-kit", "studio"], {
+      cwd: root,
+      stdio: "inherit",
+      shell: process.platform === "win32",
+      env: process.env,
+    });
+    process.exit(result.status ?? 1);
+  },
+
   async seed() {
     assertLocal("seed");
     await runSqlFile("seed.sql");

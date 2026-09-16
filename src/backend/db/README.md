@@ -35,7 +35,7 @@ see [store parity](#the-two-stores-must-be-indistinguishable) below.
 | `npm run db:seed`     | Load demo data (additive, idempotent)           |
 | `npm run db:reset`    | Empty every table                               |
 | `npm run db:verify`   | Run the adversarial constraint probes           |
-| `npm run db:studio`   | Browse the data                                 |
+| `npm run db:studio`   | Browse the data in a browser                    |
 | `npm run test:db`     | Probes plus the store-parity integration tests  |
 
 `scripts/db.mjs` runs the SQL through the `pg` driver the application already
@@ -43,6 +43,22 @@ depends on, so `psql` does not need to be installed. It loads `.env.local`,
 which a plain Node process does not do for itself, and it refuses to run against
 a host that is not `localhost` — `db:reset` truncates every table, and migrating
 a deployed database is a deployment step, not an npm script.
+
+Every `db:*` command goes through it, `db:studio` included. That is not
+tidiness: `db:studio` used to call `drizzle-kit` directly, which meant nothing
+loaded `.env.local` and `drizzle.config.ts` fell back to a hardcoded
+`localhost:5432`. On a machine with PostgreSQL already installed, that is
+somebody else's database, connected to silently. The fallback is now read from
+`.env.example`, so the worst case is a connection refused rather than the wrong
+data.
+
+## Three ways to look at the data
+
+| | |
+| --- | --- |
+| `npm run db:studio` | A browser GUI at <https://local.drizzle.studio>. The page is a front end for a server on your own machine; the data does not leave it. |
+| `docker exec -it sunsum-postgres psql -U sunsum -d sunsum` | `psql` inside the container. `\dt` lists tables, `\d projects` describes one. |
+| pgAdmin, DBeaver, TablePlus, the VS Code extension | Host `localhost`, port **55432**, database `sunsum`, user `sunsum`, password `devpassword`. |
 
 PostgreSQL 15 or later is required.
 

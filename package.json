@@ -18,7 +18,7 @@
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/db.mjs migrate",
-    "db:studio": "drizzle-kit studio",
+    "db:studio": "node scripts/db.mjs studio",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down -v",
     "db:seed": "node scripts/db.mjs seed",
