@@ -99,6 +99,15 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/core/shared/probe.ts", "../investors"],
     ["src/backend/core/shared/probe.ts", "../projects"],
     ["src/backend/core/shared/probe.ts", "../identity/viewer"],
+    ["src/backend/core/probe.ts", "@/backend/db"],
+    ["src/backend/core/probe.ts", "../db"],
+    ["src/backend/core/projects/probe.ts", "@/backend/db"],
+    ["src/backend/core/projects/probe.ts", "../../db"],
+    ["src/backend/core/projects/probe.ts", "../../db/schema"],
+    ["src/backend/core/shared/probe.ts", "@/backend/db/schema"],
+    ["src/backend/handlers/probe.ts", "@/backend/db"],
+    ["src/backend/handlers/investors/probe.ts", "../../db"],
+    ["src/backend/handlers/investors/probe.ts", "../../db/schema"],
   ])(
     "rejects %s importing %s",
     async (file, dependency) => {
@@ -135,6 +144,11 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/handlers/probe.ts", "node:crypto"],
     ["src/backend/core/probe.ts", "@/domain/roles"],
     ["src/backend/core/probe.ts", "node:crypto"],
+    ["src/backend/db/probe.ts", "@/backend/core/identity"],
+    ["src/backend/db/probe.ts", "@/backend/core/projects"],
+    ["src/backend/db/probe.ts", "../core/projects"],
+    ["src/backend/db/probe.ts", "drizzle-orm/pg-core"],
+    ["src/backend/db/probe.ts", "./enums"],
   ])(
     "permits %s importing %s",
     async (file, dependency) => {
@@ -156,6 +170,8 @@ describe("the actual module-boundary configuration", () => {
     ["src/components/ui/probe.tsx", 'export * from "@/backend";'],
     ["src/domain/probe.ts", 'export * from "@/backend/core";'],
     ["src/backend/core/probe.ts", 'export * from "@/backend/handlers";'],
+    ["src/backend/core/probe.ts", 'export * from "@/backend/db";'],
+    ["src/backend/handlers/probe.ts", 'export * from "@/backend/db/schema";'],
   ])("rejects prohibited re-exports from %s", async (file, source) => {
     expect(await lintBoundary(file, source)).not.toHaveLength(0);
   });
