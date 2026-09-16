@@ -1,0 +1,146 @@
+/*
+ * Segmented control for the three theme choices.
+ *
+ * The visible state comes from `:checked`, so the browser decides what is
+ * selected and nothing here has to be told twice. The only class the component
+ * adds is the one it is given from outside.
+ */
+
+.group {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+/* Hidden, not absent: the icons carry the meaning on screen, and the group
+   still has to introduce itself to anything reading the page aloud. */
+.legend,
+.name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip-path: inset(50%);
+}
+
+.options {
+  display: flex;
+  /*
+   * A safety valve rather than a layout. Three targets of --target-min stop
+   * fitting one row on a 360px phone once the root text is enlarged far enough,
+   * and wrapping is a much better answer than pushing the document sideways.
+   */
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background-color: var(--surface-neutral-soft);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+}
+
+.option {
+  position: relative;
+  display: flex;
+}
+
+/*
+ * Clipped instead of hidden with `display` or `visibility`, either of which
+ * would take the control out of the tab order and end keyboard access. It stays
+ * inside its own segment so that focusing it scrolls to the right place.
+ */
+.input {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip-path: inset(50%);
+}
+
+.label {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: center;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding-inline: var(--space-2);
+  color: var(--text-secondary);
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  transition:
+    background-color var(--motion-fast) var(--easing-standard),
+    color var(--motion-fast) var(--easing-standard);
+}
+
+.label:hover {
+  color: var(--text-primary);
+  background-color: var(--surface-neutral-hover);
+}
+
+.icon {
+  display: inline-flex;
+  font-size: 1.05rem;
+}
+
+/*
+ * Only reachable before the store is live, and permanently without JavaScript.
+ * Muted rather than faded, because `opacity` would take the label below the
+ * contrast the rest of the file is held to.
+ */
+.group:disabled .label {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.group:disabled .label:hover {
+  background-color: transparent;
+}
+
+/*
+ * The radio itself is clipped, so this pill is the only visible statement of
+ * which theme is selected, and it has to meet WCAG 1.4.11 against the track
+ * behind it. The gold fill manages that on navy (9.45:1) and not on paper
+ * (1.53:1), so the opaque line token carries the boundary instead — a
+ * translucent border would only reach 2.67:1 once it is painted over the gold.
+ */
+.input:checked + .label {
+  color: var(--text-on-accent);
+  background-color: var(--accent-solar);
+  border-color: var(--accent-solar-line);
+}
+
+.input:focus-visible + .label {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/*
+ * Forced colours discard author backgrounds, which would leave every segment
+ * looking unselected. System colours are honoured, so the selection is restated
+ * in the palette the person chose.
+ */
+@media (forced-colors: active) {
+  .input:checked + .label {
+    color: HighlightText;
+    background-color: Highlight;
+    border-color: Highlight;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .label {
+    transition: none;
+  }
+}
