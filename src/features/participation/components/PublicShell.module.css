@@ -158,6 +158,13 @@
     backdrop-filter: blur(12px);
   }
 
+  /*
+   * One row, with the navigation and the theme control wrapping inside
+   * themselves rather than the header wrapping around them. Letting the header
+   * wrap instead looks tidier in isolation but doubles its height at tablet
+   * widths, and a sticky header that tall starts covering the headings that
+   * in-page links scroll to.
+   */
   .headerInner {
     flex-wrap: nowrap;
   }

@@ -2,8 +2,16 @@
  * Semantic design tokens for the public Sunsum interface.
  *
  * Components reference semantic surface, state, brand and illustration tokens.
- * This centralizes the current visual baseline; alternate themes still need
- * their own contrast and layout review.
+ * Two themes are defined here and nowhere else: the dark baseline on `:root`,
+ * and the light overrides under `:root[data-theme="light"]` at the end of this
+ * file. Because every consumer reads semantic tokens rather than palette
+ * entries, switching themes is a single attribute change on `<html>` — no
+ * component CSS is theme-aware.
+ *
+ * Both themes are held to WCAG 2.1 AA (design document section 10) by
+ * `tests/unit/theme/contrast.test.ts`, which resolves these declarations and
+ * measures the pairs that carry meaning. Add a semantic colour token here and
+ * the light block must answer for it too.
  */
 
 :root {
@@ -61,6 +69,16 @@
   --accent-solar: var(--palette-gold-400);
   --accent-community: var(--palette-green-400);
   --accent-solar-hover: var(--palette-gold-300);
+
+  /*
+   * Brand gold doing the job of a line rather than a fill. A filled control
+   * carries its own dark text and is identified by it; an edge that marks a
+   * state — the current step, a caution callout — has nothing but itself, so it
+   * has to stay visible against the surface behind it in both themes. Gold
+   * manages that on navy and does not on paper, which is why this is a separate
+   * token and not a second use of `--accent-solar`.
+   */
+  --accent-solar-line: var(--palette-gold-400);
 
   /* Existing brand and illustration uses, not a separate theme system. */
   --brand-roof-secondary: var(--palette-slate-300);
@@ -145,7 +163,13 @@
   /* Form controls */
   --surface-field: var(--palette-navy-950);
   --surface-field-disabled: var(--surface-neutral-highlight);
-  --border-field: var(--border-strong);
+  /*
+   * Stronger than --border-strong on purpose. A separator is decorative and a
+   * button is identified by its label, but a text field has nothing else: its
+   * edge is the only thing saying "you can type here", so it owes the 3:1 that
+   * WCAG 1.4.11 asks of a component boundary.
+   */
+  --border-field: rgb(148 163 189 / 70%);
   --control-mark: var(--accent-solar);
 
   /* Validation */
@@ -153,4 +177,118 @@
   --accent-critical: var(--palette-rose-400);
   --border-critical: rgb(240 122 104 / 60%);
   --surface-critical-soft: rgb(240 122 104 / 14%);
+}
+
+/*
+ * Light theme.
+ *
+ * Additive in the same way the form layer above is: the palette gains raw
+ * values, and one attribute-scoped block remaps the semantic tokens onto them.
+ * Nothing outside this file changes, because no component names a palette
+ * entry or a literal colour.
+ *
+ * `data-theme` is written by the pre-paint script in
+ * `src/components/ui/theme/themeInitScript.ts`, which resolves "follow the system"
+ * into a concrete value before the first paint. Its absence therefore means the
+ * script has not run, and the dark baseline above stands — the same appearance
+ * the interface had before themes existed.
+ */
+
+:root {
+  /* Light palette (raw values — do not use directly in components) */
+  --palette-paper-000: #ffffff;
+  --palette-paper-50: #f5f7fb;
+  --palette-paper-100: #eef2f9;
+  --palette-paper-200: #e9edf6;
+  --palette-paper-300: #dce4f0;
+  --palette-ink-900: #0d1626;
+  --palette-ink-700: #334862;
+  --palette-ink-500: #4a5a74;
+  --palette-amber-700: #7d4b00;
+  --palette-amber-600: #9c6109;
+  --palette-amber-500: #e0a01f;
+  --palette-green-700: #11664a;
+  --palette-green-600: #17805c;
+  --palette-sky-700: #0b63c5;
+  --palette-rose-700: #a32c17;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --surface-page: var(--palette-paper-50);
+  --surface-sunken: var(--palette-paper-200);
+  --surface-raised: var(--palette-paper-000);
+  --surface-raised-strong: var(--palette-paper-100);
+  --surface-accent-soft: rgb(244 182 63 / 22%);
+  --surface-positive-soft: rgb(23 128 92 / 12%);
+  --surface-overlay: rgb(245 247 251 / 88%);
+  --surface-neutral-soft: rgb(13 22 38 / 5%);
+  --surface-neutral-hover: rgb(13 22 38 / 10%);
+  --surface-neutral-muted: rgb(13 22 38 / 6%);
+  --surface-neutral-highlight: rgb(13 22 38 / 4%);
+  --surface-section-veil: rgb(255 255 255 / 55%);
+  --surface-dialog-backdrop: rgb(13 22 38 / 42%);
+
+  /*
+   * The body wash reads as sunlight on a dark page but as dirt on a light one,
+   * so it is weakened rather than reused at dark-theme strength.
+   */
+  --wash-solar-strong: rgb(244 182 63 / 20%);
+  --wash-solar-soft: rgb(244 182 63 / 6%);
+  --wash-community-soft: rgb(78 192 143 / 14%);
+
+  /* Text */
+  --text-primary: var(--palette-ink-900);
+  --text-secondary: var(--palette-ink-700);
+  --text-muted: var(--palette-ink-500);
+  --text-accent: var(--palette-amber-700);
+  --text-positive: var(--palette-green-700);
+
+  /* Borders and separators */
+  --border-subtle: rgb(13 22 38 / 12%);
+  --border-strong: rgb(13 22 38 / 26%);
+  --border-accent: rgb(125 75 0 / 45%);
+  --border-positive: rgb(17 102 74 / 45%);
+  --border-interactive-hover: var(--palette-ink-500);
+
+  /*
+   * Brand gold is kept at full strength so the mark and the primary action
+   * stay recognisably Sunsum. It carries no text contrast burden: dark text
+   * sits on it, never the reverse. Hover darkens here where dark theme
+   * lightens, because both directions have to move away from the surface.
+   */
+  --accent-solar-hover: var(--palette-amber-500);
+  --accent-community: var(--palette-green-600);
+  --accent-solar-line: var(--palette-amber-700);
+
+  /* Brand and illustration */
+  --brand-roof-secondary: var(--palette-ink-700);
+  --brand-baseline: var(--palette-ink-500);
+  --illustration-wash: rgb(244 182 63 / 16%);
+  --illustration-wall: var(--palette-paper-300);
+  --illustration-panel-stroke: var(--palette-amber-700);
+  --illustration-panel-seam: var(--palette-amber-700);
+  --illustration-line: var(--palette-ink-500);
+
+  /* Focus */
+  --focus-ring-color: var(--palette-sky-700);
+
+  /* Elevation — light surfaces need a hint of a shadow, not a hole. */
+  --shadow-sm: 0 1px 2px rgb(13 22 38 / 10%);
+  --shadow-md: 0 12px 28px -18px rgb(13 22 38 / 45%);
+  --shadow-lg: 0 32px 60px -34px rgb(13 22 38 / 40%);
+
+  /* Form controls */
+  --surface-field: var(--palette-paper-000);
+  --surface-field-disabled: var(--surface-neutral-highlight);
+  --border-field: rgb(13 22 38 / 55%);
+  --control-mark: var(--palette-amber-600);
+
+  /* Validation */
+  --text-critical: var(--palette-rose-700);
+  --accent-critical: var(--palette-rose-700);
+  --border-critical: rgb(163 44 23 / 55%);
+  --surface-critical-soft: rgb(163 44 23 / 10%);
 }

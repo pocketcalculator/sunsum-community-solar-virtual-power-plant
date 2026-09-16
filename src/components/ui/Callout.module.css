@@ -50,7 +50,7 @@
 }
 
 .caution {
-  border-inline-start-color: var(--accent-solar);
+  border-inline-start-color: var(--accent-solar-line);
 }
 
 .caution .icon {

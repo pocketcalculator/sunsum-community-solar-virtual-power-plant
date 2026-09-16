@@ -27,7 +27,7 @@
   font-weight: 700;
   color: var(--text-on-accent);
   background-color: var(--accent-solar);
-  border-color: var(--accent-solar);
+  border-color: transparent;
   border-radius: var(--radius-sm);
 }
 
@@ -245,7 +245,7 @@
 .sendButton {
   color: var(--text-on-accent);
   background-color: var(--accent-solar);
-  border-color: var(--accent-solar);
+  border-color: transparent;
 }
 
 .sendButton:hover:not(:disabled) {
