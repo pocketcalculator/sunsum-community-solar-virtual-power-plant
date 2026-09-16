@@ -8,11 +8,12 @@
  * database dictates, and it is enforced in `eslint.config.mjs` and asserted in
  * `tests/unit/architecture.test.ts`.
  *
- * Nothing imports this yet. ADR 0001 lands the schema first and wires a store
- * implementation to it separately, so that the table definitions can be
- * reviewed on their own terms while `mockProjectStore` still backs the running
- * endpoint.
+ * Nothing in `core` or `handlers` may import this. The composition root —
+ * `src/backend/index.ts` — is the one module that sees both sides and decides
+ * which store the running process uses, based on `SUNSUM_STORE`.
  */
 
+export * from "./client";
 export * from "./enums";
+export * from "./project-store";
 export * from "./schema";

@@ -9,11 +9,21 @@
  * schema will keep working, because it imports the array rather than repeating
  * the values.
  *
+ * `SUBMISSION_STATUSES`, `OWNERSHIP_STATUSES` and `DOCUMENT_DISCLOSURE_CLASSES`
+ * are declared identically in PR #12's `core/sites`. Whichever merges second
+ * should delete its copy and re-export from the other, as the funding stages
+ * below already do. Until then these values must be kept identical by hand:
+ * because the two declarations are in different files, git merges them without
+ * a conflict, so a mismatch surfaces as a CHECK-constraint failure at runtime
+ * rather than as a merge conflict.
+ *
  * Every list is `as const` so it produces both the TypeScript union and the
  * CHECK constraint. That is the single-source rule from ADR 0001: a value added
  * here reaches the database and the type system together, and cannot reach one
  * without the other.
  */
+
+import type { UserTypeId } from "@/domain/userTypes";
 
 /** `sites.ownership_status` */
 export const OWNERSHIP_STATUSES = ["confirmed", "pending", "unverified"] as const;
@@ -23,7 +33,7 @@ export type OwnershipStatus = (typeof OWNERSHIP_STATUSES)[number];
 export const SUBMISSION_STATUSES = [
   "draft",
   "submitted",
-  "in_review",
+  "screening",
   "info_requested",
   "accepted",
   "rejected",
@@ -31,41 +41,36 @@ export const SUBMISSION_STATUSES = [
 export type SubmissionStatus = (typeof SUBMISSION_STATUSES)[number];
 
 /**
- * `investors.funding_stage_focus`, and the stage a funding need belongs to.
+ * `documents.disclosure_class` — who may see a document.
  *
- * **This is not `PROJECT_STAGES`.** The two overlap on their first three values
- * and then diverge: an investor funds `permanent` capital, which is not a
- * project stage, and a project reaches `commissioning` and `operations`, which
- * nothing funds. Treating them as one enumeration makes a `permanent` mandate
- * unrepresentable, which is exactly the defect review found in the portfolio
- * endpoint, where `fundingStageFocus` was typed as `ProjectStage[]`.
- *
- * Anywhere the two are compared needs an explicit mapping, not an equality
- * test. See `FUNDING_STAGE_BY_PROJECT_STAGE` below.
+ * The default is `owner_private`, and the default is the point: a document
+ * whose classification nobody set must not enter an investor deal room. An
+ * electricity bill is the obvious case. Failing closed here means a store
+ * adapter cannot leak by omission.
  */
-export const FUNDING_STAGES = [
-  "pre_development",
-  "development",
-  "construction",
-  "permanent",
-] as const;
-export type FundingStage = (typeof FUNDING_STAGES)[number];
+export const DOCUMENT_DISCLOSURE_CLASSES = ["owner_private", "investor_tier_1"] as const;
+export type DocumentDisclosureClass = (typeof DOCUMENT_DISCLOSURE_CLASSES)[number];
 
 /**
- * Which funding stage a project at a given project stage is raising against.
+ * `investors.funding_stage_focus`, and the stage a funding need belongs to.
  *
- * `commissioning` and `operations` map to `permanent`, because a built asset
- * raises permanent capital rather than construction finance. This mapping is an
- * inference from section 7.8 and should be confirmed with the charter before it
- * drives a real matching decision.
+ * Defined in `core/projects` and re-exported here. It was originally declared
+ * in this file, which review correctly called out as useless: `core` is
+ * forbidden from importing `db`, so the mapping could never reach
+ * `matchesMandate()`, and modelling the distinction in the database while the
+ * matcher still compared project stages left the real defect in place.
+ *
+ * It now lives in the domain, the matcher uses it, and the schema reads it from
+ * there — which is the direction every other enumeration here should end up
+ * travelling.
  */
-export const FUNDING_STAGE_BY_PROJECT_STAGE = {
-  pre_development: "pre_development",
-  development: "development",
-  construction: "construction",
-  commissioning: "permanent",
-  operations: "permanent",
-} as const satisfies Record<string, FundingStage>;
+export {
+  FUNDING_STAGE_BY_PROJECT_STAGE,
+  FUNDING_STAGES,
+  fundingStageForProject,
+  isFundingStage,
+  type FundingStage,
+} from "@/backend/core/projects";
 
 /** `investors.investor_type` */
 export const INVESTOR_TYPES = [
@@ -78,6 +83,41 @@ export const INVESTOR_TYPES = [
   "special_community_endowment",
 ] as const;
 export type InvestorType = (typeof INVESTOR_TYPES)[number];
+
+/**
+ * The same seven profiles as the finance group of `src/domain/userTypes.ts`,
+ * which is what the sign-up form actually offers.
+ *
+ * The two lists were identical in content and different in spelling — kebab-case
+ * on the form, snake_case in the database — with nothing connecting them, so
+ * adding a funder profile to the form produced a value the `investors` table
+ * rejects, and review asked for that gap to be closed.
+ *
+ * `satisfies Record<InvestorType, UserTypeId>` closes one direction at compile
+ * time: an investor type with no form equivalent will not build. The other
+ * direction — a form profile with no database equivalent — is checked by
+ * `tests/unit/backend/investor-types.test.ts`, because TypeScript cannot
+ * express "this record is exhaustive over a filtered subset".
+ */
+export const USER_TYPE_BY_INVESTOR_TYPE = {
+  philanthropy: "philanthropy",
+  impact_investor: "impact-investor",
+  nmtc: "nmtc",
+  cdfi_cde: "cdfi-cde",
+  energy_equity_fund: "energy-equity-fund",
+  corporate: "corporate",
+  special_community_endowment: "special-community-endowment",
+} as const satisfies Record<InvestorType, UserTypeId>;
+
+/** The form's id for a stored investor type. */
+export function userTypeForInvestorType(investorType: InvestorType): UserTypeId {
+  return USER_TYPE_BY_INVESTOR_TYPE[investorType];
+}
+
+/** The stored investor type for a form id, or undefined if the form offers something the database cannot hold. */
+export function investorTypeForUserType(userType: UserTypeId): InvestorType | undefined {
+  return INVESTOR_TYPES.find((candidate) => USER_TYPE_BY_INVESTOR_TYPE[candidate] === userType);
+}
 
 /** `investors.capital_type` */
 export const CAPITAL_TYPES = [
@@ -129,6 +169,24 @@ export const ENGAGEMENT_STATES = [
   "withdrawn",
 ] as const;
 export type EngagementState = (typeof ENGAGEMENT_STATES)[number];
+
+/**
+ * The non-terminal states — PR #12 calls this `LIVE_STATES`.
+ *
+ * An investor may hold only one live engagement per project or need, but once
+ * an engagement ends in `declined` or `withdrawn` they are allowed to come back
+ * later. Uniqueness therefore has to be scoped to these states; enforcing it
+ * unconditionally would make re-engagement impossible, which is a rule the
+ * design does not have.
+ */
+export const LIVE_ENGAGEMENT_STATES = [
+  "interested",
+  "committed",
+  "underwriting",
+  "approved",
+  "funded",
+] as const satisfies readonly EngagementState[];
+export type LiveEngagementState = (typeof LIVE_ENGAGEMENT_STATES)[number];
 
 /** `diligence_requests.assigned_to_role` — a diligence item is never assigned to an investor. */
 export const DILIGENCE_ASSIGNEE_ROLES = ["operator", "site_owner"] as const;

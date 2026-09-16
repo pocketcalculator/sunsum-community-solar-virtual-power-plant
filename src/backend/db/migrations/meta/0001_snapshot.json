@@ -1,6 +1,6 @@
 {
-  "id": "119b85cb-0e89-43dd-a442-46a7cbde7f51",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "3f90a37a-b015-49b7-ab94-e8e4b92d7ff0",
+  "prevId": "119b85cb-0e89-43dd-a442-46a7cbde7f51",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -58,40 +58,40 @@
         "acknowledgements_project_id_projects_id_fk": {
           "name": "acknowledgements_project_id_projects_id_fk",
           "tableFrom": "acknowledgements",
-          "tableTo": "projects",
           "columnsFrom": [
             "project_id"
           ],
+          "tableTo": "projects",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "acknowledgements_user_id_users_id_fk": {
           "name": "acknowledgements_user_id_users_id_fk",
           "tableFrom": "acknowledgements",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "acknowledgements_unique": {
           "name": "acknowledgements_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "project_id",
             "user_id",
             "agreement_key"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -177,9 +177,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "activity_project_created_idx": {
           "name": "activity_project_created_idx",
@@ -198,50 +198,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "activity_site_id_sites_id_fk": {
           "name": "activity_site_id_sites_id_fk",
           "tableFrom": "activity",
-          "tableTo": "sites",
           "columnsFrom": [
             "site_id"
           ],
+          "tableTo": "sites",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "activity_project_id_projects_id_fk": {
           "name": "activity_project_id_projects_id_fk",
           "tableFrom": "activity",
-          "tableTo": "projects",
           "columnsFrom": [
             "project_id"
           ],
+          "tableTo": "projects",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "activity_actor_user_id_users_id_fk": {
           "name": "activity_actor_user_id_users_id_fk",
           "tableFrom": "activity",
-          "tableTo": "users",
           "columnsFrom": [
             "actor_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -379,37 +379,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "assessments_site_id_sites_id_fk": {
           "name": "assessments_site_id_sites_id_fk",
           "tableFrom": "assessments",
-          "tableTo": "sites",
           "columnsFrom": [
             "site_id"
           ],
+          "tableTo": "sites",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "assessments_overridden_by_user_id_users_id_fk": {
           "name": "assessments_overridden_by_user_id_users_id_fk",
           "tableFrom": "assessments",
-          "tableTo": "users",
           "columnsFrom": [
             "overridden_by_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -541,9 +541,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "diligence_requests_status_idx": {
           "name": "diligence_requests_status_idx",
@@ -556,65 +556,65 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "diligence_requests_project_id_projects_id_fk": {
           "name": "diligence_requests_project_id_projects_id_fk",
           "tableFrom": "diligence_requests",
-          "tableTo": "projects",
           "columnsFrom": [
             "project_id"
           ],
+          "tableTo": "projects",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "diligence_requests_raised_by_user_id_users_id_fk": {
           "name": "diligence_requests_raised_by_user_id_users_id_fk",
           "tableFrom": "diligence_requests",
-          "tableTo": "users",
           "columnsFrom": [
             "raised_by_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "diligence_requests_resolved_document_id_documents_id_fk": {
           "name": "diligence_requests_resolved_document_id_documents_id_fk",
           "tableFrom": "diligence_requests",
-          "tableTo": "documents",
           "columnsFrom": [
             "resolved_document_id"
           ],
+          "tableTo": "documents",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "diligence_requests_engagement_fk": {
           "name": "diligence_requests_engagement_fk",
           "tableFrom": "diligence_requests",
-          "tableTo": "investor_engagements",
           "columnsFrom": [
             "engagement_id",
             "project_id"
           ],
+          "tableTo": "investor_engagements",
           "columnsTo": [
             "id",
             "project_id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -722,9 +722,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "documents_project_idx": {
           "name": "documents_project_idx",
@@ -737,50 +737,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "documents_site_id_sites_id_fk": {
           "name": "documents_site_id_sites_id_fk",
           "tableFrom": "documents",
-          "tableTo": "sites",
           "columnsFrom": [
             "site_id"
           ],
+          "tableTo": "sites",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "documents_project_id_projects_id_fk": {
           "name": "documents_project_id_projects_id_fk",
           "tableFrom": "documents",
-          "tableTo": "projects",
           "columnsFrom": [
             "project_id"
           ],
+          "tableTo": "projects",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "documents_uploaded_by_user_id_users_id_fk": {
           "name": "documents_uploaded_by_user_id_users_id_fk",
           "tableFrom": "documents",
-          "tableTo": "users",
           "columnsFrom": [
             "uploaded_by_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -889,9 +889,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "funding_needs_status_stage_idx": {
           "name": "funding_needs_status_stage_idx",
@@ -910,48 +910,48 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "funding_needs_project_id_projects_id_fk": {
           "name": "funding_needs_project_id_projects_id_fk",
           "tableFrom": "funding_needs",
-          "tableTo": "projects",
           "columnsFrom": [
             "project_id"
           ],
+          "tableTo": "projects",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "funding_needs_deliverable_doc_id_documents_id_fk": {
           "name": "funding_needs_deliverable_doc_id_documents_id_fk",
           "tableFrom": "funding_needs",
-          "tableTo": "documents",
           "columnsFrom": [
             "deliverable_doc_id"
           ],
+          "tableTo": "documents",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "funding_needs_id_project_key": {
           "name": "funding_needs_id_project_key",
-          "nullsNotDistinct": false,
           "columns": [
             "id",
             "project_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1073,9 +1073,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "investor_engagements_project_idx": {
           "name": "investor_engagements_project_idx",
@@ -1088,9 +1088,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "investor_engagements_live_unique": {
           "name": "investor_engagements_live_unique",
@@ -1109,70 +1109,70 @@
             },
             {
               "expression": "coalesce(\"funding_need_id\", '00000000-0000-0000-0000-000000000000'::uuid)",
-              "asc": true,
               "isExpression": true,
+              "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "where": "\"investor_engagements\".\"state\" IN ('interested', 'committed', 'underwriting', 'approved', 'funded')",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"investor_engagements\".\"state\" IN ('interested', 'committed', 'underwriting', 'approved', 'funded')",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "investor_engagements_investor_id_investors_id_fk": {
           "name": "investor_engagements_investor_id_investors_id_fk",
           "tableFrom": "investor_engagements",
-          "tableTo": "investors",
           "columnsFrom": [
             "investor_id"
           ],
+          "tableTo": "investors",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "investor_engagements_project_id_projects_id_fk": {
           "name": "investor_engagements_project_id_projects_id_fk",
           "tableFrom": "investor_engagements",
-          "tableTo": "projects",
           "columnsFrom": [
             "project_id"
           ],
+          "tableTo": "projects",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "investor_engagements_funding_need_fk": {
           "name": "investor_engagements_funding_need_fk",
           "tableFrom": "investor_engagements",
-          "tableTo": "funding_needs",
           "columnsFrom": [
             "project_id",
             "funding_need_id"
           ],
+          "tableTo": "funding_needs",
           "columnsTo": [
             "project_id",
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "investor_engagements_id_project_key": {
           "name": "investor_engagements_id_project_key",
-          "nullsNotDistinct": false,
           "columns": [
             "id",
             "project_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1306,25 +1306,25 @@
         "investors_user_id_users_id_fk": {
           "name": "investors_user_id_users_id_fk",
           "tableFrom": "investors",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "investors_user_id_unique": {
           "name": "investors_user_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "user_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1444,9 +1444,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "projects_visible_stage_idx": {
           "name": "projects_visible_stage_idx",
@@ -1465,47 +1465,47 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "projects_site_id_sites_id_fk": {
           "name": "projects_site_id_sites_id_fk",
           "tableFrom": "projects",
-          "tableTo": "sites",
           "columnsFrom": [
             "site_id"
           ],
+          "tableTo": "sites",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "projects_assigned_operator_user_id_users_id_fk": {
           "name": "projects_assigned_operator_user_id_users_id_fk",
           "tableFrom": "projects",
-          "tableTo": "users",
           "columnsFrom": [
             "assigned_operator_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "projects_site_id_unique": {
           "name": "projects_site_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "site_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1646,9 +1646,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "sites_submission_status_idx": {
           "name": "sites_submission_status_idx",
@@ -1661,9 +1661,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "sites_region_idx": {
           "name": "sites_region_idx",
@@ -1676,37 +1676,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sites_owner_user_id_users_id_fk": {
           "name": "sites_owner_user_id_users_id_fk",
           "tableFrom": "sites",
-          "tableTo": "users",
           "columnsFrom": [
             "owner_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "sites_electricity_bill_doc_id_documents_id_fk": {
           "name": "sites_electricity_bill_doc_id_documents_id_fk",
           "tableFrom": "sites",
-          "tableTo": "documents",
           "columnsFrom": [
             "electricity_bill_doc_id"
           ],
+          "tableTo": "documents",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -1789,15 +1789,15 @@
           "columns": [
             {
               "expression": "lower(\"email\")",
-              "asc": true,
               "isExpression": true,
+              "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1815,10 +1815,10 @@
   },
   "enums": {},
   "schemas": {},
+  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

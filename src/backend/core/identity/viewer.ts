@@ -11,7 +11,7 @@
  * type guard end up being the same thing.
  */
 
-import type { ProjectStage } from "../projects";
+import type { FundingStage } from "../projects";
 
 export const ROLES = ["site_owner", "operator", "investor"] as const;
 
@@ -25,7 +25,7 @@ export interface InvestorProfile {
   readonly id: string;
   readonly organizationName: string;
   /** Stages this investor funds. An empty list means "no stage preference". */
-  readonly fundingStageFocus: readonly ProjectStage[];
+  readonly fundingStageFocus: readonly FundingStage[];
   /** Regions this investor funds. An empty list means "no geographic limit". */
   readonly geographies: readonly string[];
   /** Null until onboarding is finished. Tier 0 is unlocked by completing it. */
