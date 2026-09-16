@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
+import { ThemeToggle } from "@/components/ui/theme/ThemeToggle";
 import { BrandMark } from "./BrandMark";
 import styles from "./PublicShell.module.css";
 
@@ -15,8 +16,9 @@ const PRIMARY_NAV = [
 ] as const;
 
 /**
- * Public site chrome: skip link, header, the `#main-content` landmark every
- * page shares, and the footer. Routes only supply the page body.
+ * Public site chrome: skip link, header, the theme control, the
+ * `#main-content` landmark every page shares, and the footer. Routes only
+ * supply the page body.
  */
 export function PublicShell({ children }: PublicShellProps) {
   return (
@@ -46,6 +48,8 @@ export function PublicShell({ children }: PublicShellProps) {
               ))}
             </ul>
           </nav>
+
+          <ThemeToggle />
         </div>
       </header>
 

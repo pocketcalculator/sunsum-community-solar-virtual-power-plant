@@ -92,13 +92,13 @@
 .current .entry {
   background-color: var(--surface-accent-soft);
   border-color: var(--border-accent);
-  border-block-end-color: var(--accent-solar);
+  border-block-end-color: var(--accent-solar-line);
 }
 
 .current .marker {
   color: var(--text-on-accent);
   background-color: var(--accent-solar);
-  border-color: var(--accent-solar);
+  border-color: var(--accent-solar-line);
 }
 
 .current .status {
