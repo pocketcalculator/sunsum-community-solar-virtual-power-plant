@@ -5,9 +5,14 @@ description: Choosing the transactional store and the TypeScript persistence lay
 
 ## Status
 
-**Proposed.** Owned by WS2. Nothing in this record is installed or provisioned
-by adopting it; it selects a direction and records why. Superseding it later is
-expected to be cheap, and the "Reversibility" section says how cheap.
+**Accepted for local development.** Owned by WS2. The engine and persistence
+layer are chosen, the schema is written and a `ProjectStore` implementation runs
+`GET /portfolio` against a real PostgreSQL database on a developer machine — see
+[What this record now rests on](#what-this-record-now-rests-on).
+
+**Nothing is provisioned in Azure.** Hosting remains open and is explicitly not
+decided here. Superseding the engine choice later is expected to be cheap, and
+the "Reversibility" section says how cheap.
 
 ## Context
 
@@ -76,8 +81,9 @@ hosting, and it does not provision anything.**
   rather than a scan.
 - Matches the §4 architecture diagram.
 - Local development is a single container that every workstream can run.
-- `UNIQUE NULLS NOT DISTINCT` (PostgreSQL 15+) expresses the engagement
-  uniqueness rule directly — see "Consequences for the schema" below.
+- `UNIQUE NULLS NOT DISTINCT` and partial unique indexes give two ways to
+  express the engagement uniqueness rule — see "Consequences for the schema"
+  below, where the second turned out to be the one that fits.
 - Fabric mirroring for Flexible Server reached general availability in April
   2026, including JSON and JSONB support, so the analytics path in §3 stays
   open.
@@ -209,8 +215,21 @@ here because they are the parts most likely to be got wrong quietly.
    `project_id`, `funding_need_id`)", but `funding_need_id` is nullable and
    PostgreSQL treats `NULL`s as distinct in a unique index. A plain unique
    constraint therefore permits unlimited duplicate whole-project engagements.
-   Use `UNIQUE NULLS NOT DISTINCT`, or two partial unique indexes split on
-   `funding_need_id IS NULL`.
+
+   **How it was resolved.** `UNIQUE NULLS NOT DISTINCT` turned out not to fit:
+   the rule is "one *live* engagement", so the uniqueness must be partial, and
+   PostgreSQL cannot make a unique *constraint* partial — only a unique *index*,
+   which in turn cannot use `NULLS NOT DISTINCT`. The shipped form is a partial
+   unique index that collapses the null itself:
+
+   ```sql
+   UNIQUE INDEX ON investor_engagements (
+     investor_id, project_id, coalesce(funding_need_id, '000…0'::uuid)
+   ) WHERE state IN (…live states…)
+   ```
+
+   A closed engagement no longer blocks a new one, which a non-partial
+   constraint would have done.
 2. **Investor funding stages are not project stages.** §5.3 gives
    `investors.funding_stage_focus` the values `pre_development`, `development`,
    `construction`, `permanent`, while `projects.stage` is `pre_development`,
@@ -256,6 +275,40 @@ here because they are the parts most likely to be got wrong quietly.
   prerequisite for connecting a real store, and is tracked separately from this
   record.
 
+## What this record now rests on
+
+The sections above were written before any of it ran. They have since been
+implemented, and the claims that could be tested were tested. What exists:
+
+| Piece                    | Where                                      |
+| ------------------------ | ------------------------------------------ |
+| Schema, 11 tables        | `src/backend/db/schema.ts`                 |
+| Migrations               | `src/backend/db/migrations/`               |
+| Pooled driver            | `src/backend/db/client.ts`                 |
+| `ProjectStore` over SQL  | `src/backend/db/project-store.ts`          |
+| Store selection          | `src/backend/composition.ts`               |
+| Local database           | `docker-compose.yml`, `npm run db:*`       |
+| Parity proof             | `tests/integration/store-parity.test.ts`   |
+
+Three decisions were made during implementation that this record did not
+anticipate:
+
+1. **Append-only tables need a trigger, not a constraint.** `assessments` and
+   `activity` are append-only by intent, and no `CHECK` can express "no
+   `UPDATE`". A `BEFORE UPDATE OR DELETE` trigger does. Drizzle has no trigger
+   construct, so it lives in a hand-written migration,
+   `0001_append_only_guards.sql`, kept separate because `drizzle-kit generate`
+   rewrites `0000` from `schema.ts`.
+   Row-level triggers do not fire for `TRUNCATE`, which is why the reset script
+   uses it and why append-only does not mean unresettable.
+2. **The store selector is the one place allowed to import `db/`.** Core and
+   handlers still may not, and now may not import `pg` or `drizzle-orm` either —
+   blocking the barrel alone stopped being enough once a driver was a real
+   dependency.
+3. **`pg` returns `numeric` as a string.** Money stays `numeric` in the
+   database and is converted once, at the store boundary, rather than being read
+   as a float anywhere.
+
 ## Reversibility
 
 The engine decision is contained by the store interfaces: swapping engines means
@@ -295,8 +348,14 @@ What would have to be rewritten:
 | Seed assertions | `DO $$ ... RAISE $$` | `IF ... THROW` |
 
 One thing gets simpler: SQL Server treats NULLs as equal in a unique
-constraint, so the duplicate-engagement problem that needs
-`UNIQUE NULLS NOT DISTINCT` here would not arise.
+constraint, so the null half of the duplicate-engagement problem would not
+arise — though the partial half still would, since the rule applies only to
+live engagements.
+
+One thing gets harder, which the table above understates: append-only
+enforcement is a trigger either way, but SQL Server's `INSTEAD OF` triggers have
+different semantics from `BEFORE` ones, so `0001_append_only_guards.sql` is a
+rewrite rather than a dialect edit.
 
 One thing gets worse beyond the table: Prisma keeps its own schema language, so
 the `as const` vocabulary arrays in `core/` could no longer generate the
@@ -347,7 +406,9 @@ not be the first request after a night of inactivity.
    hackathon should use is still open — the one the CLI defaults to is a
    general corporate subscription, not a project one.
 2. Confirm `funding_needs.stage` uses the funding-stage enumeration. §5.3 does
-   not define its values.
+   not define its values. **The schema has picked one** — `FUNDING_STAGES`,
+   because mandate matching compares against it — so this is now a request to
+   confirm rather than to decide.
 3. Does any success criterion actually require Fabric mirroring during the
    hackathon? If not, Burstable is the right tier and mirroring waits.
 4. Are demo accounts seeded users with `password_hash`, or Entra ID identities?
@@ -369,14 +430,27 @@ database, so none of it runs there.
 
 | Claim                                              | How it was checked                                         |
 | -------------------------------------------------- | ---------------------------------------------------------- |
-| The schema is valid PostgreSQL                     | Generated migration applied to an empty database, exit 0    |
+| The schema is valid PostgreSQL                     | Both migrations applied to an empty database, exit 0        |
 | The circular `sites` / `documents` reference works | `drizzle-kit` emits foreign keys as deferred `ALTER TABLE`  |
-| Every constraint rejects what it should            | 19 adversarial probes, all passing, in `verify-constraints.sql` |
-| Duplicate whole-project engagements are impossible | A second `funding_need_id IS NULL` row is rejected          |
+| Every constraint rejects what it should            | 42 adversarial probes, all passing, in `verify-constraints.sql` |
+| **The verifier can actually fail**                 | Trigger dropped on purpose: 2 probes FAIL, exit code 3      |
+| Duplicate live engagements are impossible          | A second live row is rejected; a closed one is allowed      |
 | A project cannot default to investor-visible       | Row inserted without the column reads back `false`          |
 | Money is not floating point                        | `information_schema` reports `numeric`                      |
 | Timestamps are timezone-aware                      | No `timestamp without time zone` column exists              |
 | The seed is idempotent                             | Run twice; identical row counts, assertions passing both times |
+| The seed is not a reset                            | `reset.sql` empties every table, including append-only ones |
+| `assessments` and `activity` cannot be rewritten   | `UPDATE` and `DELETE` both raise                            |
+| **The two stores are indistinguishable**           | `GET /portfolio` byte-compared: 969 bytes from PostgreSQL, 969 identical bytes from the fixture |
+| Reading the portfolio is not N+1                   | One statement; latest assessment via `DISTINCT ON`          |
+| The build needs no database                        | `next build` with no `.env.local` and no `DATABASE_URL`, exit 0 |
+
+The verifier deserves its own line because the first version of it could not
+fail: `psql` exits 0 even when a query prints the word FAIL, so a file full of
+passing probes proved nothing. Deliberately breaking the schema then exposed a
+probe that had been passing for the wrong reason — it used an invalid enum
+value, so the `CHECK` rejected the row and the trigger under test never ran.
+**A probe that passes for the wrong reason is worse than no probe.**
 
 The `drizzle-kit` dependency tree carries four moderate advisories
 (`esbuild`, GHSA-67mh-4wv8-2f99). They affect a running esbuild development

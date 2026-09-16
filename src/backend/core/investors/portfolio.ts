@@ -22,6 +22,7 @@
 
 import type { InvestorProfile, Viewer } from "../identity";
 import {
+  fundingStageForProject,
   mockProjectStore,
   type ProjectRecord,
   type ProjectStage,
@@ -148,7 +149,7 @@ function matchesMandate(
 ): boolean {
   const fundsThisStage =
     investor.fundingStageFocus.length === 0 ||
-    investor.fundingStageFocus.includes(project.stage);
+    investor.fundingStageFocus.includes(fundingStageForProject(project.stage));
 
   const fundsThisRegion =
     investor.geographies.length === 0 ||

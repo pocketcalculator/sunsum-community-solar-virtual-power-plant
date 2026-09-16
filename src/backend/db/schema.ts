@@ -4,6 +4,7 @@ import { sql, type SQL } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   jsonb,
   numeric,
@@ -20,11 +21,13 @@ import {
   DILIGENCE_ASSIGNEE_ROLES,
   DILIGENCE_ITEM_TYPES,
   DILIGENCE_STATUSES,
+  DOCUMENT_DISCLOSURE_CLASSES,
   ENGAGEMENT_STATES,
   FUNDING_NEED_STATUSES,
   FUNDING_NEED_TYPES,
   FUNDING_STAGES,
   INVESTOR_TYPES,
+  LIVE_ENGAGEMENT_STATES,
   OWNERSHIP_STATUSES,
   SUBMISSION_STATUSES,
 } from "./enums";
@@ -51,6 +54,18 @@ import {
 function oneOf(column: AnyPgColumn, values: readonly string[]): SQL {
   const literals = values.map((value) => `'${value}'`).join(", ");
   return sql`${column} IN ${sql.raw(`(${literals})`)}`;
+}
+
+/**
+ * Renders a jsonb array literal for use with the containment operator `<@`.
+ *
+ * A CHECK constraint cannot contain a subquery, so validating the elements of a
+ * jsonb array means asking whether the column is contained in a fixed set. The
+ * set is built from the same `as const` array as the type, for the same reason
+ * `oneOf` is.
+ */
+function jsonbLiteral(values: readonly string[]): string {
+  return `'${JSON.stringify(values)}'::jsonb`;
 }
 
 /** Every table's identifier and creation stamp are spelled the same way. */
@@ -94,7 +109,7 @@ export const sites = pgTable(
     ownerUserId: uuid("owner_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    addressRaw: text("address_raw").notNull(),
+    addressRaw: text("address_raw"),
     /**
      * `numeric`, not `double precision`. Coordinates are compared and
      * deduplicated, and binary floating point makes two identical addresses
@@ -114,8 +129,8 @@ export const sites = pgTable(
      */
     locality: text("locality"),
     region: text("region"),
-    siteType: text("site_type", { enum: SITE_TYPES }).notNull(),
-    ownershipStatus: text("ownership_status", { enum: OWNERSHIP_STATUSES }).notNull(),
+    siteType: text("site_type", { enum: SITE_TYPES }),
+    ownershipStatus: text("ownership_status", { enum: OWNERSHIP_STATUSES }),
     approximateAreaSqm: numeric("approximate_area_sqm", { precision: 12, scale: 2 }),
     electricityUsageKwhAnnual: numeric("electricity_usage_kwh_annual", {
       precision: 14,
@@ -139,9 +154,22 @@ export const sites = pgTable(
     index("sites_submission_status_idx").on(t.submissionStatus),
     /** Serves the portfolio's region filter. */
     index("sites_region_idx").on(t.region),
-    check("sites_site_type_check", oneOf(t.siteType, SITE_TYPES)),
-    check("sites_ownership_status_check", oneOf(t.ownershipStatus, OWNERSHIP_STATUSES)),
+    check("sites_site_type_check", sql`${t.siteType} IS NULL OR ${oneOf(t.siteType, SITE_TYPES)}`),
+    check(
+      "sites_ownership_status_check",
+      sql`${t.ownershipStatus} IS NULL OR ${oneOf(t.ownershipStatus, OWNERSHIP_STATUSES)}`,
+    ),
     check("sites_submission_status_check", oneOf(t.submissionStatus, SUBMISSION_STATUSES)),
+    /**
+     * A draft is allowed to be incomplete — that is what "save and come back
+     * later" means, and making these columns `NOT NULL` outright made it
+     * unrepresentable. Completeness is required from the moment the site leaves
+     * draft, which is when it starts being reviewed.
+     */
+    check(
+      "sites_complete_once_submitted_check",
+      sql`${t.submissionStatus} = 'draft' OR (${t.addressRaw} IS NOT NULL AND ${t.siteType} IS NOT NULL AND ${t.ownershipStatus} IS NOT NULL)`,
+    ),
     check(
       "sites_latitude_range_check",
       sql`${t.latitude} IS NULL OR (${t.latitude} BETWEEN -90 AND 90)`,
@@ -213,13 +241,24 @@ export const assessments = pgTable(
       "assessments_override_reason_check",
       sql`${t.isOverride} = false OR (${t.overrideReason} IS NOT NULL AND ${t.overriddenByUserId} IS NOT NULL)`,
     ),
+    /**
+     * Ordering alone was not enough — review pointed out that `-100 <= -1`
+     * passes it. A system cannot be a negative number of kilowatts, so the
+     * bound belongs here too.
+     */
     check(
       "assessments_size_range_check",
-      sql`${t.estimatedSystemSizeKwLow} IS NULL OR ${t.estimatedSystemSizeKwHigh} IS NULL OR ${t.estimatedSystemSizeKwLow} <= ${t.estimatedSystemSizeKwHigh}`,
+      sql`(${t.estimatedSystemSizeKwLow} IS NULL OR ${t.estimatedSystemSizeKwLow} >= 0) AND (${t.estimatedSystemSizeKwHigh} IS NULL OR ${t.estimatedSystemSizeKwHigh} >= 0) AND (${t.estimatedSystemSizeKwLow} IS NULL OR ${t.estimatedSystemSizeKwHigh} IS NULL OR ${t.estimatedSystemSizeKwLow} <= ${t.estimatedSystemSizeKwHigh})`,
     ),
     check(
       "assessments_generation_range_check",
-      sql`${t.estimatedAnnualGenerationKwhLow} IS NULL OR ${t.estimatedAnnualGenerationKwhHigh} IS NULL OR ${t.estimatedAnnualGenerationKwhLow} <= ${t.estimatedAnnualGenerationKwhHigh}`,
+      sql`(${t.estimatedAnnualGenerationKwhLow} IS NULL OR ${t.estimatedAnnualGenerationKwhLow} >= 0) AND (${t.estimatedAnnualGenerationKwhHigh} IS NULL OR ${t.estimatedAnnualGenerationKwhHigh} >= 0) AND (${t.estimatedAnnualGenerationKwhLow} IS NULL OR ${t.estimatedAnnualGenerationKwhHigh} IS NULL OR ${t.estimatedAnnualGenerationKwhLow} <= ${t.estimatedAnnualGenerationKwhHigh})`,
+    ),
+    /** Both list columns must actually be lists, which jsonb alone does not guarantee. */
+    check("assessments_flags_is_array", sql`jsonb_typeof(${t.flags}) = 'array'`),
+    check(
+      "assessments_missing_information_is_array",
+      sql`jsonb_typeof(${t.missingInformation}) = 'array'`,
     ),
   ],
 );
@@ -279,6 +318,15 @@ export const documents = pgTable(
     contentType: text("content_type").notNull(),
     sizeBytes: numeric("size_bytes", { precision: 20, scale: 0 }).notNull(),
     docType: text("doc_type").notNull(),
+    /**
+     * Fail closed. The deal room filters on this to decide what an investor may
+     * see, so a document whose class nobody set must be treated as the owner's
+     * private material rather than published. The electricity bill is the case
+     * that makes this concrete.
+     */
+    disclosureClass: text("disclosure_class", { enum: DOCUMENT_DISCLOSURE_CLASSES })
+      .notNull()
+      .default("owner_private"),
     uploadedByUserId: uuid("uploaded_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -287,6 +335,10 @@ export const documents = pgTable(
   (t) => [
     index("documents_site_idx").on(t.siteId),
     index("documents_project_idx").on(t.projectId),
+    check(
+      "documents_disclosure_class_check",
+      oneOf(t.disclosureClass, DOCUMENT_DISCLOSURE_CLASSES),
+    ),
     /**
      * Section 5.2 writes the parent as "site_id / project_id", which reads as
      * one or the other. Without this, a document can belong to both or to
@@ -403,10 +455,24 @@ export const investors = pgTable(
     check("investors_capital_type_check", oneOf(t.capitalType, CAPITAL_TYPES)),
     check(
       "investors_ticket_size_check",
-      sql`${t.ticketSizeMin} IS NULL OR ${t.ticketSizeMax} IS NULL OR ${t.ticketSizeMin} <= ${t.ticketSizeMax}`,
+      sql`(${t.ticketSizeMin} IS NULL OR ${t.ticketSizeMin} >= 0) AND (${t.ticketSizeMax} IS NULL OR ${t.ticketSizeMax} >= 0) AND (${t.ticketSizeMin} IS NULL OR ${t.ticketSizeMax} IS NULL OR ${t.ticketSizeMin} <= ${t.ticketSizeMax})`,
     ),
-    /** Both list columns must actually be lists, which jsonb alone does not guarantee. */
-    check("investors_funding_stage_focus_is_array", sql`jsonb_typeof(${t.fundingStageFocus}) = 'array'`),
+    /**
+     * Both list columns must actually be lists, which jsonb alone does not
+     * guarantee, and the stage list must hold real stages. A CHECK cannot run a
+     * subquery, so element validation uses jsonb containment: every element of
+     * the column has to appear in the literal set built from `FUNDING_STAGES`.
+     * Without it the column happily stored `["not_a_stage"]`, and a mandate
+     * nothing can ever match is worse than a rejected write.
+     */
+    check(
+      "investors_funding_stage_focus_is_array",
+      sql`jsonb_typeof(${t.fundingStageFocus}) = 'array'`,
+    ),
+    check(
+      "investors_funding_stage_focus_values_check",
+      sql`${t.fundingStageFocus} <@ ${sql.raw(jsonbLiteral(FUNDING_STAGES))}`,
+    ),
     check("investors_geographies_is_array", sql`jsonb_typeof(${t.geographies}) = 'array'`),
   ],
 );
@@ -430,7 +496,13 @@ export const fundingNeeds = pgTable(
      */
     stage: text("stage", { enum: FUNDING_STAGES }).notNull(),
     description: text("description").notNull(),
-    amountRequested: numeric("amount_requested", { precision: 14, scale: 2 }).notNull(),
+    /**
+     * Nullable. A need can be raised before it is priced — the accept workflow
+     * creates exactly that, a feasibility need with no amount yet — so
+     * `NOT NULL` with a positive check made the demo's critical path fail. The
+     * amount must still be positive once it exists.
+     */
+    amountRequested: numeric("amount_requested", { precision: 14, scale: 2 }),
     amountCommitted: numeric("amount_committed", { precision: 14, scale: 2 })
       .notNull()
       .default("0"),
@@ -447,8 +519,17 @@ export const fundingNeeds = pgTable(
     check("funding_needs_need_type_check", oneOf(t.needType, FUNDING_NEED_TYPES)),
     check("funding_needs_stage_check", oneOf(t.stage, FUNDING_STAGES)),
     check("funding_needs_status_check", oneOf(t.status, FUNDING_NEED_STATUSES)),
-    check("funding_needs_amount_requested_check", sql`${t.amountRequested} > 0`),
+    check(
+      "funding_needs_amount_requested_check",
+      sql`${t.amountRequested} IS NULL OR ${t.amountRequested} > 0`,
+    ),
     check("funding_needs_amount_committed_check", sql`${t.amountCommitted} >= 0`),
+    /**
+     * Not redundant with the primary key. It is what lets `investor_engagements`
+     * carry a composite foreign key and so guarantee that an engagement's need
+     * belongs to the engagement's project.
+     */
+    unique("funding_needs_id_project_key").on(t.id, t.projectId),
   ],
 );
 
@@ -463,9 +544,7 @@ export const investorEngagements = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     /** Null when the investor is evaluating the whole project rather than one need. */
-    fundingNeedId: uuid("funding_need_id").references(() => fundingNeeds.id, {
-      onDelete: "cascade",
-    }),
+    fundingNeedId: uuid("funding_need_id"),
     state: text("state", { enum: ENGAGEMENT_STATES }).notNull().default("interested"),
     stateChangedAt: timestamp("state_changed_at", { withTimezone: true }).notNull().defaultNow(),
     committedAmount: numeric("committed_amount", { precision: 14, scale: 2 }),
@@ -480,16 +559,45 @@ export const investorEngagements = pgTable(
     index("investor_engagements_investor_idx").on(t.investorId),
     index("investor_engagements_project_idx").on(t.projectId),
     /**
-     * `NULLS NOT DISTINCT` is the whole point. PostgreSQL treats NULLs in a
-     * unique index as distinct by default, so a plain constraint would allow an
-     * investor unlimited whole-project engagements on one project — every one
-     * of them a row with `funding_need_id IS NULL`, each considered unique.
-     * Requires PostgreSQL 15 or later.
+     * Two problems at once, which is why this is an expression index rather
+     * than a `UNIQUE` constraint.
+     *
+     * The `WHERE` makes it partial: an investor may hold one live engagement
+     * per project or need, but after `declined` or `withdrawn` they are free to
+     * come back, and an unconditional constraint forbade that.
+     *
+     * The `coalesce` stands in for `NULLS NOT DISTINCT`, which PostgreSQL
+     * supports on constraints but not on partial indexes. Without it the
+     * default "every NULL is distinct" rule would let one investor hold any
+     * number of whole-project engagements, each a separate row with
+     * `funding_need_id IS NULL`.
      */
-    unique("investor_engagements_unique")
-      .on(t.investorId, t.projectId, t.fundingNeedId)
-      .nullsNotDistinct(),
+    uniqueIndex("investor_engagements_live_unique")
+      .on(
+        t.investorId,
+        t.projectId,
+        sql`coalesce(${t.fundingNeedId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      )
+      .where(oneOf(t.state, LIVE_ENGAGEMENT_STATES)),
+    /**
+     * Composite, not two independent references. Separate foreign keys let an
+     * engagement point at project P2 while its funding need belongs to P1 — a
+     * commitment recorded against the wrong project's books. `MATCH SIMPLE` is
+     * the default and is what makes this work: the check is skipped entirely
+     * when `funding_need_id` is NULL, so whole-project engagements stay legal.
+     */
+    foreignKey({
+      columns: [t.projectId, t.fundingNeedId],
+      foreignColumns: [fundingNeeds.projectId, fundingNeeds.id],
+      name: "investor_engagements_funding_need_fk",
+    }).onDelete("cascade"),
+    /** Lets `diligence_requests` carry the same kind of composite reference. */
+    unique("investor_engagements_id_project_key").on(t.id, t.projectId),
     check("investor_engagements_state_check", oneOf(t.state, ENGAGEMENT_STATES)),
+    check(
+      "investor_engagements_committed_amount_check",
+      sql`${t.committedAmount} IS NULL OR ${t.committedAmount} >= 0`,
+    ),
     check(
       "investor_engagements_decline_reason_check",
       sql`${t.state} <> 'declined' OR ${t.declineReason} IS NOT NULL`,
@@ -501,9 +609,7 @@ export const diligenceRequests = pgTable(
   "diligence_requests",
   {
     id: primaryKey(),
-    engagementId: uuid("engagement_id")
-      .notNull()
-      .references(() => investorEngagements.id, { onDelete: "cascade" }),
+    engagementId: uuid("engagement_id").notNull(),
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
@@ -525,6 +631,16 @@ export const diligenceRequests = pgTable(
   (t) => [
     index("diligence_requests_engagement_idx").on(t.engagementId),
     index("diligence_requests_status_idx").on(t.status),
+    /**
+     * Same reasoning as on the engagement itself: independent references would
+     * let a diligence item sit on project P2 while its engagement belongs to
+     * P1, which is how a question about one deal shows up in another deal room.
+     */
+    foreignKey({
+      columns: [t.engagementId, t.projectId],
+      foreignColumns: [investorEngagements.id, investorEngagements.projectId],
+      name: "diligence_requests_engagement_fk",
+    }).onDelete("cascade"),
     check(
       "diligence_requests_assigned_to_role_check",
       oneOf(t.assignedToRole, DILIGENCE_ASSIGNEE_ROLES),

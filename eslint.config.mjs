@@ -125,6 +125,20 @@ const persistenceImports = {
     "Persistence depends on core, never the reverse: a domain owns its store interface, so import the interface, not the table.",
 };
 
+/**
+ * A database driver is persistence too.
+ *
+ * Blocking `@/backend/db` alone stopped being enough once a real driver was a
+ * dependency: core could import `pg` directly and write SQL in a rule, which is
+ * the same boundary violation with a shorter import path. Nothing outside
+ * `src/backend/db` has any business holding a connection.
+ */
+const driverImports = {
+  group: ["pg", "pg-*", "postgres", "drizzle-orm", "drizzle-orm/**", "drizzle-kit", "drizzle-kit/**"],
+  message:
+    "Only src/backend/db may talk to a database driver. Depend on the store interface the domain owns.",
+};
+
 const transportModules = [
   "next/server",
   "next/headers",
@@ -301,7 +315,13 @@ export default defineConfig([
         "error",
         {
           paths: transportModules,
-          patterns: [presentationImports, handlerImports, domainInternals, persistenceImports],
+          patterns: [
+            presentationImports,
+            handlerImports,
+            domainInternals,
+            persistenceImports,
+            driverImports,
+          ],
         },
       ],
     },
@@ -312,7 +332,7 @@ export default defineConfig([
       "no-restricted-imports": [
         "error",
         {
-          patterns: [presentationImports, domainInternals, persistenceImports],
+          patterns: [presentationImports, domainInternals, persistenceImports, driverImports],
         },
       ],
     },
@@ -330,6 +350,7 @@ export default defineConfig([
             handlerImports,
             domainInternals,
             persistenceImports,
+            driverImports,
             sharedIsDomainFree,
           ],
         },

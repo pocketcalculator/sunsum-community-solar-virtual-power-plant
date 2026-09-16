@@ -12,7 +12,7 @@
  */
 
 export {
-  getPortfolioRoute,
+  createPortfolioRoute,
   handleGetPortfolio,
   parsePortfolioQuery,
 } from "./investors";
