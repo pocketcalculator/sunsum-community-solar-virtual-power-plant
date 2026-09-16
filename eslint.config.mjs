@@ -25,7 +25,7 @@ const nodeNamespace = {
  * honest by the browser-safety rules above. These describe its own boundary.
  */
 const backendModules = {
-  group: ["@/backend", "@/backend/**", "**/backend/**"],
+  group: ["@/backend", "@/backend/**", "**/backend", "**/backend/**"],
   message:
     "Server-side workflow code must not enter browser-safe presentation; reach the backend from a route instead.",
 };
@@ -296,6 +296,41 @@ export default defineConfig([
               ],
               message:
                 "The onboarding feature cannot depend on routes, another feature's internals, or server integration.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/features/portfolio/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: serverImports,
+          patterns: [
+            nodeNamespace,
+            backendModules,
+            {
+              group: [
+                "**/app/**",
+                "@/lib",
+                "@/lib/**",
+                "**/lib/**",
+                "@/features/participation",
+                "@/features/participation/**",
+                "**/participation/**",
+                "@/features/onboarding",
+                "@/features/onboarding/**",
+                "**/onboarding/**",
+                "./server",
+                "./server/**",
+                "../server",
+                "../server/**",
+              ],
+              message:
+                "The portfolio feature renders data a route hands it: it cannot reach the backend, a route, or another feature's internals.",
             },
           ],
         },

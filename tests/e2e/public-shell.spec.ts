@@ -240,11 +240,65 @@ test("unknown addresses return not-found with a way onwards", async ({
   await expect(page.getByRole("link", { name: /home page/i })).toBeVisible();
 });
 
+test("the portfolio is reachable from the header and lists real project records", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/");
+  await page
+    .getByRole("link", { name: "Investor portfolio", exact: true })
+    .click();
+
+  await expect(page).toHaveURL(/\/portfolio$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: /your portfolio/i }),
+  ).toBeVisible();
+
+  const projects = page.getByRole("list", { name: "Projects" });
+  await expect(projects.getByRole("listitem").first()).toBeVisible();
+
+  expect(await hasOverflow(page)).toBe(false);
+  await page.screenshot({
+    path: testInfo.outputPath("portfolio.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+});
+
+/**
+ * The mandate filter is a query parameter the service validates, so following
+ * this link exercises the whole path — link, route, query parser, core, store
+ * — and not just a client-side re-render.
+ */
+test("widening the mandate reveals projects the mandate had filtered out", async ({
+  page,
+}) => {
+  await page.goto("/portfolio");
+  const projects = page.getByRole("list", { name: "Projects" });
+  const matching = await projects.getByRole("listitem").count();
+
+  await page.getByRole("link", { name: /every project/i }).click();
+
+  await expect(page).toHaveURL(/mandate_match=false$/);
+  await expect
+    .poll(() => projects.getByRole("listitem").count())
+    .toBeGreaterThan(matching);
+});
+
+test("an unknown filter is refused rather than quietly ignored", async ({
+  page,
+}) => {
+  const response = await page.goto("/portfolio?stage=not_a_stage");
+
+  expect(response?.status()).toBe(200);
+  await expect(page.getByText(/unknown project stage/i)).toBeVisible();
+  await expect(page.getByRole("list", { name: "Projects" })).toHaveCount(0);
+});
+
 for (const rootPixels of [20, 32]) {
   test(`supports enlarged root text at ${rootPixels}px without hiding overflow`, async ({
     page,
   }) => {
-    for (const path of ["/", "/join", "/nope"]) {
+    for (const path of ["/", "/join", "/portfolio", "/nope"]) {
       await page.goto(path);
       await page.addStyleTag({
         content: `:root { font-size: ${rootPixels}px !important; }`,
@@ -261,7 +315,7 @@ for (const rootPixels of [20, 32]) {
 test("metadata describes a public preview independently of body copy", async ({
   page,
 }) => {
-  for (const path of ["/", "/join", "/nope"]) {
+  for (const path of ["/", "/join", "/portfolio", "/nope"]) {
     await page.goto(path);
     await expect(page.locator('meta[name="description"]')).toHaveAttribute(
       "content",

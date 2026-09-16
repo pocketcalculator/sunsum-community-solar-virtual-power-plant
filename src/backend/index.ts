@@ -17,8 +17,27 @@
  */
 
 import { selectProjectStore } from "./composition";
-import { createPortfolioRoute } from "./handlers";
+import { createPortfolioReader, createPortfolioRoute } from "./handlers";
 
 export { selectedStoreName, selectProjectStore, type StoreName } from "./composition";
 
-export const getPortfolioRoute = createPortfolioRoute(selectProjectStore());
+export type {
+  PortfolioItem,
+  PortfolioResponse,
+} from "./core/investors";
+export type { Failure, FailureCode, Result } from "./core/shared";
+
+/** Chosen once, so the route and the page provably read the same data. */
+const projectStore = selectProjectStore();
+
+export const getPortfolioRoute = createPortfolioRoute(projectStore);
+
+/**
+ * The portfolio for a server component, as a `Result` rather than a `Response`.
+ *
+ * The page route uses this instead of fetching its own `/api/portfolio`, which
+ * would mean the server opening an HTTP connection to itself to ask a question
+ * it can answer directly. Both are built from the same store above, so the two
+ * cannot drift apart.
+ */
+export const readPortfolioView = createPortfolioReader(projectStore);

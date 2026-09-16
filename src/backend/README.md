@@ -142,6 +142,28 @@ Follow `GET /portfolio`. Pick the service directory from
    forbids. Pass a fixture store to the factory rather than setting
    `SUNSUM_STORE`.
 
+### If a page needs the same data
+
+A React server component must not fetch the application's own API. The server
+already holds the answer, so asking itself over HTTP buys a round trip, a
+second way to fail, and a base URL to get wrong in every environment.
+
+Split the handler instead. `readPortfolio` is validation plus the core call,
+returning `Result<Payload>`; `handleGetPortfolio` is that function plus
+`jsonResponse`. `createPortfolioReader(store?)` pairs with
+`createPortfolioRoute(store?)`, and `src/backend/index.ts` builds both from one
+`projectStore` constant.
+
+The page and the endpoint then share one query parser, one viewer and one
+authorization rule, so a project `core` hides from an investor cannot become
+visible by being rendered rather than fetched. That property is asserted in
+`tests/unit/backend/portfolio.test.ts` by running both paths over the same
+store and comparing the results.
+
+Presentation never imports any of this. The route reads through `@/backend`,
+maps the payload into the feature's view model, and passes it down — see
+`app/portfolio/page.tsx` and `src/features/portfolio/`.
+
 Reading another service's data is a normal import of its barrel — as
 `core/investors` imports `../projects`. Keep it to the barrel and those
 dependencies stay countable when persistence arrives.

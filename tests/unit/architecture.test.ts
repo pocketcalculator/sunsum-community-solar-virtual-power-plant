@@ -123,6 +123,31 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/core/shared/probe.ts", "pg"],
     ["src/backend/handlers/probe.ts", "pg"],
     ["src/backend/handlers/investors/probe.ts", "drizzle-orm"],
+    /**
+     * The portfolio page renders what a route hands it. Letting presentation
+     * reach the service directly would put entitlement decisions in two
+     * places, and only one of them is tested.
+     */
+    ["src/features/portfolio/probe.tsx", "@/backend"],
+    ["src/features/portfolio/probe.tsx", "@/backend/core/investors"],
+    ["src/features/portfolio/components/probe.tsx", "../../../backend"],
+    /**
+     * The bare directory, by relative path. A glob ending in `backend` plus a
+     * slash and a wildcard cannot match it, because there is no segment after
+     * `backend` — so until a pattern for the directory itself was added, a
+     * feature could have imported the composition root, the one module that
+     * knows how to reach PostgreSQL, and nothing would have said a word.
+     */
+    ["src/features/onboarding/probe.tsx", "../../backend"],
+    ["src/features/participation/probe.tsx", "../../backend"],
+    ["src/components/ui/probe.tsx", "../../backend"],
+    ["src/domain/probe.ts", "../backend"],
+    ["src/features/portfolio/probe.tsx", "@/features/participation"],
+    ["src/features/portfolio/probe.tsx", "@/features/onboarding"],
+    ["src/features/portfolio/probe.tsx", "../../app/portfolio/page"],
+    ["src/features/portfolio/probe.tsx", "next/headers"],
+    ["src/features/portfolio/probe.tsx", "node:sqlite"],
+    ["app/probe.tsx", "@/features/portfolio/model/view"],
   ])(
     "rejects %s importing %s",
     async (file, dependency) => {
@@ -176,6 +201,15 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/probe.ts", "@/backend/db"],
     ["src/backend/probe.ts", "./db/project-store"],
     ["src/backend/probe.ts", "./core/projects"],
+    /**
+     * The route is the adapter: it is the one layer allowed to see both the
+     * service's payload and the feature that renders it.
+     */
+    ["app/probe.tsx", "@/features/portfolio"],
+    ["src/features/portfolio/probe.tsx", "@/components/ui/Badge"],
+    ["src/features/portfolio/probe.tsx", "@/components/ui/Callout"],
+    ["src/features/portfolio/components/probe.tsx", "../model/view"],
+    ["src/features/portfolio/probe.tsx", "next/link"],
   ])(
     "permits %s importing %s",
     async (file, dependency) => {

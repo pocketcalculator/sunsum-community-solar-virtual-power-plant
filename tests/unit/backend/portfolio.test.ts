@@ -11,6 +11,7 @@ import type { ProjectRecord, ProjectStore } from "@/backend/core/projects";
 import {
   handleGetPortfolio,
   parsePortfolioQuery,
+  readPortfolio,
 } from "@/backend/handlers/investors";
 
 const onboardedInvestor: InvestorProfile = {
@@ -386,5 +387,103 @@ describe("the HTTP surface", () => {
     expect(body.items.map((item) => item.name)).not.toContain(
       "Grove Park warehouse roof",
     );
+  });
+});
+
+/**
+ * The portfolio page renders through `readPortfolio` rather than fetching
+ * `/api/portfolio`. These are the tests that stop that from becoming a second,
+ * weaker way in.
+ */
+describe("the portfolio without a transport", () => {
+  function get(queryString = ""): Request {
+    return new Request(`https://sunsum.test/api/portfolio${queryString}`);
+  }
+
+  it.each([
+    ["an operator", operator],
+    ["a site owner", siteOwner],
+  ])("refuses %s exactly as the endpoint does", async (_label, viewer) => {
+    const result = await readPortfolio(new URLSearchParams(), viewer);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure.code).toBe("forbidden_role");
+  });
+
+  it("refuses an investor who has not finished onboarding", async () => {
+    const pending: Viewer = {
+      role: "investor",
+      userId: "u-inv-2",
+      investor: { ...onboardedInvestor, onboardingCompletedAt: null },
+    };
+
+    const result = await readPortfolio(new URLSearchParams(), pending);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure.code).toBe("forbidden_tier");
+  });
+
+  it("rejects an unknown stage instead of quietly widening the list", async () => {
+    const result = await readPortfolio(
+      new URLSearchParams("stage=not_a_stage"),
+      investor,
+      storeOf(project()),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure.code).toBe("invalid_query");
+  });
+
+  it("reads multiple stages from a repeated parameter", async () => {
+    const result = await readPortfolio(
+      new URLSearchParams("mandate_match=false&stage=development&stage=operations"),
+      investor,
+      storeOf(
+        project({ id: "p-1", stage: "development" }),
+        project({ id: "p-2", stage: "operations" }),
+        project({ id: "p-3", stage: "construction" }),
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.items.map((item) => item.project_id)).toEqual([
+      "p-1",
+      "p-2",
+    ]);
+  });
+
+  /**
+   * The property that matters: a project hidden from this investor cannot
+   * become visible by being rendered rather than fetched.
+   */
+  it("returns exactly what the endpoint serves for the same query", async () => {
+    const store = storeOf(
+      project({ id: "p-1" }),
+      project({ id: "p-2", visibleToInvestors: false }),
+      project({ id: "p-3", region: "TX" }),
+    );
+    const search = "mandate_match=false&viability=potentially_viable";
+
+    const response = await handleGetPortfolio(
+      get(`?${search}`),
+      investor,
+      store,
+    );
+    const served = (await response.json()) as PortfolioResponse;
+
+    const rendered = await readPortfolio(
+      new URLSearchParams(search),
+      investor,
+      store,
+    );
+
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    expect(rendered.value).toEqual(served);
+    expect(served.items.map((item) => item.project_id)).not.toContain("p-2");
   });
 });

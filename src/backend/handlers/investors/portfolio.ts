@@ -19,6 +19,7 @@ import {
   DEFAULT_PORTFOLIO_QUERY,
   getPortfolio,
   type PortfolioQuery,
+  type PortfolioResponse,
 } from "../../core/investors";
 import { isProjectStage, isViabilityStatus, type ProjectStore } from "../../core/projects";
 import { failure, ok, type Result } from "../../core/shared";
@@ -39,17 +40,44 @@ export async function handleGetPortfolio(
   viewer: Viewer,
   store?: ProjectStore,
 ): Promise<Response> {
-  const query = parsePortfolioQuery(new URL(request.url).searchParams);
-
-  if (!query.ok) {
-    return failureResponse(query.failure);
-  }
-
-  const result = await getPortfolio(viewer, query.value, store);
+  const result = await readPortfolio(
+    new URL(request.url).searchParams,
+    viewer,
+    store,
+  );
 
   return result.ok
     ? jsonResponse(result.value)
     : failureResponse(result.failure);
+}
+
+/**
+ * The endpoint with the transport removed.
+ *
+ * Validation, then core. Everything `GET /portfolio` does except turning the
+ * answer into an HTTP response, so that a caller which is already inside the
+ * server can have the same answer without one of its own routes calling itself
+ * over the network.
+ *
+ * A React server component is the caller that matters. Rendering the portfolio
+ * page goes through this function, which means the page and the JSON endpoint
+ * share one query parser, one viewer and one authorization rule — a project
+ * hidden from an investor by `core` cannot become visible by being rendered
+ * instead of fetched. Returning a `Result` rather than a `Response` is what
+ * lets the page decide how a refusal should look.
+ */
+export async function readPortfolio(
+  params: URLSearchParams,
+  viewer: Viewer,
+  store?: ProjectStore,
+): Promise<Result<PortfolioResponse>> {
+  const query = parsePortfolioQuery(params);
+
+  if (!query.ok) {
+    return query;
+  }
+
+  return getPortfolio(viewer, query.value, store);
 }
 
 /**
@@ -64,6 +92,19 @@ export function createPortfolioRoute(
   store?: ProjectStore,
 ): (request: Request) => Promise<Response> {
   return (request) => handleGetPortfolio(request, resolveDemoViewer(), store);
+}
+
+/**
+ * The same wiring for a caller that renders instead of responding.
+ *
+ * Pairs with `createPortfolioRoute`: one store decision in the composition
+ * root feeds both, so the page and the API can never be reading from different
+ * places.
+ */
+export function createPortfolioReader(
+  store?: ProjectStore,
+): (params: URLSearchParams) => Promise<Result<PortfolioResponse>> {
+  return (params) => readPortfolio(params, resolveDemoViewer(), store);
 }
 
 /**

@@ -13,6 +13,7 @@ interface PublicShellProps {
 const PRIMARY_NAV = [
   { href: "/#participate", label: "Participation paths" },
   { href: "/#journey", label: "Delivery journey" },
+  { href: "/portfolio", label: "Investor portfolio" },
   { href: "/#faq", label: "FAQ" },
 ] as const;
 

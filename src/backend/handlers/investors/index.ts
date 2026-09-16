@@ -7,7 +7,9 @@
  */
 
 export {
+  createPortfolioReader,
   createPortfolioRoute,
   handleGetPortfolio,
   parsePortfolioQuery,
+  readPortfolio,
 } from "./portfolio";

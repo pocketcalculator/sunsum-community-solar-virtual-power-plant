@@ -12,9 +12,11 @@
  */
 
 export {
+  createPortfolioReader,
   createPortfolioRoute,
   handleGetPortfolio,
   parsePortfolioQuery,
+  readPortfolio,
 } from "./investors";
 export { resolveDemoViewer } from "./identity";
 export { failureResponse, jsonResponse } from "./shared";

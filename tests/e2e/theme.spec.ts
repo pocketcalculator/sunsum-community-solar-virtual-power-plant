@@ -184,7 +184,7 @@ test("the light theme renders every public page without overflow", async ({
 }, testInfo) => {
   await page.emulateMedia({ colorScheme: "light" });
 
-  for (const path of ["/", "/join", "/nope"]) {
+  for (const path of ["/", "/join", "/portfolio", "/nope"]) {
     await page.goto(path);
     await expect(page.locator("body")).toHaveCSS("background-color", LIGHT_PAGE);
 
