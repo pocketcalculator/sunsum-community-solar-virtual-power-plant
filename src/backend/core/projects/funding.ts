@@ -20,3 +20,12 @@ export const FUNDING_STAGE_BY_PROJECT_STAGE = {
   commissioning: "permanent",
   operations: "permanent",
 } as const satisfies Record<ProjectStage, FundingStage>;
+
+/**
+ * Named to match the helper PR #11 exports from `core/projects/types.ts`, so
+ * that merging it is a deletion of this file and its re-export rather than a
+ * rewrite of every call site.
+ */
+export function fundingStageForProject(stage: ProjectStage): FundingStage {
+  return FUNDING_STAGE_BY_PROJECT_STAGE[stage];
+}

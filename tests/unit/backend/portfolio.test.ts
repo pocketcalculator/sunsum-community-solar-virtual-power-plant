@@ -77,7 +77,7 @@ function fundingNeed(
     stage,
     description: "Test funding need.",
     amountRequested: null,
-    amountCommitted: null,
+    amountCommitted: 0,
     status: "open",
     createdAt: "2026-09-01T00:00:00.000Z",
     ...overrides,
@@ -222,6 +222,7 @@ describe("tier 0 disclosure", () => {
         "estimated_annual_generation_kwh_low",
         "estimated_system_size_kw_high",
         "estimated_system_size_kw_low",
+        "journey_stage_id",
         "locality",
         "name",
         "open_funding_needs_count",
@@ -232,6 +233,19 @@ describe("tier 0 disclosure", () => {
         "viability_status",
       ].sort(),
     );
+  });
+
+  it("carries the charter ribbon id alongside the wire stage", async () => {
+    const store = storeOf(project({ stage: "pre_development" }));
+
+    const portfolio = await expectPortfolio(
+      investor,
+      query({ mandateMatch: false }),
+      store,
+    );
+
+    expect(portfolio.items[0]?.stage).toBe("pre_development");
+    expect(portfolio.items[0]?.journey_stage_id).toBe("pre-development");
   });
 });
 

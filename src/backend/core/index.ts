@@ -113,7 +113,12 @@ export {
   type EngagementRecord,
   type EngagementState,
 } from "./engagements";
-export { getDealRoom, getOwnerOutstanding, getOwnerSites, journeyStageId } from "./views";
+export {
+  getDealRoom,
+  getOwnerOutstanding,
+  getOwnerSites,
+} from "./views";
+export { journeyStageId, journeyStageIdForProject } from "./journey";
 export {
   createMemoryBackendStore,
   demoBackendStore,

@@ -158,14 +158,14 @@ function demoState(seedDemoProjects: boolean): StoreState {
         stage: FUNDING_STAGE_BY_PROJECT_STAGE[project.stage],
         description: "Demo-only funding need.",
         amountRequested: null,
-        amountCommitted: null,
+        amountCommitted: 0,
         status: "open" as const,
         createdAt: DEMO_CREATED_AT,
       })),
     ),
     documents: projects.slice(0, 1).map((project) => ({
       id: DEMO_DOCUMENT_ID,
-      siteId: project.siteId,
+      siteId: null,
       projectId: project.id,
       blobPath: "private/demo/document.pdf",
       originalFilename: "site-summary.pdf",
@@ -305,15 +305,32 @@ class MemoryBackendStore implements BackendStore {
     return this.mutate(() => this.state.activities.push(activity));
   }
 
-  listActivity(projectId: string): Promise<readonly ActivityRecord[]> {
-    return Promise.resolve(
-      this.state.activities.filter((item) => item.projectId === projectId),
+  /**
+   * Activity rows carry exactly one parent, so a project's history is split
+   * between rows parented to the project and the pre-project rows parented to
+   * its site. Both readers join across that boundary and sort by time, so a
+   * caller still sees one continuous history without any row having to name two
+   * parents.
+   */
+  async listActivity(projectId: string): Promise<readonly ActivityRecord[]> {
+    const project = this.state.projects.find((item) => item.id === projectId);
+    return sortedByCreatedAt(
+      this.state.activities.filter(
+        (item) =>
+          item.projectId === projectId ||
+          (project !== undefined && item.siteId === project.siteId),
+      ),
     );
   }
 
-  listSiteActivity(siteId: string): Promise<readonly ActivityRecord[]> {
-    return Promise.resolve(
-      this.state.activities.filter((item) => item.siteId === siteId),
+  async listSiteActivity(siteId: string): Promise<readonly ActivityRecord[]> {
+    const project = this.state.projects.find((item) => item.siteId === siteId);
+    return sortedByCreatedAt(
+      this.state.activities.filter(
+        (item) =>
+          item.siteId === siteId ||
+          (project !== undefined && item.projectId === project.id),
+      ),
     );
   }
 
@@ -462,4 +479,14 @@ export const demoBackendStore: BackendStore = demoMemoryStore;
 
 export function resetDemoBackendStore(): void {
   demoMemoryStore.reset();
+}
+
+function sortedByCreatedAt(
+  activities: readonly ActivityRecord[],
+): readonly ActivityRecord[] {
+  return [...activities].sort((left, right) =>
+    left.createdAt === right.createdAt
+      ? left.id.localeCompare(right.id)
+      : left.createdAt.localeCompare(right.createdAt),
+  );
 }

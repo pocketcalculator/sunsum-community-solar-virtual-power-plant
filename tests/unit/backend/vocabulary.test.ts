@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { toDomainRole, toWireRole } from "@/backend";
-import { journeyStageId, PROJECT_STAGES } from "@/backend/core";
+import { journeyStageId, journeyStageIdForProject, PROJECT_STAGES } from "@/backend/core";
 import { PARTICIPANT_ROLES } from "@/domain/roles";
 import { JOURNEY_STAGES } from "@/domain/journey";
 
@@ -49,5 +49,28 @@ describe("backend boundary vocabulary", () => {
     expect(journeyStageId("screening", null)).toBe("screening");
     expect(journeyStageId("draft", null)).toBeNull();
     expect(journeyStageId("rejected", null)).toBeNull();
+  });
+
+  it("gives every project stage a ribbon id without a null to unwrap", () => {
+    const journeyIds = new Set<string>(JOURNEY_STAGES.map((stage) => stage.id));
+    for (const stage of PROJECT_STAGES) {
+      const mapped = journeyStageIdForProject(stage);
+      expect(journeyIds.has(mapped), `journey ribbon has no "${mapped}"`).toBe(true);
+      expect(mapped).toBe(journeyStageId("accepted", stage));
+    }
+  });
+
+  it("never emits a wire stage token as a ribbon id", () => {
+    /**
+     * `pre_development` and `pre-development` differ only by separator, which is
+     * exactly the mismatch that would fail silently in a lookup rather than
+     * loudly at the boundary.
+     */
+    const journeyIds = new Set<string>(JOURNEY_STAGES.map((stage) => stage.id));
+    for (const stage of PROJECT_STAGES) {
+      if (journeyIds.has(stage)) continue;
+      expect(journeyStageIdForProject(stage)).not.toBe(stage);
+    }
+    expect(journeyStageIdForProject("pre_development")).toBe("pre-development");
   });
 });

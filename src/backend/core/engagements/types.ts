@@ -34,7 +34,12 @@ export interface FundingNeedRecord {
   stage: FundingStage;
   description: string;
   amountRequested: number | null;
-  amountCommitted: number | null;
+  /**
+   * Not nullable: a need with nothing committed has zero committed, not an
+   * unknown amount. PR #11 declares the column `NOT NULL DEFAULT '0'`, and a
+   * column default does not apply to an explicitly inserted null.
+   */
+  amountCommitted: number;
   status: "open" | "partially_funded" | "funded" | "delivered" | "cancelled";
   createdAt: string;
 }

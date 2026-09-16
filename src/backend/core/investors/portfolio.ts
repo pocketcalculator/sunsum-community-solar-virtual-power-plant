@@ -22,6 +22,8 @@
 
 import type { InvestorProfile, Viewer } from "../identity";
 import type { FundingNeedRecord } from "../engagements";
+import { journeyStageIdForProject } from "../journey";
+import type { JourneyStageId } from "@/domain/journey";
 import {
   type ProjectRecord,
   type ProjectStage,
@@ -52,6 +54,13 @@ export interface PortfolioItem {
   readonly name: string;
   readonly locality: string;
   readonly stage: ProjectStage;
+  /**
+   * The ribbon literal from `src/domain/journey.ts`. `stage` is the wire
+   * vocabulary (`pre_development`); this is the UI's (`pre-development`). A
+   * consumer rendering the shared status ribbon reads this field rather than
+   * re-deriving the separator, which is a lookup that silently misses.
+   */
+  readonly journey_stage_id: JourneyStageId;
   readonly site_type: SiteType;
   readonly preliminary_project_type: string | null;
   readonly viability_status: ViabilityStatus;
@@ -226,6 +235,7 @@ function toPortfolioItem(project: ProjectRecord): PortfolioItem {
     name: project.name,
     locality: project.locality,
     stage: project.stage,
+    journey_stage_id: journeyStageIdForProject(project.stage),
     site_type: project.siteType,
     preliminary_project_type: project.preliminaryProjectType,
     viability_status: project.viabilityStatus,

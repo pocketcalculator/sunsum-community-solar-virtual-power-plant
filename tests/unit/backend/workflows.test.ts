@@ -660,7 +660,7 @@ describe("demo funding needs", () => {
         expect(await store.getFundingNeed(fundingNeedId)).toMatchObject({
           projectId: project.id,
           amountRequested: null,
-          amountCommitted: null,
+          amountCommitted: 0,
           status: "open",
         });
       }
@@ -1234,8 +1234,45 @@ describe("new endpoint workflows", () => {
     expect((await listMyEngagements(operator, store)).ok).toBe(false);
   });
 
-  it("stops listing an engagement once the operator revokes investor visibility", async () => {
+  it("gives every activity and document row exactly one parent", async () => {
+    const { store, siteId, projectId } = await acceptedStore();
+    await updateProjectVisibility(operator, projectId, true, store);
+    await advanceProjectStage(operator, projectId, "development", store);
+    await expressInterest(investor, projectId, null, store);
+    await addSiteDocument(owner, siteId, {
+      originalFilename: "bill.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 1024,
+      docType: "electricity_bill",
+      disclosureClass: "owner_private",
+    }, store);
+
+    /**
+     * PR #11 enforces `activity_single_parent_check`. A row naming both parents
+     * is invisible to any access rule that starts from one of them, so assert
+     * the invariant here rather than discovering it at insert time.
+     */
+    const rows = [
+      ...(await store.listActivity(projectId)),
+      ...(await store.listDocuments(siteId, projectId)),
+    ];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const parents = [row.siteId, row.projectId].filter((value) => value !== null);
+      expect(parents, `row ${row.id} has ${parents.length} parents`).toHaveLength(1);
+    }
+  });
+
+  it("keeps a project's history continuous across the site-to-project boundary", async () => {
     const { store, projectId } = await acceptedStore();
+    await advanceProjectStage(operator, projectId, "development", store);
+
+    const actions = (await store.listActivity(projectId)).map((item) => item.action);
+    expect(actions).toContain("submission_accepted");
+    expect(actions).toContain("project_stage_changed");
+  });
+
+  it("stops listing an engagement once the operator revokes investor visibility", async () => {    const { store, projectId } = await acceptedStore();
     await updateProjectVisibility(operator, projectId, true, store);
     await expressInterest(investor, projectId, null, store);
 
@@ -1248,6 +1285,25 @@ describe("new endpoint workflows", () => {
     const after = await listMyEngagements(investor, store);
     expect(after.ok).toBe(true);
     if (after.ok) expect(after.value).toEqual([]);
+  });
+
+  it("carries the charter ribbon id on every investor-facing project view", async () => {
+    const { store, projectId } = await acceptedStore();
+    await updateProjectVisibility(operator, projectId, true, store);
+    await expressInterest(investor, projectId, null, store);
+
+    const engagements = await listMyEngagements(investor, store);
+    expect(engagements.ok).toBe(true);
+    if (engagements.ok) {
+      expect(engagements.value[0]?.project_stage).toBe("pre_development");
+      expect(engagements.value[0]?.journey_stage_id).toBe("pre-development");
+    }
+
+    const dealRoom = await getDealRoom(investor, projectId, store);
+    expect(dealRoom.ok).toBe(true);
+    if (dealRoom.ok) {
+      expect(dealRoom.value.journey_stage_id).toBe("pre-development");
+    }
   });
 
   it("returns only the owner's outstanding request-info items", async () => {

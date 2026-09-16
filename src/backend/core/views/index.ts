@@ -1,14 +1,9 @@
-import type { JourneyStageId } from "@/domain/journey";
-
 import { unlocksTierOne } from "../engagements";
 import type { Viewer } from "../identity";
-import { toProjectPayload, type ProjectStage } from "../projects";
+import { journeyStageId, journeyStageIdForProject } from "../journey";
+import { toProjectPayload } from "../projects";
 import { failure, ok, type Result } from "../shared";
-import {
-  toAssessmentPayload,
-  toSitePayload,
-  type SubmissionStatus,
-} from "../sites";
+import { toAssessmentPayload, toSitePayload } from "../sites";
 import { demoBackendStore, type BackendStore } from "../store";
 
 const SHARED_DEAL_ROOM_ACTIONS = new Set([
@@ -128,33 +123,7 @@ export async function getOwnerOutstanding(
   return ok(items.flat());
 }
 
-export function journeyStageId(
-  submissionStatus: SubmissionStatus,
-  projectStage: ProjectStage | null,
-): JourneyStageId | null {
-  if (projectStage !== null) {
-    return JOURNEY_STAGE_BY_PROJECT_STAGE[projectStage];
-  }
-
-  return JOURNEY_STAGE_BY_SUBMISSION_STATUS[submissionStatus];
-}
-
-const JOURNEY_STAGE_BY_SUBMISSION_STATUS = {
-  draft: null,
-  submitted: "submitted",
-  screening: "screening",
-  info_requested: null,
-  accepted: null,
-  rejected: null,
-} as const satisfies Record<SubmissionStatus, JourneyStageId | null>;
-
-const JOURNEY_STAGE_BY_PROJECT_STAGE = {
-  pre_development: "pre-development",
-  development: "development",
-  construction: "construction",
-  commissioning: "commissioning",
-  operations: "operations",
-} as const satisfies Record<ProjectStage, JourneyStageId>;
+export { journeyStageId, journeyStageIdForProject } from "../journey";
 
 export async function getDealRoom(
   viewer: Viewer,
@@ -201,6 +170,12 @@ export async function getDealRoom(
 
   return ok({
     project: toProjectPayload(project),
+    /**
+     * The charter shares one status ribbon across all three roles, so the deal
+     * room publishes the same literal the owner dashboard and pipeline do.
+     * `project.stage` remains the wire vocabulary; this is the UI's.
+     */
+    journey_stage_id: journeyStageIdForProject(project.stage),
     site: {
       id: site.id,
       locality: project.locality.trim() || "Location withheld",

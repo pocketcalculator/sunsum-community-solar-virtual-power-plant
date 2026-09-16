@@ -198,20 +198,28 @@ deployment, a real data set or an identity provider.
 ### Reconciling with the Drizzle schema PR
 
 PR #11 introduces the real database schema. The two branches merge textually
-clean (the only file conflict is this README), but the following semantic
-mismatches will break at runtime and must be settled before or during that
-merge. They are listed here so the decision is deliberate rather than
-discovered in the demo:
+clean (the only file conflict is this README), so every mismatch below would
+have merged green and failed at runtime. #11's rework (375231c) resolved its
+side; the remaining items were resolved here:
 
-| Concern | This branch | PR #11 schema | Proposed resolution |
-| --- | --- | --- | --- |
-| Screening status token | `screening` | `in_review` | Use `screening`. `src/domain/journey.ts` already names the ribbon stage `screening`, and the UI is the vocabulary authority. |
-| Draft sites | `addressRaw`, `siteType`, `ownershipStatus` may be null while `submission_status = 'draft'` | all `.notNull()` | Relax to nullable, or gate the not-null constraint on leaving `draft`. A draft that cannot be saved half-finished removes the save-and-resume requirement in Feature B. |
-| Funding amounts | `amountRequested` / `amountCommitted` nullable | `NOT NULL` with `CHECK (> 0)` | Allow null. A funding need can legitimately be published before an amount is set; the seed data relies on this. |
-| Activity parent | rows written with both `site_id` and `project_id` | `activity_single_parent_check` permits only one | Decide whether an activity row hangs off the site or the project. Writing both is what the check rejects; the audit trail currently wants both, so the check likely needs to allow a site+project pair. |
-| Document disclosure | `documents.disclosureClass` (`owner_private` \| `investor_tier_1`) drives every investor-facing projection | column absent | Add the column. Without it there is no way to express which documents a tier-1 investor may see, and the disclosure tiers collapse. |
+| Concern | Resolution |
+| --- | --- |
+| Screening status token | #11 moved to `screening`, matching this branch and `src/domain/journey.ts`. |
+| Draft sites with null address/type/ownership | #11 made those columns nullable while `submission_status = 'draft'`. Draft save works as written. |
+| `amount_requested` | #11 relaxed to `IS NULL OR > 0`. An amountless feasibility need inserts cleanly. |
+| `amount_committed` | Fixed here: was written as `null` against a `NOT NULL DEFAULT '0'` column, and a column default does not apply to an explicitly inserted null. Now `0`, and the field is typed `number` rather than `number \| null` — nothing committed is zero, not unknown. |
+| Funding-need stage | Fixed here: typed `FundingStage` and written through `fundingStageForProject`, so `commissioning`/`operations` can no longer reach a column whose CHECK rejects them. |
+| `activity_single_parent_check` | Fixed here: activity rows carry exactly one parent, enforced by a discriminated `ActivityParent` rather than two independently nullable ids. Submission events are parented to the site, project events to the project, and both `listActivity` and `listSiteActivity` join across the boundary so no view lost history. |
+| Documents with two parents | Fixed here, in the seed and in `addSiteDocument`. A site upload is parented to the site; the demo project document to the project. `listDocuments` already matched either side. |
+| `documents.disclosure_class` | #11 added the column, `NOT NULL DEFAULT 'owner_private'` — it fails closed, and it is what the deal-room filter reads. |
 
-`core/projects/funding.ts` mirrors PR #11's `src/backend/db/enums.ts` funding
-stage vocabulary so the two agree on day one; it should be deleted in favour of
-that module once #11 merges.
+`core/projects/funding.ts` mirrors #11's funding stage vocabulary and exports
+`fundingStageForProject` under the same name #11 uses, so adopting #11 is a
+deletion of that file and its re-export rather than a rewrite of call sites.
+
+Both branches modify `core/identity/viewer.ts` and `core/investors/portfolio.ts`.
+Both now type the investor mandate as `FundingStage[]` and match against open
+funding needs rather than `project.stage`, so whichever merges second must keep
+that shape — reinstating `ProjectStage[]` silently restores a mandate filter
+that never matches.
 

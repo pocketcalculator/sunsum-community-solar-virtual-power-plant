@@ -48,12 +48,16 @@ export async function addSiteDocument(
       allowed: ["owner_private"],
     });
   }
-  const project = await store.getProjectBySite(site.id);
   const now = new Date().toISOString();
   const document: DocumentRecord = {
     id: store.nextId("document"),
+    /**
+     * A document hangs off exactly one parent. This endpoint uploads against a
+     * site, so the site is the parent even once a project exists; readers pass
+     * both ids and match either side.
+     */
     siteId: site.id,
-    projectId: project?.id ?? null,
+    projectId: null,
     blobPath: `placeholder/sites/${site.id}/${now}/${input.originalFilename}`,
     originalFilename: input.originalFilename,
     contentType: input.contentType,

@@ -575,12 +575,18 @@ components:
       type: object
       required:
         - project
+        - journey_stage_id
         - site
         - assessment_history
         - timeline
         - documents
       properties:
         project: { $ref: "#/components/schemas/Project" }
+        journey_stage_id:
+          $ref: "#/components/schemas/JourneyStageId"
+          description: |
+            The charter ribbon literal for `project.stage`, so all three roles
+            render the same status ribbon from the same field.
         site:
           type: object
           description: Site characteristics without exact address, coordinates, or owner identity.
@@ -1280,6 +1286,7 @@ components:
       required:
         - project_id
         - stage
+        - journey_stage_id
         - locality
       properties:
         project_id:
@@ -1292,6 +1299,13 @@ components:
           description: Neighbourhood-level only — never the exact address.
         stage:
           $ref: "#/components/schemas/ProjectStage"
+        journey_stage_id:
+          $ref: "#/components/schemas/JourneyStageId"
+          description: |
+            The charter ribbon literal for `stage`. `stage` is the wire
+            vocabulary (`pre_development`); this is the UI's
+            (`pre-development`). Render the shared status ribbon from this
+            field rather than re-deriving the separator.
         site_type:
           $ref: "#/components/schemas/SiteType"
         preliminary_project_type:

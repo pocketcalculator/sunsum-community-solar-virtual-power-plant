@@ -1,8 +1,11 @@
 import type { ActivityRecord } from "../activity";
 import type { Viewer } from "../identity";
+import { journeyStageIdForProject } from "../journey";
+import type { ProjectStage, FundingStage } from "../projects";
 import { failure, ok, type Result } from "../shared";
 import { demoBackendStore, type BackendStore } from "../store";
 import type { EngagementRecord, EngagementState, FundingNeedRecord } from "./types";
+import type { JourneyStageId } from "@/domain/journey";
 
 const LIVE_STATES: readonly EngagementState[] = [
   "interested",
@@ -16,17 +19,23 @@ export interface FundingNeedPayload {
   readonly id: string;
   readonly project_id: string;
   readonly need_type: string;
-  readonly stage: string;
+  readonly stage: FundingStage;
   readonly description: string;
   readonly amount_requested: number | null;
-  readonly amount_committed: number | null;
+  /**
+   * Never null. A need with nothing committed has zero committed, not unknown,
+   * which is also what the `NOT NULL DEFAULT '0'` column requires.
+   */
+  readonly amount_committed: number;
   readonly status: string;
   readonly created_at: string;
 }
 
 export interface EngagementPipelineItem extends EngagementPayload {
   readonly project_name: string;
-  readonly project_stage: string;
+  readonly project_stage: ProjectStage;
+  /** The charter ribbon literal for `project_stage`. */
+  readonly journey_stage_id: JourneyStageId;
   readonly funding_need_id: string | null;
 }
 
@@ -98,7 +107,7 @@ export async function expressInterest(
       };
       const activity: ActivityRecord = {
         id: transaction.nextId("activity"),
-        siteId: visibleProject.siteId,
+        siteId: null,
         projectId,
         actorUserId: viewer.userId,
         action: "investor_interest_expressed",
@@ -185,6 +194,7 @@ export async function listMyEngagements(
         created_at: engagement.createdAt,
         project_name: project.name,
         project_stage: project.stage,
+        journey_stage_id: journeyStageIdForProject(project.stage),
       });
     }
   }

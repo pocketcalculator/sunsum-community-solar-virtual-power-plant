@@ -14,6 +14,7 @@ export { MOCK_PROJECTS, mockProjectStore } from "./mock-store";
 export {
   FUNDING_STAGE_BY_PROJECT_STAGE,
   FUNDING_STAGES,
+  fundingStageForProject,
   type FundingStage,
 } from "./funding";
 export { type ProjectStore } from "./store";

@@ -1,6 +1,9 @@
 # API contracts
 
-`openapi.yaml` is the agreed backend contract. `viability-openapi.yaml` remains
+`openapi.yaml` is the backend contract WS2 has published for adoption, version
+0.1.0. It is not yet an accepted artifact: `docs/ws1/contracts.md` records it
+against the wire-contract gate as *published, awaiting WS1 acceptance*, and WS2
+cannot mark that gate accepted on WS1's behalf. `viability-openapi.yaml` remains
 the proposed internal S-VIA contract.
 
 ## Implemented operations

@@ -5,7 +5,7 @@ import type { FundingNeedRecord } from "../engagements";
 import type { Viewer } from "../identity";
 import { failure, ok, type Result } from "../shared";
 import { demoBackendStore, type BackendStore } from "../store";
-import { journeyStageId } from "../views";
+import { journeyStageId } from "../journey";
 import { toSitePayload, type SitePayload, type SubmissionQuery } from "../sites";
 import { FUNDING_STAGE_BY_PROJECT_STAGE } from "./funding";
 import { PROJECT_STAGES, type ProjectRecord, type ProjectStage } from "./types";
@@ -127,8 +127,7 @@ export async function decideSubmission(
         activity(
           transaction,
           viewer.userId,
-          site.id,
-          null,
+          siteParent(site.id),
           input.decision === "reject"
             ? "submission_rejected"
             : "submission_info_requested",
@@ -189,7 +188,7 @@ export async function decideSubmission(
       stage: FUNDING_STAGE_BY_PROJECT_STAGE[project.stage],
       description: "Demo project development funding need.",
       amountRequested: null,
-      amountCommitted: null,
+      amountCommitted: 0,
       status: "open",
       createdAt: now,
     };
@@ -206,8 +205,7 @@ export async function decideSubmission(
       activity(
         transaction,
         viewer.userId,
-        site.id,
-        project.id,
+        siteParent(site.id),
         "submission_accepted",
         input.note,
         sourceStatus,
@@ -252,8 +250,7 @@ export async function advanceProjectStage(
       activity(
         transaction,
         viewer.userId,
-        project.siteId,
-        project.id,
+        projectParent(project.id),
         "project_stage_changed",
         null,
         from,
@@ -289,8 +286,7 @@ export async function updateProjectVisibility(
       activity(
         transaction,
         viewer.userId,
-        project.siteId,
-        project.id,
+        projectParent(project.id),
         "project_visibility_changed",
         null,
         from,
@@ -348,7 +344,7 @@ export async function updateProject(
       changes.push(["project_target_date_changed", project.targetDate ?? null, input.targetDate]);
     }
     for (const [actionName, from, to] of changes) {
-      await transaction.addActivity(activity(transaction, viewer.userId, project.siteId, project.id, actionName, null, from, to, now));
+      await transaction.addActivity(activity(transaction, viewer.userId, projectParent(project.id), actionName, null, from, to, now));
     }
     return ok(toProjectPayload(updated));
   });
@@ -513,11 +509,29 @@ function normalizeLabel(value: string): string {
     .trim();
 }
 
+/**
+ * An activity row hangs off exactly one parent, matching the
+ * `activity_single_parent_check` constraint in the database schema. A row with
+ * both parents, or neither, is invisible to any access rule that starts from a
+ * parent, so the parent is modelled as a discriminated pair rather than two
+ * independently nullable ids.
+ */
+type ActivityParent =
+  | { readonly siteId: string; readonly projectId: null }
+  | { readonly siteId: null; readonly projectId: string };
+
+export function siteParent(siteId: string): ActivityParent {
+  return { siteId, projectId: null };
+}
+
+export function projectParent(projectId: string): ActivityParent {
+  return { siteId: null, projectId };
+}
+
 function activity(
   store: BackendStore,
   actorUserId: string,
-  siteId: string | null,
-  projectId: string | null,
+  parent: ActivityParent,
   action: string,
   note: string | null,
   fromValue: string | null,
@@ -526,8 +540,8 @@ function activity(
 ): ActivityRecord {
   return {
     id: store.nextId("activity"),
-    siteId,
-    projectId,
+    siteId: parent.siteId,
+    projectId: parent.projectId,
     actorUserId,
     action,
     note,
