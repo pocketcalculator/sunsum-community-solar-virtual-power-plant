@@ -83,7 +83,7 @@ export function LandingPage() {
         <Callout tone="caution" title="What this build does not do">
           <ul className={styles.plainList} role="list">
             <li>No accounts, sign-in or stored submissions</li>
-            <li>No project records, documents or device connections</li>
+            <li>No documents or device connections, and no real project records</li>
             <li>No generation, savings or financial figures</li>
           </ul>
         </Callout>

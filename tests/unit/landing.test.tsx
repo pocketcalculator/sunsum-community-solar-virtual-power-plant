@@ -65,9 +65,14 @@ describe("landing page", () => {
     );
   });
 
-  it("does not claim any project data is connected", () => {
+  /**
+   * The seeded portfolio made the previous wording false: there are project
+   * records now, they are simply not real ones. The claim has to be the
+   * narrower, true one.
+   */
+  it("does not claim any real project data is connected", () => {
     const { container } = render(<LandingPage />);
     expect(container.querySelector("form")).toBeNull();
-    expect(screen.getByText(/no project records/i)).toBeVisible();
+    expect(screen.getByText(/no real project records/i)).toBeVisible();
   });
 });

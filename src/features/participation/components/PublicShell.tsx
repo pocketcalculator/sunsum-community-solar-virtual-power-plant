@@ -73,8 +73,9 @@ export function PublicShell({ children, headerAction }: PublicShellProps) {
             Open software for community-owned solar virtual power plants.
           </p>
           <p className={styles.footerNote}>
-            Public interface foundation. Diagrams and examples illustrate the
-            design only, and nothing here is connected to real project records.
+            Public interface foundation. The investor portfolio reads seeded
+            demonstration records; everything else illustrates the design only.
+            No project shown here is real.
           </p>
         </div>
       </footer>
