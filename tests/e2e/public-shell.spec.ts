@@ -125,8 +125,8 @@ test("the site-owner dashboard renders its mock scenario without overflow", asyn
   await expect(page.getByText(/5 selected · maximum 5/i)).toBeVisible();
   await expect(page.getByText(/location selections changed/i)).toBeVisible();
   await page.getByRole("button", { name: /run simulation/i }).click();
-  await expect(page.getByText("$88,000")).toBeVisible();
-  await expect(page.getByText("$136,000")).toBeVisible();
+  await expect(page.getByText("$88,000", { exact: true })).toBeVisible();
+  await expect(page.getByText("$136,000", { exact: true })).toBeVisible();
   await expect(
     page.getByText(/exclude 1 unvalidated draft location/i),
   ).toBeVisible();
