@@ -76,6 +76,97 @@ test("the create-profile flow opens on its first step", async ({
   });
 });
 
+test("the site-owner dashboard renders its mock scenario without overflow", async ({
+  page,
+}, testInfo) => {
+  const response = await page.goto("/dashboard/site-owner");
+  expect(response?.status()).toBe(200);
+
+  await expect(
+    page.getByRole("heading", {
+      level: 1,
+      name: /explore a community solar scenario/i,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /run simulation/i }),
+  ).toBeEnabled();
+  await expect(page.getByText(/3 selected · maximum 5/i)).toBeVisible();
+  await expect(page.getByRole("checkbox")).toHaveCount(10);
+  await expect(
+    page
+      .getByRole("region", { name: /location comparison cards/i })
+      .getByRole("article"),
+  ).toHaveCount(10);
+
+  const pineMarker = page.getByRole("button", {
+    name: /select 789 pine lane/i,
+  });
+  await pineMarker.hover();
+  await expect(
+    page.getByRole("tooltip").filter({ hasText: "789 Pine Lane" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("tooltip").filter({ hasText: "789 Pine Lane" }),
+  ).toContainText("Mechanicsville");
+
+  await page
+    .getByRole("searchbox", {
+      name: /search address, neighborhood, or property type/i,
+    })
+    .fill("987 Solar Way");
+  await page.getByRole("button", { name: /add location/i }).click();
+  await expect(
+    page.getByRole("checkbox", { name: /987 solar way/i }),
+  ).toBeChecked();
+  await expect(page.getByText(/4 selected · maximum 5/i)).toBeVisible();
+
+  await page.getByRole("button", { name: /select 789 pine lane/i }).click();
+  await expect(page.getByText(/5 selected · maximum 5/i)).toBeVisible();
+  await expect(page.getByText(/location selections changed/i)).toBeVisible();
+  await page.getByRole("button", { name: /run simulation/i }).click();
+  await expect(page.getByText("$88,000", { exact: true })).toBeVisible();
+  await expect(page.getByText("$136,000", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/exclude 1 unvalidated draft location/i),
+  ).toBeVisible();
+  await expect(page.getByText(/location selections changed/i)).toHaveCount(0);
+
+  const comparison = page.getByRole("region", {
+    name: /location comparison cards/i,
+  });
+  await expect(
+    comparison.getByText("Included in latest simulation", { exact: true }),
+  ).toHaveCount(4);
+  await expect(
+    comparison.getByText(
+      "Pending validation — excluded from latest simulation",
+      { exact: true },
+    ),
+  ).toHaveCount(1);
+  await expect(
+    comparison
+      .getByRole("heading", { level: 3, name: "Pine Ln" })
+      .locator(".."),
+  ).toContainText("$18,000");
+
+  await page.getByTitle("Always use the light theme").click();
+  await expect(
+    page.getByRole("radio", { name: /^light$/i }),
+  ).toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.getByTitle("Always use the dark theme").click();
+  await expect(page.getByRole("radio", { name: /^dark$/i })).toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  expect(await hasOverflow(page)).toBe(false);
+
+  await page.screenshot({
+    path: testInfo.outputPath("site-owner-dashboard.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+});
+
 test("a landing deep link pre-selects the matching answer and stays editable", async ({
   page,
 }) => {
@@ -244,7 +335,7 @@ for (const rootPixels of [20, 32]) {
   test(`supports enlarged root text at ${rootPixels}px without hiding overflow`, async ({
     page,
   }) => {
-    for (const path of ["/", "/join", "/nope"]) {
+    for (const path of ["/", "/join", "/dashboard/site-owner", "/nope"]) {
       await page.goto(path);
       await page.addStyleTag({
         content: `:root { font-size: ${rootPixels}px !important; }`,

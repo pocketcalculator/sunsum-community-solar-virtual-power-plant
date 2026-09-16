@@ -89,9 +89,43 @@ Available routes:
 | ------- | ---------------------------------------------------------------- |
 | `/`     | Value proposition, the three ways to take part, journey, and FAQ |
 | `/join` | The guided create-profile workflow                               |
+| `/dashboard/site-owner` | Interactive site-owner dashboard design prototype |
 
 `/join` accepts an optional `?start=` parameter so the landing page can open the
 flow with a guided answer already selected. Unrecognised values are ignored.
+
+`/dashboard/site-owner` implements the supplied location-selection, ROI
+comparison, and allocation-card mockup using the existing Sunsum design tokens.
+Its locations and financial figures are illustrative design data only. The
+simulation control aggregates explicit mock return values for the selected
+predefined locations; it is not a financial forecast or an accepted screening
+model. A user can filter and select the supplied map locations or enter an
+address as a local draft. Custom addresses remain marked as pending validation,
+are excluded from the mock calculation, and receive no fabricated map
+coordinate because no geocoder is connected.
+
+The selector and comparison strip are generated from the same location
+collection. The prototype includes ten predefined sites; the selection list
+scrolls vertically and the comparison cards scroll horizontally as the
+collection grows. Newly entered draft addresses immediately receive a pending
+comparison card, keeping both views synchronized.
+
+The comparison strip is also the per-location breakdown of the latest ROI
+simulation. Cards included in that run are highlighted, their individual and
+community return values add exactly to the headline totals, and changed
+selections show a prompt to rerun before the comparison status changes.
+
+The shared header offers light, dark, and system theme modes. The selected mode
+is stored in the browser and all application surfaces consume the same semantic
+design tokens.
+
+The public header also includes an **AI assistant** preview. It opens a
+right-side guidance drawer with the same rooftop, land and funding entry paths,
+plus deterministic replies for basic greetings and questions. This preview does
+not call an AI model or any remote service. Speech-to-text uses the browser's
+speech-recognition capability when available. A person can choose a local file
+and remove it from the composer, but the application only displays its name: it
+does not read, upload or retain the file.
 
 **Nothing is saved.** The flow validates every answer and shows the assembled
 profile back to you, but no account is created, no request leaves the browser,
@@ -126,6 +160,7 @@ selected services and remaining infrastructure prerequisites.
 | `app/` | Routes, root layout and the shared `globals.css` |
 | `src/domain/` | Shared vocabulary: roles, journey stages, participant types, guided prompts |
 | `src/features/participation/` | Landing page, public shell and entry paths |
+| `src/features/assistant/` | Browser-only guidance drawer, local replies and future instruction placeholder |
 | `src/features/onboarding/` | The create-profile flow, its step model and validation |
 | `src/components/ui/` | Domain-neutral controls and form primitives |
 | `src/styles/` | Design tokens and shared layout helpers |
@@ -136,6 +171,23 @@ selected services and remaining infrastructure prerequisites.
 Routes compose a feature's public entry point. Features never import each
 other's internals, and the domain layer depends on nothing above it. These
 boundaries are enforced by ESLint and asserted in `tests/unit/architecture.test.ts`.
+
+The assistant feature is split so a later AI integration does not require a UI
+rewrite:
+
+| Path | Responsibility |
+| --- | --- |
+| `src/features/assistant/components/Assistant.tsx` | Launcher, drawer, conversation, local file picker and speech-to-text controls |
+| `src/features/assistant/components/Assistant.module.css` | Responsive drawer and composer styles using shared design tokens |
+| `src/features/assistant/model/responses.ts` | Temporary deterministic replies for common conversation and participation topics |
+| `src/features/assistant/content/instructions.md` | Documented placeholder for future server-side model instructions |
+| `src/features/assistant/index.ts` | Public feature exports |
+
+When an AI service is introduced, its route must load `instructions.md` on the
+server and keep model credentials, private prompts and participant information
+out of the browser bundle. The local response function is the intended
+replacement boundary. The current preview does not interpret selected files or
+send conversation content anywhere.
 
 This replaces the earlier single-page template and its `app/api/submit` echo
 route; both were scaffolding for this interface rather than product behaviour.
