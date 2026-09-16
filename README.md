@@ -89,6 +89,7 @@ Available routes:
 | ------- | ---------------------------------------------------------------- |
 | `/`     | Value proposition, the three ways to take part, journey, and FAQ |
 | `/join` | The guided create-profile workflow                               |
+| `GET /api/portfolio` | Explicit synthetic portfolio fixtures and a fixed demo investor |
 
 `/join` accepts an optional `?start=` parameter so the landing page can open the
 flow with a guided answer already selected. Unrecognised values are ignored.
@@ -108,7 +109,9 @@ and investor authorization require the backend and domain handoffs described in
 
 **Azure Database for PostgreSQL Flexible Server with Drizzle ORM is the
 selected persistence stack**, with Drizzle Kit for schema and migrations.
-It is not yet provisioned, installed, or connected; the portfolio API uses
+The [server-only connection foundation](src/backend/infrastructure/database/README.md)
+and migration tooling are installed, but the Azure database is not provisioned
+and no domain persistence adapter is implemented; the portfolio API still uses
 explicit in-memory demo fixtures. The public preview has been smoke-tested on
 Linux Azure App Service F1, without adding a database or identity provider.
 
@@ -160,6 +163,19 @@ npm run start
 The lockfile pins versions and integrity without embedding a contributor's
 registry/proxy URLs. npm resolves those locked versions through the configured
 registry. Do not add credentials or a private registry address to `.npmrc`.
+
+### Infrastructure preparation
+
+The [infrastructure runbook](infrastructure/docs/app-service-postgres.md)
+uses **Bicep and Azure CLI** for F1 Linux App Service code deployment and
+separately billable PostgreSQL. No container registry or orchestration framework
+is required. Templates and local checks do not authorize or establish cloud
+provisioning.
+
+The [database guide](src/backend/infrastructure/database/README.md) documents
+the shared environment contract, managed identity, dependency injection,
+`npm run db:check`, and reviewed migrations. These do not make `/join` persistent
+or the demo portfolio authenticated.
 
 ## Checks
 

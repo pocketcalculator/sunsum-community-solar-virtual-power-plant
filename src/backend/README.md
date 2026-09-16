@@ -29,6 +29,8 @@ src/backend/
     shared/             JSON, the error envelope, failure-code to status
     identity/           S-IAM   resolving the caller at the transport edge
     investors/          S-INV   query parsing and status mapping
+  infrastructure/
+    database/           server-only PostgreSQL/Drizzle connection and tooling seam
 ```
 
 Each directory's `index.ts` is its public face. A sibling imports
@@ -151,12 +153,13 @@ of the separate boundary.
 
 [The technical design](../../docs/sunsum_technical_design_doc.md) selects
 **Azure Database for PostgreSQL Flexible Server with Drizzle ORM** for
-persistence and private Blob Storage for document files. Drizzle Kit is the
-selected schema/migration tooling. None of the database packages, schema,
-migrations, provisioning, or authentication is implemented yet; the PostgreSQL
-driver and connection configuration remain to be selected. The proposed Entra
-integration and the broader WS2 deployment topology also remain separate from
-this scaffold.
+persistence and private Blob Storage for document files. Drizzle Kit is the selected schema/migration tooling.
+[The connection foundation](infrastructure/database/README.md) now provides
+validated server-only configuration, a pooled `pg`/Drizzle client, managed-identity
+token refresh, a read-only connectivity command, and an empty versioned migration
+journal. It does not implement a domain schema, a real `ProjectStore`, application
+sign-in, or cloud provisioning. The proposed Entra application-user integration
+and the broader WS2 deployment topology remain separate.
 
 Two seams allow those integrations without changing the workflow rules:
 
@@ -173,3 +176,8 @@ Two seams allow those integrations without changing the workflow rules:
 
 Neither is production ready. The App Service smoke test exercises the existing
 fixture-backed API, not a real database, data set, or identity provider.
+
+Infrastructure clients must not be constructed in `core/`, `handlers/`, routes,
+or presentation. The composition boundary supplies dependencies to adapters
+behind core interfaces; ESLint and the boundary tests enforce this separation.
+Database configuration is never a `NEXT_PUBLIC_*` value.

@@ -20,8 +20,9 @@ Next.js and TypeScript remain the frontend stack. The
 [technical design](../sunsum_technical_design_doc.md) selects Azure Database
 for PostgreSQL Flexible Server with Drizzle ORM and Drizzle Kit for server-side
 persistence, and Linux App Service for web hosting. The preview has been
-smoke-tested on F1, but the database and Drizzle integration are not installed or
-connected. This frontend foundation still requires no database credentials.
+smoke-tested on F1. A separate server-only connection and migration-tooling
+foundation is now present, but domain persistence and cloud database integration
+are not implemented. This frontend foundation still requires no database credentials.
 
 ## Implemented responsibility boundaries
 
@@ -170,11 +171,13 @@ identity, persistence, and document tests belong to later integrated work.
 
 ## Delivery boundary
 
-Ordinary `next build` and `next start` are the only hosting contract implemented.
+Ordinary `next build` and `next start` remain the public application's hosting contract.
 WS3 has verified the existing application through source ZIP deployment and a
-remote build on Linux App Service F1. This does not add an AppHost, database,
-identity provider, or production secret configuration. Full backend integration
-and production delivery remain separate from the public-preview smoke test.
+remote build on Linux App Service F1. The
+[infrastructure foundation](../../infrastructure/README.md) prepares separate
+server-only Drizzle connections and Bicep/Azure CLI code delivery.
+This does not provision a database or connect an identity provider. Full backend
+integration and production delivery remain separate from the public-preview smoke test.
 
 No credentials or private data belong in public runtime configuration. Future
 server-only exports must remain separate from client-safe public feature entries.

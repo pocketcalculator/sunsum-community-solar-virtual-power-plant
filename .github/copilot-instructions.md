@@ -49,3 +49,20 @@ before finishing. Report any check that could not be run.
 
 Do not claim regulatory compliance, production readiness, security, or test
 coverage without verifiable evidence.
+
+## Database and Azure delivery
+
+- Use Bicep and Azure CLI for Linux App Service **F1 code deployment** and
+  separately billable Azure PostgreSQL. No orchestration framework is required.
+  Do not add ACR, Container Apps, or a paid web-tier upgrade.
+- Database clients belong in `src/backend/infrastructure/database`. Inject a
+  database/store at the composition boundary; core, handlers, and browser code
+  must not construct database clients. The current portfolio remains an explicit
+  fixture, and `/join` still saves nothing.
+- Azure runtime uses managed identity, verified TLS, and the explicit `PG*`
+  configuration contract. Never use `NEXT_PUBLIC_*` for database configuration,
+  log credentials, disable certificate checks, or fall back to demo data after
+  an explicitly requested database operation fails.
+- Provisioning, provider registration, narrow firewall approvals, Entra SQL
+  bootstrap, migrations, and routine code deployment are distinct operations.
+  Setup documentation is not permission to perform a cloud write.

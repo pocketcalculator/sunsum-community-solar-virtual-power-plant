@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "<environment>" },
+    "location": { "value": "centralus" },
+    "appServicePlanName": { "value": "<plan-name>" },
+    "webAppName": { "value": "<globally-unique-app-name>" },
+    "postgresServerName": { "value": "<globally-unique-postgres-name>" },
+    "databaseName": { "value": "sunsum" },
+    "runtimeRoleName": { "value": "sunsum_runtime" },
+    "tenantId": { "value": "<tenant-id>" },
+    "postgresAdminObjectId": { "value": "<existing-admin-object-id>" },
+    "postgresAdminPrincipalName": {
+      "value": "<existing-admin-principal-name>"
+    },
+    "postgresAdminPrincipalType": { "value": "Group" },
+    "postgresTier": { "value": "Burstable" },
+    "postgresSkuName": { "value": "Standard_B1ms" },
+    "postgresStorageSizeGB": { "value": 32 },
+    "postgresVersion": { "value": "17" }
+  }
+}

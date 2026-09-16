@@ -1,0 +1,13 @@
+{
+  "ignores": [
+    "**/node_modules/**",
+    ".azure/**",
+    ".next/**",
+    "test-results/**",
+    "playwright-report/**",
+    "blob-report/**",
+    "coverage/**",
+    "out/**",
+    "build/**"
+  ]
+}

@@ -99,6 +99,20 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/core/shared/probe.ts", "../investors"],
     ["src/backend/core/shared/probe.ts", "../projects"],
     ["src/backend/core/shared/probe.ts", "../identity/viewer"],
+    ["src/components/ui/probe.tsx", "pg"],
+    ["src/domain/probe.ts", "drizzle-orm"],
+    ["src/features/onboarding/probe.tsx", "drizzle-orm/node-postgres"],
+    ["src/features/participation/probe.tsx", "@azure/identity"],
+    ["src/features/example/probe.tsx", "pg"],
+    ["app/api/probe.ts", "pg"],
+    ["app/api/probe.ts", "drizzle-orm/node-postgres"],
+    ["app/api/probe.ts", "@/backend/infrastructure/database"],
+    ["src/backend/core/projects/probe.ts", "pg"],
+    ["src/backend/core/projects/probe.ts", "drizzle-orm/node-postgres"],
+    ["src/backend/core/projects/probe.ts", "../../infrastructure/database"],
+    ["src/backend/core/shared/probe.ts", "@/backend/infrastructure/database"],
+    ["src/backend/handlers/investors/probe.ts", "@azure/identity"],
+    ["src/backend/handlers/investors/probe.ts", "../../infrastructure/database"],
   ])(
     "rejects %s importing %s",
     async (file, dependency) => {
@@ -135,6 +149,10 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/handlers/probe.ts", "node:crypto"],
     ["src/backend/core/probe.ts", "@/domain/roles"],
     ["src/backend/core/probe.ts", "node:crypto"],
+    ["src/backend/infrastructure/database/probe.ts", "pg"],
+    ["src/backend/infrastructure/database/probe.ts", "drizzle-orm/node-postgres"],
+    ["src/backend/infrastructure/database/probe.ts", "@azure/identity"],
+    ["src/backend/index.ts", "./infrastructure/database"],
   ])(
     "permits %s importing %s",
     async (file, dependency) => {
