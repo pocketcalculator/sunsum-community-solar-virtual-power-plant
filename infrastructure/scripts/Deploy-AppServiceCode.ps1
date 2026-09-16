@@ -7,6 +7,7 @@ param(
     [Parameter(Mandatory)][string] $PackagePath,
     [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string] $ExpectedSha256,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $ApprovalReference,
+    [ValidateSet('Preview', 'ApprovedSignIn')][string] $ExpectedAccessMode = 'Preview',
     [switch] $Apply
 )
 $ErrorActionPreference = 'Stop'
@@ -50,7 +51,14 @@ $online = $false
 for ($attempt = 0; $attempt -lt 12; $attempt++) {
     try {
         $response = Invoke-WebRequest -Uri "https://$($app.host)/" -TimeoutSec 10 -MaximumRedirection 0 -SkipHttpErrorCheck
-        if ($response.StatusCode -eq 200) { $online = $true; break }
+        if ($ExpectedAccessMode -eq 'Preview' -and $response.StatusCode -eq 200) { $online = $true; break }
+        if ($ExpectedAccessMode -eq 'ApprovedSignIn' -and $response.StatusCode -eq 302) {
+            $redirect = [uri]::new([uri]"https://$($app.host)/", [string]$response.Headers.Location)
+            if ($redirect.Scheme -eq 'https' -and (
+                ($redirect.Host -eq $app.host -and $redirect.AbsolutePath -eq '/.auth/login/aad') -or
+                $redirect.Host -eq 'login.microsoftonline.com'
+            )) { $online = $true; break }
+        }
     } catch [System.Net.Http.HttpRequestException] {
         Write-Warning "Preview check $($attempt + 1) encountered a network failure; retrying within the bounded window."
     } catch [System.Threading.Tasks.TaskCanceledException] {
@@ -60,5 +68,5 @@ for ($attempt = 0; $attempt -lt 12; $attempt++) {
     }
     if ($attempt -lt 11) { Start-Sleep -Seconds 10 }
 }
-if (-not $online) { throw 'No HTTP 200 within the bounded preview checks. Inspect deployment logs; no automatic retry, rollback or tier change was attempted.' }
-Write-Output 'The code-deployment command succeeded and the public preview returned HTTP 200. This does not test database connectivity or identity.'
+if (-not $online) { throw 'The expected preview/sign-in response was not observed within bounded checks. Inspect deployment logs; no automatic retry, rollback or tier change was attempted.' }
+Write-Output "Code deployment succeeded and the expected $ExpectedAccessMode response was observed. This is not a readiness, participant-authorization, database, or Blob integration check."

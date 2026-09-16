@@ -220,13 +220,18 @@ registry. Do not add credentials or a private registry address to `.npmrc`.
 
 The [infrastructure runbook](infrastructure/docs/app-service-postgres.md)
 uses **Bicep and Azure CLI** for F1 Linux App Service code deployment and
-separately billable PostgreSQL. No container registry or orchestration framework
+separately billable PostgreSQL and Standard LRS private Blob containers.
+Approved internal/guest sign-in and container-scoped Blob grants are separate
+administrator-gated steps. No container registry or new orchestration framework
 is required. Templates and local checks do not authorize or establish cloud
-provisioning.
+provisioning. Python viability and deployed logging/health configuration remain
+pending, as do user-to-business-role mapping and document upload/download services.
 
 The [database guide](src/backend/infrastructure/database/README.md) documents
 the shared environment contract, managed identity, dependency injection,
-`npm run db:check`, and reviewed migrations. These do not make `/join` persistent
+`npm run db:check`, and reviewed Azure migrations using main's canonical
+`src/backend/db` SQL. Existing local database commands remain local-only.
+These do not make `/join` persistent
 or the demo portfolio authenticated.
 
 ## Checks

@@ -14,6 +14,9 @@ this directory. Keep environment-specific values outside committed templates.
 | --- | --- | --- |
 | `resources.bicep` | Resource group | Linux F1 App Service and separately billable Entra-only PostgreSQL in an existing group. |
 | `postgres-firewall.bicep` | Resource group | Only approved individual IPv4 rules for an existing PostgreSQL server; no rules by default. |
+| `storage.bicep` | Resource group | Standard LRS Hot private containers, shared keys disabled; closed by default with explicit policy-approved authenticated-public mode. |
+| `storage-role-grants.bicep` | Resource group | Separate administrator grant to the web identity at the two container scopes only. |
+| `web-sign-in.bicep` | Resource group | Explicit opt-in Easy Auth on an existing app; precreated workforce registration and nonempty approved-user/guest allowlist. |
 
 `web.bicep` and `postgres.bicep` are reusable core modules. The
 `resources.parameters.example.json` placeholders are intentionally not

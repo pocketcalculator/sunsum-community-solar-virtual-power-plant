@@ -8,6 +8,7 @@ param planName string
 @maxLength(60)
 param webAppName string
 param databaseHost string
+param blobEndpoint string
 @minLength(1)
 @maxLength(63)
 param databaseName string
@@ -90,6 +91,18 @@ resource web 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'PGSSLMODE'
           value: 'verify-full'
+        }
+        {
+          name: 'AZURE_STORAGE_BLOB_ENDPOINT'
+          value: blobEndpoint
+        }
+        {
+          name: 'SITE_DOCUMENTS_CONTAINER'
+          value: 'site-documents'
+        }
+        {
+          name: 'PROJECT_DOCUMENTS_CONTAINER'
+          value: 'project-documents'
         }
       ]
     }

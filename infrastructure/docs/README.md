@@ -37,11 +37,12 @@ quotas, or deployment permission. Confirm the chosen subscription explicitly.
 
 | Service | Provider | Observed state | Action |
 | --- | --- | --- | --- |
-| Azure Database for PostgreSQL Flexible Server | `Microsoft.DBforPostgreSQL` | Not registered | **Enable before database provisioning.** |
+| Azure Database for PostgreSQL Flexible Server | `Microsoft.DBforPostgreSQL` | Registered (September 16, 2026 update) | Verify in the selected subscription; do not re-register routinely. |
 | New Azure-billed Fabric capacity | `Microsoft.Fabric` | Not registered | Enable only if creating new capacity; existing capacity or an eligible trial is a separate path. |
 
 After separate authorization, a subscription administrator can register the
-selected database provider once (this preparation does not execute it):
+selected database provider only if a target subscription actually needs it
+(the observed subscription does not; this preparation does not execute it):
 
 ```azurecli
 az provider register --subscription <subscription-id> --namespace Microsoft.DBforPostgreSQL --wait

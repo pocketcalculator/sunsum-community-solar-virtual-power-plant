@@ -1,19 +1,38 @@
-# App Service and PostgreSQL foundation
+# MVP deployment guide: App Service, PostgreSQL, sign-in and Blob
 
 ## Status and boundaries
 
 **Preparation only.** The templates and scripts have local validation, not a
 deployment certification. This change does not create cloud resources, register
 providers, create identities or role assignments, bootstrap a database, or add
-business-table persistence. The public preview must continue to work without a
+business-table integration. The public preview must continue to work without a
 database connection. A successful homepage response is not a database check.
 
 The [approved design](../../docs/sunsum_technical_design_doc.md#3-technology-stack)
 uses **Bicep and Azure CLI**, with no orchestration framework. Azure hosts the existing root
 Next.js app as **Linux App Service code**, not a customer container image. The
 web plan is fixed to **F1**; changing to a paid plan requires a separate decision
-and template change. There is no ACR, Container Apps, Blob/Azurite, Fabric, Key
+and template change. There is no ACR, Container Apps, Azurite, Fabric, Key
 Vault, Application Insights, or Log Analytics resource in this foundation.
+The Storage account is Standard LRS, StorageV2, Hot, with private
+`site-documents` and `project-documents` containers. Shared-key access and
+anonymous Blob access are disabled.
+
+| Surface | Preparation status | Deployment/application gate |
+| --- | --- | --- |
+| F1 site/plan and system identity | Bicep ready for explicit new-site creation | Existing-site identity/settings are separate, reviewed CLI changes; no live change by this PR |
+| PostgreSQL 17/B1ms/32 GiB | Bicep and bootstrap tooling ready | Budget, provider, network, distinct Entra SQL principals and migrations must be applied |
+| Storage/private containers | Bicep ready, network closed by default | Tenant-approved authenticated public endpoint needed for same-region F1; container RBAC needs an authorized administrator |
+| Approved internal/guest sign-in | Separate opt-in `authsettingsV2` template and guards ready | Precreated workforce Web registration, code-flow credential, enterprise-app assignments and named participants required |
+| Application user/role mapping | **NOT IMPLEMENTED** | Easy Auth gate/claims do not replace the fixed demo investor or implement business authorization |
+| Blob upload/download service | **NOT IMPLEMENTED** | Container role grants do not implement per-site/project document access or browser upload paths |
+| Business schema | Canonical `src/backend/db` schema, two migrations, seed and constraint probes from main | Azure application-store adapter, real data and runtime table grants remain pending; no parallel schema is created |
+| Python viability service | **PENDING** | Hosting/runtime/model interface not configured by this PR |
+| Logging, Application Insights and health configuration | **PENDING** | A route or successful smoke response does not configure deployed readiness probes, monitoring, alerts or paid logging resources |
+
+These are prepared artifacts, not a deployed or production-ready MVP. Public
+registration is not implemented; an external collaborator must first be approved
+and onboarded as a guest in the chosen workforce tenant.
 
 PostgreSQL Flexible Server is **separately billable**. The initial defaults are
 PostgreSQL 17, `Burstable` / `Standard_B1ms`, `storageSizeGB=32`, seven-day local
@@ -24,6 +43,31 @@ charges and quotas before provisioning. Disabled autogrowth needs deliberate
 capacity monitoring and expansion; do not silently change tier or storage.
 F1 has shared-resource and cold-start limits; a failed Oryx build is not approval
 to upgrade it. See [PostgreSQL pricing](https://azure.microsoft.com/pricing/details/postgresql/flexible-server/).
+
+### Budget assumptions (September 16, 2026)
+
+The user approved the proposed MVP budget, **not deployments**. Public USD retail
+rates observed for Central US, assuming 730 running hours per month:
+
+| Item | Retail assumption | Approximate charge before extras |
+| --- | --- | --- |
+| Existing App Service F1 | Free tier, no paid upgrade | $0 web-plan charge subject to F1 quotas/terms |
+| PostgreSQL Burstable B1ms | $0.01921/hour | $14.02/month |
+| PostgreSQL storage | 32 GiB at $0.13/GB-month retail meter | $4.16/month |
+| PostgreSQL base total | No HA, seven-day local backups, autogrowth disabled | **$18.18/month** |
+| Hot LRS Blob capacity | $0.0184/GB-month | $0.184/month for an illustrative 10 GB |
+| Blob read operations | $0.004 per 10,000 | Usage-dependent |
+| Blob write/list/create operations | $0.05 per 10,000 | Usage-dependent |
+
+Use the [retail prices API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices)
+and [Storage pricing](https://azure.microsoft.com/pricing/details/storage/blobs/)
+to refresh rates before execution. Egress, extra backup/storage, transactions,
+taxes, regional or organizational charges and negotiated discounts are separate.
+This is not the corporate bill or a guarantee of zero cost. LRS is not a backup;
+Blob versioning, soft-delete retention and immutable retention are not enabled
+by this cheapest-tier template and require a separately reviewed data-protection
+decision before valuable documents are stored. Fabric mirroring does not support
+Burstable PostgreSQL and no Fabric deployment is included.
 
 All cloud-write commands below are **future procedures requiring separate
 authorization**. Setup has distinct privilege boundaries, and the existing
@@ -40,8 +84,11 @@ resource-group creation/deletion or deployment during ordinary app development.
 - Azure CLI **2.48.1+** supports Entra deployment when basic publishing is
   disabled. The installed CLI must also expose `webapp deploy --track-status`;
   the deployment script checks that capability instead of assuming it.
-- An authorized subscription administrator must have registered
-  `Microsoft.Web` and `Microsoft.DBforPostgreSQL`, approved the budget/region,
+- Required providers are `Microsoft.Web`, `Microsoft.Storage` and
+  `Microsoft.DBforPostgreSQL`; the relevant web/storage/identity and PostgreSQL
+  providers were reported **Registered** on September 16, 2026. Confirm for the
+  chosen subscription rather than attempting registration routinely. An
+  authorized administrator must have approved the budget/region
   and provided an **existing resource group**. Registration, directory setup
   and Azure role grants are not routine app deployment operations.
 - Initial infrastructure deployment needs resource-group deployment and
@@ -61,10 +108,22 @@ resource-group creation/deletion or deployment during ordinary app development.
   permissions and an Entra-authenticated CLI session, not provider
   registration, database-administrator rights or a publish profile.
 
+**Dated access constraints, anonymized:** the current operator was an existing
+workforce-tenant guest with resource-group deployment rights that exclude
+`Microsoft.Authorization/*/Write`. That operator cannot assign Blob Azure RBAC.
+App-registration listing and the Graph authorization-policy read returned
+insufficient privileges. Directory app creation, guest onboarding/assignment and
+the initial container role grants therefore need the appropriate administrator.
+Do not work around a denial with account keys, personal tenants, broad SAS tokens,
+tenant-wide access or an elevated database runtime principal. Routine code
+deployment does **not** require an Owner to repeat these administrator steps.
+Approved application participants require no Azure subscription/RG roles.
+
 Keep subscription/tenant IDs, actual resource names, principal IDs, approval
 records and environment configuration in ignored `.azure\<environment>\`
 files. Do not commit them or use personal data as tags. Scripts do not switch
-the active subscription, grant Azure roles, or enable basic publishing.
+the active subscription or enable basic publishing. The separately approved
+`BlobRoles` operation is the only new role-grant path.
 
 ## Templates and configuration contract
 
@@ -75,6 +134,10 @@ the active subscription, grant Azure roles, or enable basic publishing.
 | `templates/postgres.bicep` | Entra-only server/database and TLS settings; **no firewall rules**. |
 | `templates/postgres-firewall.bicep` | Separate incremental exact-IP allowances on an existing server; empty by default. |
 | `templates/resources.parameters.example.json` | Nondeployable placeholders; copy to ignored configuration and replace them. |
+| `templates/storage.bicep` | Standard LRS Hot account and two private containers; closed unless authenticated-public mode has a policy approval reference. |
+| `templates/storage-role-grants.bicep` | Separate Reader/Contributor assignments only on the two intended containers, never RG/subscription-wide. |
+| `templates/web-sign-in.bicep` | Separate opt-in gate on an existing site; precreated single-tenant registration and nonempty participant object-ID list. |
+| `templates/sign-in.example.json`, `blob-roles.example.json`, `storage-network.example.json` | Nondeployable access-review inputs for `Deploy-AccessConfiguration.ps1`. |
 
 The web resource declares
 `NODE|22-lts`, `alwaysOn=false`, `httpsOnly=true`, TLS 1.2 minimum for site and
@@ -93,6 +156,11 @@ for future provisioning, not evidence that an identity already exists.
 | `PGSSLMODE` | `verify-full` | `disable`, **only nonproduction loopback** |
 | `PGPASSWORD` | **Not an App Service setting** | Generated local secret |
 
+Future Blob adapters receive server-only `AZURE_STORAGE_BLOB_ENDPOINT`,
+`SITE_DOCUMENTS_CONTAINER` and `PROJECT_DOCUMENTS_CONTAINER`. They must use the
+web app's `ManagedIdentityCredential`, not account keys. Declaring these settings
+does not install or implement a Storage client.
+
 Do not set Azure `DATABASE_URL`, `PGPASSWORD`, or `AZURE_CLIENT_ID` for this
 system-assigned identity path. Runtime must not fall back to Azure CLI.
 `SUNSUM_DATABASE_AUTH=azure-cli` is an **explicit operator-tooling mode** with
@@ -107,7 +175,11 @@ From the repository root:
 New-Item -ItemType Directory -Path .azure\artifacts -Force | Out-Null
 az bicep build --file infrastructure\templates\resources.bicep --outfile .azure\artifacts\resources.json
 az bicep build --file infrastructure\templates\postgres-firewall.bicep --outfile .azure\artifacts\postgres-firewall.json
+az bicep build --file infrastructure\templates\storage.bicep --outfile .azure\artifacts\storage.json
+az bicep build --file infrastructure\templates\storage-role-grants.bicep --outfile .azure\artifacts\blob-roles.json
+az bicep build --file infrastructure\templates\web-sign-in.bicep --outfile .azure\artifacts\sign-in.json
 pwsh -NoProfile -File infrastructure\scripts\tests\deployment-safety.test.ps1
+pwsh -NoProfile -File infrastructure\scripts\tests\mvp-access.test.ps1
 node --test infrastructure\scripts\tests\postgres-bootstrap.test.mjs
 node --test infrastructure\scripts\tests\postgres-bootstrap-operations.test.mjs
 npm test -- tests/unit/infrastructure.test.ts
@@ -122,6 +194,21 @@ membership or the installed cloud server's authentication extension.
 Copy the parameter example to an ignored local file and replace every
 placeholder. Keep the defaults only after the separate database budget review.
 
+`webAppMode=Existing` is the default: the entry point references the named
+existing app but does **not** change its code, plan, identity, settings or auth.
+If its system identity is absent, the identity output is empty and bootstrap/RBAC
+cannot proceed. For a new app, explicitly select `Create` with unused site/plan
+names; `web.bicep` enables system identity on F1. Never select `Create` with a
+live site's name: its full app-settings collection would be managed by that
+template, potentially replacing a later sign-in secret or other settings.
+
+Database/Storage names are globally constrained. Inspect inventory/name
+availability and the planned resource diff before a future authorized deployment.
+The entry point manages its PostgreSQL and Storage resources even in Existing
+web mode; use the separate modules/operations for subsequent access changes.
+Reapplying the core restores Storage's **closed** default and is not a code-only
+deployment. Do not accidentally take over an unrelated account or database.
+
 ```powershell
 # LOCAL validation: no Azure calls without -Apply.
 $parameters = '.azure\dev\resources.parameters.json'
@@ -129,7 +216,8 @@ $hash = (Get-FileHash -LiteralPath $parameters -Algorithm SHA256).Hash
 pwsh -NoProfile -File infrastructure\scripts\Provision-Infrastructure.ps1 `
   -SubscriptionId $env:AZURE_SUBSCRIPTION_ID -ResourceGroupName $env:AZURE_RESOURCE_GROUP `
   -ParametersPath $parameters -ExpectedSha256 $hash `
-  -ApprovalReference '<infrastructure-review>' -DatabaseBudgetApproval '<approved-budget>'
+  -ApprovalReference '<infrastructure-review>' -DatabaseBudgetApproval '<approved-db-budget>' `
+  -StorageBudgetApproval '<approved-storage-budget>'
 # Future WRITE: repeat with -Apply only after authorization.
 ```
 
@@ -151,6 +239,29 @@ az deployment group show --subscription $env:AZURE_SUBSCRIPTION_ID `
 Outputs include `AZURE_WEB_APP_PRINCIPAL_ID`, `AZURE_POSTGRES_SERVER_NAME` and
 the shared PG settings. Identity IDs are not credentials, but still belong in
 ignored environment records rather than committed examples.
+
+### Existing App Service identity and settings
+
+After separate authorization, a resource administrator can add system identity
+to the existing site without deploying its code or replacing its plan:
+
+```powershell
+# Future WRITE: only when absent, after inspecting existing identities.
+az webapp identity assign --subscription $env:AZURE_SUBSCRIPTION_ID `
+  --resource-group $env:AZURE_RESOURCE_GROUP --name $env:AZURE_WEB_APP_NAME
+```
+
+Preserve existing user-assigned identities. Capture the resulting
+`identity.principalId` (not client ID) for database/Blob bootstrap. Recreating a
+site changes this principal and requires explicit grant reconciliation.
+
+Create an ignored JSON object containing only the reviewed **nonsecret** PG/Blob
+settings above, then merge those settings using `az webapp config appsettings set
+--settings @<local-json> --output none` with explicit subscription, group and name.
+Do not replace the full configuration collection or export secrets into source
+control. Check the existing Node/Oryx/TLS/F1 settings separately; identity and
+configuration changes can restart the app and need a maintenance decision.
+Do not supply operator credentials or overwrite the sign-in credential.
 
 ## 3. Review exact network allowances
 
@@ -227,6 +338,71 @@ changes, or observed egress drift. Firewall changes can take several minutes.
 
 ## 4. Privileged SQL bootstrap
 
+Before this database step, resolve the separate Storage network/role gates below
+if document access is part of the intended rollout; neither is automatically
+performed by PostgreSQL bootstrap.
+
+### Storage network and container roles
+
+Storage differs from PostgreSQL: **public IP firewall rules cannot allow
+same-region Azure services by their public outbound IPs**. Same-region traffic
+uses private Azure addresses. F1 has no VNet integration; a private endpoint or
+service-endpoint-only account is not reachable from this app. Do not copy the
+PostgreSQL IP rules into Storage and call the connection ready.
+
+The chosen cheapest MVP path is an **authenticated public Storage endpoint with
+private containers**, subject to explicit tenant-policy approval. This permits
+network access from anywhere, but it does not permit anonymous Blob access:
+`allowBlobPublicAccess=false`, both containers have `publicAccess=None`,
+`allowSharedKeyAccess=false`, HTTPS/TLS 1.2 and Entra data-plane RBAC remain
+required. Easy Auth protects the web app, not the Blob endpoint. A browser's web
+session is not a Blob credential.
+
+If policy forbids this public data-plane network, leave `Closed` in place and
+mark Blob runtime access **blocked**. A paid/private-network architecture needs a
+separate decision; no IP trick, trusted-service bypass or shared key is provided.
+The operator's own network must also be permitted for direct data-plane checks;
+successful ARM container creation does not prove Blob access.
+
+1. A resource administrator creates the account/containers in closed mode.
+   Copy `storage-network.example.json` into ignored configuration. Keep `Closed`
+   until policy approval; then explicitly select `AuthenticatedPublic` and record
+   `publicEndpointApproval` and the target-bound change review.
+2. An authorized RBAC administrator reviews the web principal and deploys
+   `storage-role-grants.bicep` separately. `Reader` is the default; `Contributor`
+   must be selected explicitly for a later upload integration and includes
+   read/write/delete. The two assignments are scoped only to `site-documents`
+   and `project-documents`. There is no subscription/RG/account-wide Blob role,
+   no grant to the browser participant, and no SAS/key fallback.
+3. Validate with the web identity: permitted container operations should succeed,
+   unrelated containers should fail, and anonymous/key-based access must fail.
+   RBAC propagation can take time; never broaden the scope as a retry strategy.
+
+For each access operation, use a reviewed input and a new output path:
+
+```powershell
+$inputFile = '.azure\dev\storage-network.json'
+$hash = (Get-FileHash -LiteralPath $inputFile -Algorithm SHA256).Hash
+# LOCAL ONLY by default. For roles use -Operation BlobRoles and blob-roles.json.
+pwsh -NoProfile -File infrastructure\scripts\Deploy-AccessConfiguration.ps1 `
+  -Operation StorageNetwork -SubscriptionId $env:AZURE_SUBSCRIPTION_ID `
+  -ResourceGroupName $env:AZURE_RESOURCE_GROUP -ConfigurationPath $inputFile `
+  -ExpectedSha256 $hash -OutputPath .azure\dev\storage-network-reviewed.json
+# Future WRITE: use a NEW output path and -Apply after separate authorization.
+```
+
+`StorageNetwork` checks the existing private/LRS baseline and refuses to replace
+existing IP/VNet/resource exceptions. Its targeted Azure CLI update changes only
+network mode/bypass/public-endpoint properties, preserving tags and containers.
+The storage Bicep parameter exposes the same approved choice for declarative
+deployment. `BlobRoles` verifies that the supplied principal matches the named
+web app before deploying the two container assignments. Role-assignment writes
+require an administrator only for this setup/change, not every code deployment.
+Switching Reader/Contributor is additive in incremental deployments: inspect and
+explicitly remove the obsolete, precisely identified assignment after review.
+
+### PostgreSQL administrator procedure
+
 Directory owners first verify the three object IDs and their group memberships.
 The runtime ID is the site's **`identity.principalId`**, not its application/
 client ID. The configured administrator must not be used for runtime or normal
@@ -272,14 +448,15 @@ The two bounded, transactional phases are:
    A local password role or changed MI object ID is **not** silently relabeled.
 2. Connect to the chosen app database. Refuse runtime-owned objects,
    runtime/operator database ownership, and incorrectly owned existing schemas.
-   Create only `sunsum` and `drizzle`, owned by the migration role. When needed,
+   Create only the `drizzle` metadata schema, owned by the migration role.
+   Preserve main's canonical `public` application schema. When needed,
    grant the administrator temporary migration-role membership for `SET ROLE`,
    then revoke it within the same transaction; preexisting membership options
    are not overwritten. Revoke PUBLIC database/schema defaults and runtime
    schema access, and grant **CONNECT only** to runtime/operator at database
-   scope. The operator can create objects inside its two schemas by ownership.
+   scope. The operator owns metadata, not the database or public schema.
 
-There are no business tables, broad runtime role grants, runtime `CREATE`,
+Bootstrap creates no business tables, broad runtime role grants, runtime `CREATE`,
 default privileges for future tables, or runtime database ownership.
 Future runtime schema `USAGE` and per-table/sequence permissions need a reviewed
 migration/grant change. Role creation and app-schema setup cannot be one
@@ -298,21 +475,27 @@ credentials or its SQL role to App Service. Then:
 ```powershell
 npm run db:check
 # Future explicit SQL WRITE only after migration SQL and permissions review:
-npm run db:migrate -- --apply
+npm run db:migrate:azure -- --apply
 ```
 
 **Important Drizzle prerequisite:** PostgreSQL checks database `CREATE` before
 honoring `CREATE SCHEMA IF NOT EXISTS`. The standard Drizzle PostgreSQL migrator
 emits that statement for its `drizzle` metadata schema; merely precreating the
 schema does not bypass the privilege check. Bootstrap intentionally grants no
-permanent database `CREATE`. A read-only preflight checks the operator's
-effective permission before Drizzle makes any schema changes; it never
+permanent database `CREATE`. Canonical migrations from main also create tables
+and the append-only trigger function in `public`; they require operator
+`USAGE, CREATE ON SCHEMA public`. Both local `db:migrate` and the explicit Azure
+operator command use the **same** `src/backend/db/migrations` journal/SQL; there
+is no separate Azure schema or parallel migration history. Local seed/reset/probes
+remain the existing loopback-only tooling and are not cloud rollout commands.
+
+A read-only preflight checks these effective permissions before Drizzle makes any schema changes; it never
 self-grants. A separately authorized administrator may open a bounded
 **operator-only** permission window:
 
 1. Record `current_user`, database owner, effective operator permissions,
    direct ACL entries and grantors, and the reviewed migration/code revision.
-   If `CREATE` already exists (directly or through membership), preserve it:
+   If a required permission already exists (directly or through membership), preserve it:
    introduce no grant and perform no cleanup revocation for that existing access.
 2. If permission is absent, approve and record the exact new grant before adding
    it as the recorded administrator. Run migrations through the distinct operator
@@ -327,16 +510,25 @@ reviewed names), the administrator's SQL is:
 
 ```sql
 SELECT current_user, current_database(),
-       pg_catalog.has_database_privilege('sunsum_migrator', current_database(), 'CREATE');
+       pg_catalog.has_database_privilege('sunsum_migrator', current_database(), 'CREATE'),
+       pg_catalog.has_schema_privilege('sunsum_migrator', 'public', 'USAGE'),
+       pg_catalog.has_schema_privilege('sunsum_migrator', 'public', 'CREATE');
 SELECT grantor::regrole, grantee::regrole, privilege_type, is_grantable
 FROM pg_catalog.pg_database d,
      LATERAL pg_catalog.aclexplode(COALESCE(d.datacl, pg_catalog.acldefault('d', d.datdba)))
 WHERE d.datname = current_database();
+SELECT grantor::regrole, grantee::regrole, privilege_type, is_grantable
+FROM pg_catalog.pg_namespace n,
+     LATERAL pg_catalog.aclexplode(COALESCE(n.nspacl, pg_catalog.acldefault('n', n.nspowner)))
+WHERE n.nspname = 'public';
 -- Only if CREATE was absent and this precise window was approved:
 GRANT CREATE ON DATABASE "sunsum" TO "sunsum_migrator";
+-- Grant only the schema permissions absent from the recorded baseline:
+GRANT USAGE, CREATE ON SCHEMA "public" TO "sunsum_migrator";
 -- After operator execution, including failure, only for the grant added above:
 REVOKE CREATE ON DATABASE "sunsum" FROM "sunsum_migrator";
--- Repeat the two read-only queries and verify the recorded baseline.
+REVOKE USAGE, CREATE ON SCHEMA "public" FROM "sunsum_migrator";
+-- Repeat the read-only queries and verify the recorded baseline.
 ```
 
 This is an explicit manual administrative procedure, not automatic grant/revoke
@@ -347,7 +539,108 @@ an operational blocker requiring administrator follow-up, not a successful close
 CONNECT-only plus `db:check` (`SELECT 1`) is not proof of table CRUD permissions or migration
 completion. There is no public HTTP database diagnostic route.
 
-## 6. Package and deploy code only
+## 6. Approved internal and guest user sign-in
+
+Use a **precreated single-tenant workforce Web application registration** in the
+approved tenant (FDPO for this demo). External collaborators must be invited,
+redeem the invitation, satisfy tenant policies and be explicitly assigned.
+No public self-service sign-up, automatic approval, personal-tenant fallback or
+Azure subscription roles for participants are part of this design.
+
+An authorized directory administrator must complete these steps, using the
+[Entra admin center](https://entra.microsoft.com) or the organization's approved
+directory automation. Standard ARM Bicep cannot create these workforce directory
+objects; this PR does not introduce Graph Bicep preview or request broad Graph
+permissions as a workaround.
+
+1. Register or select the reviewed **single-tenant** Web app. Record the tenant
+   ID, application/client ID and enterprise-app/service-principal object ID
+   separately. Configure exact Web redirect URI
+   `https://<app-hostname>/.auth/login/aad/callback`; add custom hosts only after
+   hostname/TLS ownership review. Do not use `common`/`organizations`, wildcard
+   redirect URIs, implicit-only flow, or public/native-client settings.
+2. Configure the enterprise application with **Assignment required = Yes** and
+   grant administrator consent to only the required sign-in permissions.
+   Assign approved individual internal members and approved redeemed guests.
+   Individual assignment avoids assuming group-assignment P1/P2 licensing;
+   group-based/nested membership is not a substitute for the explicit list.
+   Guest onboarding, conditional access/MFA and invitation policy remain the
+   directory administrator's responsibility.
+3. Create an appropriately short-lived client secret for authorization-code
+   flow under the approved credential process. Place the value in an existing,
+   **slot-sticky** App Service setting named, for example,
+   `MICROSOFT_PROVIDER_AUTHENTICATION_SECRET`, through the secure portal or
+   approved secret-injection channel. It is encrypted as an app setting but
+   accessible to privileged app-setting readers: restrict access, track expiry,
+   assign rotation ownership and rehearse renewal before the demo. Do not put
+   the value in Bicep parameters, command-line arguments, `.env.example`,
+   deployment output, logs, or this repository. No Key Vault service is added.
+   A certificate or federated client assertion is a separate reviewed credential
+   configuration, not an implicit-flow fallback supported by this template.
+4. Record the **user/guest object IDs in the workforce tenant**, not home-tenant
+   IDs, emails, group IDs, client IDs or the web managed identity. These must be
+   the same participants assigned to the enterprise app. Copy
+   `sign-in.example.json` to an ignored local file, fill the exact target and
+   IDs, and set `directoryPrerequisitesConfirmed=true` only after verification.
+5. Coordinate the activation window and recovery access before enabling the
+   gate. `resources.bicep` never activates or disables sign-in. The separate
+   `web-sign-in.bicep` requires explicit activation, a secret-setting reference
+   and **1-13** participant GUIDs. Easy Auth's identity list limit is 500 total
+   characters; 13 GUIDs remain below it. Empty lists mean unrestricted in the
+   platform and are rejected here. If the approved audience grows beyond this,
+   design a separately reviewed authorization strategy rather than truncate the
+   list or broaden access to the whole tenant.
+
+The sign-in template requires authentication on every application path,
+tenant-specific issuer, the registration's audiences and the explicit `oid`
+allowlist. It configures no external redirects, validates nonce, requires HTTPS,
+and keeps a one-hour session cookie; token storage is disabled because this
+foundation does not call downstream APIs as the participant. The app uses its
+own managed identity for PostgreSQL/Blob, never a participant's subscription role.
+
+```powershell
+$inputFile = '.azure\dev\sign-in.json'
+$hash = (Get-FileHash -LiteralPath $inputFile -Algorithm SHA256).Hash
+# LOCAL validation only; no directory/secret/network calls.
+pwsh -NoProfile -File infrastructure\scripts\Deploy-AccessConfiguration.ps1 `
+  -Operation SignIn -SubscriptionId $env:AZURE_SUBSCRIPTION_ID `
+  -ResourceGroupName $env:AZURE_RESOURCE_GROUP -ConfigurationPath $inputFile `
+  -ExpectedSha256 $hash -OutputPath .azure\dev\sign-in-reviewed.json
+# Future WRITE: new output path plus -Apply, only after administrator/user approval.
+```
+
+Before applying, the script inspects the existing site/auth and requires a
+nonempty slot-sticky secret setting without printing its value. Existing enabled
+auth is not replaced unless `allowReplaceExistingSignIn=true` is explicitly
+reviewed; the previous auth configuration is recorded in the ignored output
+directory. This is a **full authsettingsV2 replacement**, not an additive provider
+patch. Directory assignments, secret validity/expiry and guest redemption cannot
+be inferred from a parameter file and still require administrator verification.
+
+Verify anonymously (redirect, no application data), as an approved member, as an
+approved guest, as an unassigned tenant user, as an unapproved guest, and with a
+token issued for another tenant/audience. Only approved members/guests should
+reach the app. Platform callbacks under `/.auth` are necessary for sign-in and
+are not an anonymous business API. Check the API separately, not only the home
+page. Do not exclude an API or a health path from authentication to pass a test.
+
+This is an **authentication/admission gate**, not business role enforcement.
+The fixed demo investor still supplies the portfolio's identity, `/join` still
+creates no account, and no persistent participant record is created from claims.
+Future code must map trusted platform claims to application users/roles and
+authorize site/project/document operations. Do not trust spoofed identity headers
+on local/ungated endpoints. Approved-participant sign-in is not full self-service
+registration or a completed authenticated three-role MVP.
+
+Maintain a reviewed participant register. Removal requires enterprise-app
+unassignment, allowlist update and a tested session-revocation/expiry procedure;
+directory unassignment alone must not be assumed to invalidate an existing app
+cookie immediately. Do not set an empty allowlist to deny everyone. For urgent
+all-user closure, obtain approval to take the app offline or use a reviewed
+deny-all restriction while preserving authentication. Code rollback does not
+restore auth, directory assignments, secrets or sessions.
+
+## 7. Package and deploy code only
 
 The packaging script uses a source allowlist: root app manifests/lock/build
 config, `app`, `src` and optional `public`. It excludes local env files, raw
@@ -380,6 +673,11 @@ FTP/SCM policies, then uses `az webapp deploy --type zip --track-status false
 --timeout 600000`. It never changes resource definitions, roles or app settings. It follows
 deployment with at most 12 public-preview checks (10-second request timeout,
 10-second retry delay), rather than relying on unbounded startup tracking.
+Before sign-in activation use the default `-ExpectedAccessMode Preview` (HTTP
+200). After activation explicitly use `-ExpectedAccessMode ApprovedSignIn`:
+the bounded check expects the Microsoft/local Easy Auth redirect, not a public
+200, and does not follow it or log tokens. A redirect alone proves neither
+successful participant login nor application readiness.
 On timeout, inspect deployment logs before retrying: a remote operation can
 continue after the client exits. No automatic redeploy, tier change or rollback
 is attempted.
@@ -407,3 +705,9 @@ compatibility and backup/restore procedures before any future migration.
   [17 server source showing the IF NOT EXISTS privilege order](https://github.com/postgres/postgres/blob/REL_17_STABLE/src/backend/commands/schemacmds.c),
   [REVOKE semantics](https://www.postgresql.org/docs/17/sql-revoke.html),
   and [verified TLS with verify-full](https://www.postgresql.org/docs/17/libpq-ssl.html).
+- [Storage firewall limitations, including same-region traffic](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security-limitations),
+  [Storage Blob data roles](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/storage),
+  and [private container ARM schema](https://learn.microsoft.com/en-us/azure/templates/microsoft.storage/storageaccounts/blobservices/containers).
+- [Easy Auth workforce configuration, code flow and 500-character identity limit](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-provider-aad),
+  [authsettingsV2 schema](https://learn.microsoft.com/en-us/azure/templates/microsoft.web/sites/config-authsettingsv2),
+  and [enterprise-app assignment and licensing](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/assign-user-or-group-access-portal).

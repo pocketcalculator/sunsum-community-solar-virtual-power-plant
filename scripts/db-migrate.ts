@@ -7,7 +7,7 @@ import {
 import { readDatabaseConfig } from "../src/backend/infrastructure/database/config";
 
 const migrationsFolder = fileURLToPath(
-  new URL("../src/backend/infrastructure/database/migrations", import.meta.url),
+  new URL("../src/backend/db/migrations", import.meta.url),
 );
 
 try {

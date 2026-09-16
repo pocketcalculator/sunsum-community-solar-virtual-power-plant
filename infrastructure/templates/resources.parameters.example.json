@@ -6,6 +6,8 @@
     "location": { "value": "centralus" },
     "appServicePlanName": { "value": "<plan-name>" },
     "webAppName": { "value": "<globally-unique-app-name>" },
+    "webAppMode": { "value": "Existing" },
+    "storageAccountName": { "value": "<globally-unique-storage-name>" },
     "postgresServerName": { "value": "<globally-unique-postgres-name>" },
     "databaseName": { "value": "sunsum" },
     "runtimeRoleName": { "value": "sunsum_runtime" },

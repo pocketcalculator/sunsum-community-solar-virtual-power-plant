@@ -105,6 +105,7 @@ try {
             appServicePlanName = @{ value = 'sample-plan' }
             webAppName = @{ value = 'sample-web' }
             postgresServerName = @{ value = 'sample-postgres' }
+            storageAccountName = @{ value = 'samplestorage' }
             tenantId = @{ value = '22222222-2222-4222-8222-222222222222' }
             postgresAdminObjectId = @{ value = '33333333-3333-4333-8333-333333333333' }
             postgresAdminPrincipalName = @{ value = 'synthetic-administrator' }
@@ -119,6 +120,7 @@ try {
         ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
         ApprovalReference = 'review-123'
         DatabaseBudgetApproval = 'budget-123'
+        StorageBudgetApproval = 'storage-budget-123'
     }
     & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision | Out-Null
     $provision.ExpectedSha256 = '0' * 64

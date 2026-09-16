@@ -15,7 +15,7 @@ const main = async () => {
   if (args[2] !== "--apply") {
     console.log("Configuration validated; no network/authentication/SQL calls. With separately approved --apply:");
     console.log("1. Verify the Entra administrator; create or verify distinct nonadmin runtime/operator mappings in postgres.");
-    console.log("2. Create operator-owned sunsum/drizzle schemas; revoke PUBLIC defaults; grant CONNECT only.");
+    console.log("2. Create operator-owned drizzle metadata schema; preserve the canonical public schema, revoke PUBLIC defaults; grant CONNECT only.");
     console.log("No tables, runtime schema CREATE, database ownership or future-table grants are created.");
     return;
   }

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -9,6 +9,58 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 describe("the bounded Azure preparation contract", () => {
+  it("reuses the canonical schema and migrations with a separate explicit Azure operator command", () => {
+    expect(read("drizzle.config.ts")).toContain("./src/backend/db/schema.ts");
+    expect(read("scripts/db-migrate.ts")).toContain("../src/backend/db/migrations");
+    expect(read("src/backend/infrastructure/database/pool.ts")).toContain('from "../../db"');
+    expect(existsSync(join(root, "src/backend/infrastructure/database/schema.ts"))).toBe(false);
+    expect(read("package.json")).toContain('"db:migrate": "node scripts/db.mjs migrate"');
+    expect(read("package.json")).toContain('"db:migrate:azure"');
+  });
+
+  it("leaves existing web resources and authentication unchanged by default", () => {
+    const core = read("infrastructure/templates/resources.bicep");
+    expect(core).toContain("param webAppMode string = 'Existing'");
+    expect(core).toContain("if (webAppMode == 'Create')");
+    expect(core).not.toContain("web-sign-in.bicep");
+    expect(core).not.toContain("storage-role-grants.bicep");
+  });
+
+  it("provides private LRS containers and an explicit policy-approved public-network choice", () => {
+    const storage = read("infrastructure/templates/storage.bicep");
+    expect(storage).toContain("name: 'Standard_LRS'");
+    expect(storage).toContain("accessTier: 'Hot'");
+    expect(storage).toContain("allowSharedKeyAccess: false");
+    expect(storage).toContain("allowBlobPublicAccess: false");
+    expect(storage).toContain("bypass: 'None'");
+    expect(storage).toContain("param networkMode string = 'Closed'");
+    expect(storage).toContain("!empty(publicEndpointApproval)");
+    expect(storage.match(/publicAccess: 'None'/g)).toHaveLength(2);
+    expect(storage).toContain("ipRules: []");
+  });
+
+  it("requires approved identities and code-flow credentials in a separate sign-in template", () => {
+    const auth = read("infrastructure/templates/web-sign-in.bicep");
+    expect(auth).toContain("requireAuthentication: true");
+    expect(auth).toContain("excludedPaths: []");
+    expect(auth).toMatch(/@minLength\(1\)\s+@maxLength\(13\)\s+param approvedParticipantObjectIds string\[\]/u);
+    expect(auth).toContain("identities: approvedParticipantObjectIds");
+    expect(auth).toContain("clientSecretSettingName: authSettingName");
+    expect(auth).toContain("authentication.loginEndpoint");
+    expect(auth).not.toContain("allowAnonymous");
+    const roles = read("infrastructure/templates/storage-role-grants.bicep");
+    expect(roles).toContain("scope: containers[index]");
+    expect(roles).toContain("principalType: 'ServicePrincipal'");
+    expect(roles).not.toContain("scope: resourceGroup()");
+  });
+
+  it("runs real access configuration guards without Azure calls", () => {
+    const result = execFileSync("pwsh", [
+      "-NoProfile", "-NonInteractive", "-File",
+      join(root, "infrastructure/scripts/tests/mvp-access.test.ps1"),
+    ], { cwd: root, encoding: "utf8", timeout: 45_000 });
+    expect(result).toContain("MVP access safety checks passed");
+  }, 50_000);
   it("keeps the root application on code-based F1 with no paid web fallback", () => {
     const web = read("infrastructure/templates/web.bicep");
     expect(web).toContain("name: 'F1'");
@@ -17,7 +69,7 @@ describe("the bounded Azure preparation contract", () => {
     expect(web).toContain("alwaysOn: false");
     expect(web).toContain("linuxFxVersion: 'NODE|22-lts'");
     expect(web).toContain("npm run start -- --hostname 0.0.0.0");
-    expect(web).not.toMatch(/name: 'PORT'|WEBSITE_RUN_FROM_PACKAGE|container|appinsights/i);
+    expect(web).not.toMatch(/name: 'PORT'|WEBSITE_RUN_FROM_PACKAGE|DOCKER\||containerapp|appinsights/i);
     expect(web).toContain("npm ci --include=dev && npm run build");
     const core = read("infrastructure/templates/resources.bicep");
     expect(core).toContain("targetScope = 'resourceGroup'");

@@ -46,8 +46,8 @@ and implement a core interface such as `ProjectStore`. Construct and inject the
 adapter at the backend composition boundary. Do not import drivers into core,
 handlers, routes, or presentation; the existing architecture tests enforce
 these additional boundaries. Each connection-facing module also imports
-`server-only`. Only the schema-only module is loaded independently by Drizzle
-Kit.
+`server-only`. The canonical [schema](../../db/schema.ts) remains in `backend/db`
+and is shared by the pool, Drizzle Kit and both migration entry points.
 
 Environment configuration does **not** inject a ready-made Drizzle service into
 Next.js. The application owns the pool and client lifetime.
@@ -116,21 +116,27 @@ database is required for the browser-only preview.
 
 ```sh
 npm run db:generate
-npm run db:migrate -- --apply
+npm run db:migrate:azure -- --apply
 ```
 
-Generation is offline and reads the version-controlled
-[`schema.ts`](schema.ts). It is intentionally empty; the
-[migration journal](migrations/meta/_journal.json) contains no SQL migrations.
-The migration command explicitly reports that no work was applied in this case.
+Generation reads main's version-controlled [schema](../../db/schema.ts) and
+[migration journal](../../db/migrations/meta/_journal.json), which now contain
+the eleven-table schema and append-only guards. No parallel migration tree
+remains in this directory. Main's `npm run db:migrate`, `db:seed`, `db:reset`,
+`db:verify`, and `db:studio` remain local-only, using their existing `DATABASE_URL`
+contract; they must not be used for Azure. The Azure operator command uses the
+same committed SQL through the explicit `PG*` and Entra contract above.
 
 Review generated SQL, snapshots, locks, data compatibility, and least-privilege
 grants before using `--apply`. Azure migrations require the separately granted
 operator identity; the command refuses runtime managed identity. Never run
 migrations automatically at web startup or as part
-of routine app deployment. See the [migration notes](migrations/README.md).
+of routine app deployment. See the [canonical database guide](../../db/README.md)
+and [Azure permission window](../../../../infrastructure/docs/app-service-postgres.md#5-operator-connectivity-and-migrations).
 
-Before pending SQL is applied, a read-only preflight checks database `CREATE`.
+Before pending SQL is applied, a read-only preflight checks database `CREATE`
+and `USAGE, CREATE` on the canonical `public` schema. The pool pins `search_path`
+to `public` so unqualified migrations do not drift into another schema.
 Standard Drizzle requires that privilege even when its metadata schema exists.
 The baseline remains CONNECT-only: an administrator must approve any temporary
 operator-only grant, preserve pre-existing permissions, and verify cleanup on

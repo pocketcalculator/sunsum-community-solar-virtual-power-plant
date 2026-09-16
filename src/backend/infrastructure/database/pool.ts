@@ -11,7 +11,7 @@ import type {
 } from "./config";
 import { databasePassword } from "./credentials";
 import { databaseErrorCode } from "./errors";
-import * as schema from "./schema";
+import * as schema from "../../db";
 
 export const postgresPoolConfig = (
   config: DatabaseConfig,
@@ -27,6 +27,7 @@ export const postgresPoolConfig = (
       ? { rejectUnauthorized: true, minVersion: "TLSv1.2", servername: config.host }
       : false,
   application_name: "sunsum",
+  options: "-c search_path=public",
   max: 5,
   connectionTimeoutMillis: 5_000,
   idleTimeoutMillis: 30_000,

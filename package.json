@@ -17,8 +17,15 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "db:check": "node --conditions=react-server --import=tsx scripts/db-check.ts",
+    "db:migrate:azure": "node --conditions=react-server --import=tsx scripts/db-migrate.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "node --conditions=react-server --import=tsx scripts/db-migrate.ts"
+    "db:migrate": "node scripts/db.mjs migrate",
+    "db:studio": "node scripts/db.mjs studio",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down -v",
+    "db:seed": "node scripts/db.mjs seed",
+    "db:reset": "node scripts/db.mjs reset",
+    "db:verify": "node scripts/db.mjs verify"
   },
   "dependencies": {
     "@azure/identity": "4.13.3",

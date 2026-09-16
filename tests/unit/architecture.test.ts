@@ -113,6 +113,33 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/core/shared/probe.ts", "@/backend/infrastructure/database"],
     ["src/backend/handlers/investors/probe.ts", "@azure/identity"],
     ["src/backend/handlers/investors/probe.ts", "../../infrastructure/database"],
+    /**
+     * The dependency between rules and storage runs one way: `db` imports
+     * domain vocabulary from `core`, and `core` never imports `db`. That is
+     * what keeps `ProjectStore` an interface a domain owns rather than a shape
+     * the database dictates.
+     */
+    ["src/backend/core/probe.ts", "@/backend/db"],
+    ["src/backend/core/probe.ts", "../db"],
+    ["src/backend/core/projects/probe.ts", "@/backend/db"],
+    ["src/backend/core/projects/probe.ts", "../../db"],
+    ["src/backend/core/projects/probe.ts", "../../db/schema"],
+    ["src/backend/core/shared/probe.ts", "@/backend/db/schema"],
+    ["src/backend/handlers/probe.ts", "@/backend/db"],
+    ["src/backend/handlers/investors/probe.ts", "../../db"],
+    ["src/backend/handlers/investors/probe.ts", "../../db/schema"],
+    /**
+     * A driver is persistence too. Blocking `@/backend/db` alone stopped being
+     * enough once `pg` was a real dependency: core could import it directly and
+     * write SQL in a rule, which is the same violation by a shorter path.
+     */
+    ["src/backend/core/probe.ts", "pg"],
+    ["src/backend/core/projects/probe.ts", "pg"],
+    ["src/backend/core/probe.ts", "drizzle-orm"],
+    ["src/backend/core/probe.ts", "drizzle-orm/node-postgres"],
+    ["src/backend/core/shared/probe.ts", "pg"],
+    ["src/backend/handlers/probe.ts", "pg"],
+    ["src/backend/handlers/investors/probe.ts", "drizzle-orm"],
   ])(
     "rejects %s importing %s",
     async (file, dependency) => {
@@ -153,6 +180,17 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/infrastructure/database/probe.ts", "drizzle-orm/node-postgres"],
     ["src/backend/infrastructure/database/probe.ts", "@azure/identity"],
     ["src/backend/index.ts", "./infrastructure/database"],
+    /** Persistence imports domain vocabulary, which is the allowed direction. */
+    ["src/backend/db/probe.ts", "@/backend/core/identity"],
+    ["src/backend/db/probe.ts", "@/backend/core/projects"],
+    ["src/backend/db/probe.ts", "../core/projects"],
+    ["src/backend/db/probe.ts", "./enums"],
+    /** Persistence owns the driver, and is the only place allowed to. */
+    ["src/backend/db/probe.ts", "drizzle-orm/pg-core"],
+    ["src/backend/db/probe.ts", "pg"],
+    ["src/backend/db/probe.ts", "drizzle-orm/node-postgres"],
+    /** The single list behind `investor_type` and the sign-up form's funders. */
+    ["src/backend/db/probe.ts", "@/domain/userTypes"],
   ])(
     "permits %s importing %s",
     async (file, dependency) => {

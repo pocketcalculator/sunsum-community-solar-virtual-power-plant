@@ -22,7 +22,7 @@ export const bootstrapSchemas = async (client, config, quoteIdentifier) => inTra
   const operator = quoteIdentifier(config.operatorRole);
   const administrator = quoteIdentifier(config.administratorRole);
   const schemasToCreate = [];
-  for (const schema of ["sunsum", "drizzle"]) {
+  for (const schema of ["drizzle"]) {
     const { rows } = await client.query(
       "SELECT pg_catalog.pg_get_userbyid(nspowner) AS owner FROM pg_catalog.pg_namespace WHERE nspname = $1",
       [schema],
@@ -51,8 +51,8 @@ export const bootstrapSchemas = async (client, config, quoteIdentifier) => inTra
   await client.query("REVOKE ALL ON SCHEMA public FROM PUBLIC");
   await client.query(`REVOKE ALL ON SCHEMA public FROM ${runtime}`);
   await client.query(`SET LOCAL ROLE ${operator}`);
-  await client.query("REVOKE ALL ON SCHEMA sunsum, drizzle FROM PUBLIC");
-  await client.query(`REVOKE ALL ON SCHEMA sunsum, drizzle FROM ${runtime}`);
+  await client.query("REVOKE ALL ON SCHEMA drizzle FROM PUBLIC");
+  await client.query(`REVOKE ALL ON SCHEMA drizzle FROM ${runtime}`);
   await client.query("RESET ROLE");
   await client.query(`REVOKE CREATE, TEMPORARY ON DATABASE ${database} FROM ${runtime}, ${operator}`);
   await client.query(`GRANT CONNECT ON DATABASE ${database} TO ${runtime}, ${operator}`);

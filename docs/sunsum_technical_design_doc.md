@@ -88,8 +88,10 @@ Blob Storage, not in a separate document database.
 
 This is a technology decision, not a claim that persistence is implemented.
 The current backend still uses in-memory fixtures. Connection wiring and Drizzle
-tooling are present, but cloud provisioning, domain schema definitions, SQL
-migrations, seed data, and applied database identity grants remain to be added.
+tooling and the canonical local domain schema/migrations/seed from
+[`backend/db`](../src/backend/db/README.md) are present. Cloud provisioning,
+applied Azure database identity/table grants and a real application store adapter
+remain to be added.
 Keep generated SQL migrations under version
 control and review them before applying them to a shared environment. The App
 Service F1 smoke test does not include a database or make database hosting free;

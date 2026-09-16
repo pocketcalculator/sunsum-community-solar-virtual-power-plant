@@ -101,7 +101,7 @@ test("schema setup quotes identifiers and grants no broad runtime privileges", a
   await bootstrapSchemas(client, config, quote);
   assert.ok(client.queries.includes('GRANT "sunsum_migrator" TO "sample ""admin"""'));
   assert.ok(client.queries.includes('REVOKE "sunsum_migrator" FROM "sample ""admin"""'));
-  assert.ok(client.queries.includes('CREATE SCHEMA "sunsum" AUTHORIZATION "sunsum_migrator"'));
+  assert.ok(!client.queries.includes('CREATE SCHEMA "sunsum" AUTHORIZATION "sunsum_migrator"'));
   assert.ok(client.queries.includes('CREATE SCHEMA "drizzle" AUTHORIZATION "sunsum_migrator"'));
   assert.ok(client.queries.includes('GRANT CONNECT ON DATABASE "sunsum" TO "sunsum_runtime", "sunsum_migrator"'));
   assert.ok(!client.queries.some((sql) => /CREATE TABLE|DEFAULT PRIVILEGES|GRANT (ALL|CREATE)|TO "sunsum_runtime"$/u.test(sql)));
