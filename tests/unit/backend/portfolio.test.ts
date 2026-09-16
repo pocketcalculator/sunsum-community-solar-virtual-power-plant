@@ -7,7 +7,7 @@ import {
   type PortfolioResponse,
 } from "@/backend/core/investors";
 import type { InvestorProfile, Viewer } from "@/backend/core/identity";
-import type { ProjectRecord, ProjectStore } from "@/backend/core/projects";
+import type { ProjectRecord, ProjectStore, FundingStage } from "@/backend/core/projects";
 import {
   handleGetPortfolio,
   parsePortfolioQuery,
@@ -62,6 +62,14 @@ function storeOf(...projects: readonly ProjectRecord[]): ProjectStore {
 
 function query(overrides: Partial<PortfolioQuery> = {}): PortfolioQuery {
   return { ...DEFAULT_PORTFOLIO_QUERY, ...overrides };
+}
+
+function investorFunding(...stages: readonly FundingStage[]): Viewer {
+  return {
+    role: "investor",
+    userId: "u-inv-mandate",
+    investor: { ...onboardedInvestor, fundingStageFocus: stages, geographies: ["GA"] },
+  };
 }
 
 async function expectPortfolio(
@@ -228,6 +236,48 @@ describe("mandate matching", () => {
     const portfolio = await expectPortfolio(focused, query(), store);
 
     expect(portfolio.items.map((item) => item.project_id)).toEqual(["match"]);
+  });
+
+  /**
+   * The mapping, not an equality test. `permanent` is a funding stage with no
+   * project stage of the same name, so an endowment funding built assets was
+   * unrepresentable while `fundingStageFocus` was typed `ProjectStage[]`.
+   * These fail if the matcher goes back to comparing the two enumerations.
+   */
+  it.each(["commissioning", "operations"] as const)(
+    "matches a permanent mandate against a project in %s",
+    async (stage) => {
+      const endowment = investorFunding("permanent");
+      const store = storeOf(project({ id: "built", stage, region: "GA" }));
+
+      const portfolio = await expectPortfolio(endowment, query(), store);
+
+      expect(portfolio.items.map((item) => item.project_id)).toEqual(["built"]);
+    },
+  );
+
+  it("does not match a construction mandate against a built asset", async () => {
+    const store = storeOf(project({ stage: "operations", region: "GA" }));
+
+    const portfolio = await expectPortfolio(
+      investorFunding("construction"),
+      query(),
+      store,
+    );
+
+    expect(portfolio.items).toEqual([]);
+  });
+
+  it("does not match a permanent mandate against an unbuilt project", async () => {
+    const store = storeOf(project({ stage: "pre_development", region: "GA" }));
+
+    const portfolio = await expectPortfolio(
+      investorFunding("permanent"),
+      query(),
+      store,
+    );
+
+    expect(portfolio.items).toEqual([]);
   });
 
   it("treats an unanswered onboarding question as no preference", async () => {

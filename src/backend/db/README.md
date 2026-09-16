@@ -2,11 +2,8 @@
 
 The database schema for the eleven tables in
 [section 5.2](../../../docs/sunsum_technical_design_doc.md) of the technical
-design, and the tooling to create, seed and verify it on a laptop.
-
-**Nothing reads these tables yet.** The running API is still served by the
-in-memory fixtures in `core/projects/mock-store.ts`. Wiring a store to this
-schema is a separate change; this one is the schema and the means to trust it.
+design, a store implementation that reads them, and the tooling to run the whole
+thing on a laptop.
 
 Read [ADR 0001](../../../infrastructure/docs/adr-0001-database-and-persistence.md)
 first. The choices here that look arbitrary are not, and the reasoning is
@@ -20,11 +17,14 @@ cp .env.example .env.local
 npm run db:up        # PostgreSQL 16 in Docker, on port 55432
 npm run db:migrate   # create the schema
 npm run db:seed      # load the demo data
-npm run db:verify    # prove the constraints reject what they should
+
+SUNSUM_STORE=db npm run dev
+curl http://localhost:3000/api/portfolio
 ```
 
-The whole cycle from nothing takes about ten seconds, and `db:verify` exits
-non-zero if any guarantee has been lost.
+The response is byte-for-byte identical to the one the in-memory fixtures
+produce. That is the point of the seam, and it is checked rather than asserted —
+see [store parity](#the-two-stores-must-be-indistinguishable) below.
 
 | Command               | What it does                                    |
 | --------------------- | ----------------------------------------------- |
@@ -36,6 +36,7 @@ non-zero if any guarantee has been lost.
 | `npm run db:reset`    | Empty every table                               |
 | `npm run db:verify`   | Run the adversarial constraint probes           |
 | `npm run db:studio`   | Browse the data in a browser                    |
+| `npm run test:db`     | Probes plus the store-parity integration tests  |
 
 `scripts/db.mjs` runs the SQL through the `pg` driver the application already
 depends on, so `psql` does not need to be installed. It loads `.env.local`,
@@ -61,6 +62,15 @@ data.
 
 PostgreSQL 15 or later is required.
 
+## Which store is running
+
+`SUNSUM_STORE` decides: `db` reads PostgreSQL, anything else uses
+`core/projects/mock-store.ts`. The default is the mock, so `npm run dev`,
+`npm test` and CI all work with no database and no `DATABASE_URL`.
+
+The choice is made in exactly one place — `src/backend/index.ts`, the
+composition root. It is the only module that can see both sides.
+
 ## Why this sits beside `core` and `handlers`
 
 The dependency runs one way: `db` imports domain vocabulary from `core`, and
@@ -72,12 +82,18 @@ can express — the table becomes the model, and every rule ends up phrased in
 terms of columns. It is enforced in the root `eslint.config.mjs` and asserted in
 `tests/unit/architecture.test.ts`, alongside the existing service boundaries.
 
+`PostgresProjectStore` lives here rather than in `core` for the same reason: it
+implements an interface `core` owns, imports the tables from `./schema`, and is
+handed to core as an argument. Core stays callable with a fixture.
+
 ## Files
 
 | File                     | What it is                                                             |
 | ------------------------ | ---------------------------------------------------------------------- |
 | `schema.ts`              | The eleven tables, their constraints and their indexes                  |
 | `enums.ts`               | The section 5.3 enumerations that no service directory owns yet         |
+| `client.ts`              | The connection pool, created lazily and cached across dev reloads       |
+| `project-store.ts`       | `ProjectStore` over PostgreSQL — one statement, no N+1                  |
 | `migrations/`            | Generated SQL, plus one hand-written migration. The artifact that runs  |
 | `seed.sql`               | Demo data, with the charter's criteria asserted at the end              |
 | `reset.sql`              | Empties every table so the seed can rebuild from nothing                |
@@ -105,9 +121,9 @@ raised against.
 
 Review found `fundingStageFocus` typed as `ProjectStage[]`, which makes a
 `permanent` mandate unrepresentable. Both lists now live in `core/projects`,
-along with `FUNDING_STAGE_BY_PROJECT_STAGE`, which is the mapping any
-mandate comparison must go through rather than testing equality. Changing the
-matcher to use it is part of wiring the store up, not of defining the schema.
+`matchesMandate()` compares through `FUNDING_STAGE_BY_PROJECT_STAGE`, and the
+demo investor's mandate includes `permanent` so the case is exercised rather
+than merely permitted.
 
 An earlier version of this file declared the mapping _here_, which could not
 work: `core` is forbidden from importing `db`, so nothing that needed the
@@ -168,6 +184,18 @@ and none of it survives — so `db:verify` is safe to run repeatedly against you
 seeded development database rather than only against a scratch one. A verifier
 that dirties the database it verifies can only be run once.
 
+## The two stores must be indistinguishable
+
+`tests/integration/store-parity.test.ts` compares `PostgresProjectStore` with
+`mockProjectStore` record by record, and compares the serialised
+`GET /portfolio` payload built from each. If they differ, then switching stores
+changed behaviour, and every test written against the mock has stopped being
+evidence about the real system.
+
+It needs a live database, so it is not part of `npm test` — which must keep
+passing on a machine with no PostgreSQL. Run it with `npm run test:db`, which
+reads `DATABASE_URL` from `.env.local` the way `next dev` does.
+
 ### Review the generated SQL
 
 `migrations/*.sql` is the real artifact — it is what runs against the database,
@@ -184,10 +212,12 @@ regenerating it would break them again.
 
 Verified against PostgreSQL 16 in Docker: the migrations apply to an empty
 database; all 42 constraint probes reject what they should, and the probe file
-fails loudly when a constraint is removed or a trigger is disabled; the seed
-produces identical row counts on a second run; and `reset.sql` empties the
-append-only tables.
+fails loudly when a constraint is removed; the seed produces identical row
+counts on a second run; `reset.sql` empties the append-only tables; and
+`GET /portfolio` returns byte-for-byte identical bodies from the database and
+from the fixtures.
 
-Not verified: nothing reads these tables yet, nothing has run against a hosted
-database, and there is no migration-on-deploy path. CI has no database, so the
-probes do not run there — that is a real gap.
+Not verified: nothing has run against a hosted database, and there is no
+migration-on-deploy path. CI has no database, so neither the probes nor the
+parity tests run there — that is a real gap, and the parity suite reports the
+skip rather than a silent pass.
