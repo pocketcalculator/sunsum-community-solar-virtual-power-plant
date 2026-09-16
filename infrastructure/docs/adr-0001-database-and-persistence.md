@@ -205,10 +205,46 @@ What would be expensive to reverse is spreading SQL through handlers or core
 rules. The import boundary in `eslint.config.mjs` already prevents the shape of
 that mistake, and store interfaces keep the rest of it out.
 
+## Hosting
+
+An Azure subscription is available, which settles open question 1. It does not
+change the engine recommendation, because Azure Database for PostgreSQL
+Flexible Server is a first-party Azure service exactly as Azure SQL Database is.
+Neither resource provider is registered in the subscription today; both are a
+free, self-service registration away. A subscription unblocks hosting, not
+engine choice.
+
+It does surface one honest argument for Azure SQL that was invisible while
+hosting was hypothetical:
+
+| | Azure SQL Database | PostgreSQL Flexible Server |
+| --- | --- | --- |
+| Free tier | Permanent, any subscription. 10 databases, 100,000 vCore-seconds and 32 GB each per month | B1ms free for 12 months, **new accounts only** |
+| On an existing subscription | Still free | Roughly 13–15 USD per month for B1ms |
+| Idle behaviour | Serverless, auto-pauses by default | Always on |
+
+So on the subscription this team already has, Azure SQL is free indefinitely and
+PostgreSQL is not. That is a real cost difference and it is recorded here rather
+than argued away.
+
+The recommendation is unchanged for two reasons. The first is proportion: the
+difference is roughly the price of two coffees a month against a JSON ergonomics
+cost paid on every one of the roughly thirty-four endpoints still to be written.
+The second is more specific to this project — **the free Azure SQL offer
+auto-pauses when idle**, and a database that has been idle overnight is exactly
+the state it will be in when a live demo starts. A cold start in front of judges
+is a worse outcome than a small monthly charge.
+
+If the team would rather not spend anything, Azure SQL is a defensible choice and
+the schema ports with dialect edits. That trade should be made deliberately,
+with the demo cold-start risk understood, rather than by default.
+
 ## Open questions
 
-1. Does the team have an Azure subscription available, and who owns it? WS3 owns
-   hosting; this record does not assume an answer.
+1. ~~Does the team have an Azure subscription available, and who owns it?~~
+   **Answered: yes.** See [Hosting](#hosting) below. Which subscription the
+   hackathon should use is still open — the one the CLI defaults to is a
+   general corporate subscription, not a project one.
 2. Confirm `funding_needs.stage` uses the funding-stage enumeration. §5.3 does
    not define its values.
 3. Does any success criterion actually require Fabric mirroring during the
