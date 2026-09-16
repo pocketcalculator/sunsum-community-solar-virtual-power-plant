@@ -238,5 +238,3 @@ re-exports, so there is one declaration rather than two that merge silently.
 funding-need invariants against those shared constants, so a future write that
 the CHECK constraints would reject fails in unit tests instead of at insert
 time.
-
-

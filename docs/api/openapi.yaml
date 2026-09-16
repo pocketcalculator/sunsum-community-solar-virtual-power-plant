@@ -597,9 +597,12 @@ components:
               type: string
               description: Coarse non-sensitive locality, or `Location withheld`.
             site_type: { $ref: "#/components/schemas/NullableSiteType" }
-            ownership_status: { $ref: "#/components/schemas/NullableOwnershipStatus" }
-            approximate_area_sqm: { type: number, format: double, nullable: true, minimum: 0 }
-            electricity_usage_kwh_annual: { type: number, format: double, nullable: true, minimum: 0 }
+            ownership_status:
+              { $ref: "#/components/schemas/NullableOwnershipStatus" }
+            approximate_area_sqm:
+              { type: number, format: double, nullable: true, minimum: 0 }
+            electricity_usage_kwh_annual:
+              { type: number, format: double, nullable: true, minimum: 0 }
             has_existing_solar: { type: boolean, nullable: true }
         assessment:
           allOf:
@@ -924,7 +927,8 @@ components:
             project_stage: { $ref: "#/components/schemas/ProjectStage" }
     FundingNeed:
       type: object
-      required: [id, project_id, need_type, stage, description, status, created_at]
+      required:
+        [id, project_id, need_type, stage, description, status, created_at]
       properties:
         id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -990,7 +994,17 @@ components:
           type: string
     InvestorProfile:
       type: object
-      required: [id, user_id, organization_name, investor_type, capital_type, funding_stage_focus, geographies, onboarding_completed_at]
+      required:
+        [
+          id,
+          user_id,
+          organization_name,
+          investor_type,
+          capital_type,
+          funding_stage_focus,
+          geographies,
+          onboarding_completed_at,
+        ]
       properties:
         id: { type: string, format: uuid }
         user_id: { type: string, format: uuid }
@@ -1018,13 +1032,26 @@ components:
         visible_portfolio_scope:
           type: array
           items: { type: string }
-        onboarding_completed_at: { type: string, format: date-time, nullable: true }
+        onboarding_completed_at:
+          { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     InvestorProfileRequest:
       type: object
       additionalProperties: false
-      required: [organization_name, investor_type, capital_type, funding_stage_focus, ticket_size_min, ticket_size_max, geographies, investment_objectives, impact_priorities, decision_criteria]
+      required:
+        [
+          organization_name,
+          investor_type,
+          capital_type,
+          funding_stage_focus,
+          ticket_size_min,
+          ticket_size_max,
+          geographies,
+          investment_objectives,
+          impact_priorities,
+          decision_criteria,
+        ]
       properties:
         organization_name: { type: string }
         investor_type: { $ref: "#/components/schemas/InvestorType" }
@@ -1048,10 +1075,28 @@ components:
           items: { type: string }
     InvestorType:
       type: string
-      enum: [philanthropy, impact_investor, nmtc, cdfi_cde, energy_equity_fund, corporate, special_community_endowment]
+      enum:
+        [
+          philanthropy,
+          impact_investor,
+          nmtc,
+          cdfi_cde,
+          energy_equity_fund,
+          corporate,
+          special_community_endowment,
+        ]
     CapitalType:
       type: string
-      enum: [grant, recoverable_grant, concessionary_debt, senior_debt, tax_equity, sponsor_equity, corporate_offtake]
+      enum:
+        [
+          grant,
+          recoverable_grant,
+          concessionary_debt,
+          senior_debt,
+          tax_equity,
+          sponsor_equity,
+          corporate_offtake,
+        ]
     JourneyStageId:
       type: string
       description: UI delivery ribbon ids from `src/domain/journey.ts`.
@@ -1562,15 +1607,18 @@ components:
       properties:
         address_raw: { type: string, nullable: true }
         site_type: { $ref: "#/components/schemas/NullableSiteType" }
-        ownership_status: { $ref: "#/components/schemas/NullableOwnershipStatus" }
+        ownership_status:
+          { $ref: "#/components/schemas/NullableOwnershipStatus" }
         approximate_area_sqm: { type: number, nullable: true, minimum: 0 }
-        electricity_usage_kwh_annual: { type: number, nullable: true, minimum: 0 }
+        electricity_usage_kwh_annual:
+          { type: number, nullable: true, minimum: 0 }
         electricity_bill_doc_id: { type: string, format: uuid, nullable: true }
         has_existing_solar: { type: boolean, nullable: true }
         consent_given: { type: boolean }
     SubmissionDetail:
       type: object
-      required: [site, assessment, assessment_history, owner, documents, activity]
+      required:
+        [site, assessment, assessment_history, owner, documents, activity]
       properties:
         site: { $ref: "#/components/schemas/Site" }
         assessment: { $ref: "#/components/schemas/Assessment", nullable: true }
