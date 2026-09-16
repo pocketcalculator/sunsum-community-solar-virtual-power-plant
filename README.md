@@ -89,9 +89,35 @@ Available routes:
 | ------- | ---------------------------------------------------------------- |
 | `/`     | Value proposition, the three ways to take part, journey, and FAQ |
 | `/join` | The guided create-profile workflow                               |
+| `/dashboard/site-owner` | Interactive site-owner dashboard design prototype |
 
 `/join` accepts an optional `?start=` parameter so the landing page can open the
 flow with a guided answer already selected. Unrecognised values are ignored.
+
+`/dashboard/site-owner` implements the supplied location-selection, ROI
+comparison, and allocation-card mockup using the existing Sunsum design tokens.
+Its locations and financial figures are illustrative design data only. The
+simulation control aggregates explicit mock return values for the selected
+predefined locations; it is not a financial forecast or an accepted screening
+model. A user can filter and select the supplied map locations or enter an
+address as a local draft. Custom addresses remain marked as pending validation,
+are excluded from the mock calculation, and receive no fabricated map
+coordinate because no geocoder is connected.
+
+The selector and comparison strip are generated from the same location
+collection. The prototype includes ten predefined sites; the selection list
+scrolls vertically and the comparison cards scroll horizontally as the
+collection grows. Newly entered draft addresses immediately receive a pending
+comparison card, keeping both views synchronized.
+
+The comparison strip is also the per-location breakdown of the latest ROI
+simulation. Cards included in that run are highlighted, their individual and
+community return values add exactly to the headline totals, and changed
+selections show a prompt to rerun before the comparison status changes.
+
+The shared header offers light, dark, and system theme modes. The selected mode
+is stored in the browser and all application surfaces consume the same semantic
+design tokens.
 
 The public header also includes an **AI assistant** preview. It opens a
 right-side guidance drawer with the same rooftop, land and funding entry paths,
