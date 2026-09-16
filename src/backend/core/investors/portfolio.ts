@@ -22,7 +22,6 @@
 
 import type { InvestorProfile, Viewer } from "../identity";
 import {
-  mockProjectStore,
   type ProjectRecord,
   type ProjectStage,
   type ProjectStore,
@@ -30,6 +29,7 @@ import {
   type ViabilityStatus,
 } from "../projects";
 import { failure, ok, type Result } from "../shared";
+import { demoBackendStore } from "../store";
 
 /**
  * One project at disclosure tier 0.
@@ -88,7 +88,7 @@ export const DEFAULT_PORTFOLIO_QUERY: PortfolioQuery = {
 export async function getPortfolio(
   viewer: Viewer,
   query: PortfolioQuery,
-  store: ProjectStore = mockProjectStore,
+  store: ProjectStore = demoBackendStore,
 ): Promise<Result<PortfolioResponse>> {
   /**
    * Authorization first, before any data is read. The union narrows on `role`,
@@ -152,6 +152,7 @@ function matchesMandate(
 
   const fundsThisRegion =
     investor.geographies.length === 0 ||
+    project.region === "" ||
     investor.geographies.includes(project.region);
 
   /** "Mandate match against open funding needs" — nothing open, nothing to fund. */

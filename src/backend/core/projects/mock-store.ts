@@ -17,8 +17,9 @@
 
 import type { ProjectStore } from "./store";
 import type { ProjectRecord } from "./types";
+import { DEMO_SITE_OWNER_USER_ID } from "../../demo-principals";
 
-const MOCK_PROJECTS: readonly ProjectRecord[] = [
+export const MOCK_PROJECTS: readonly ProjectRecord[] = [
   {
     id: "3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7101",
     siteId: "8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01",
@@ -28,7 +29,7 @@ const MOCK_PROJECTS: readonly ProjectRecord[] = [
     siteAddressRaw: "148 Auburn Ave NE, Atlanta, GA 30303",
     siteLatitude: 33.7554,
     siteLongitude: -84.3766,
-    ownerUserId: "u-1001",
+    ownerUserId: DEMO_SITE_OWNER_USER_ID,
     locality: "Sweet Auburn, Atlanta",
     region: "GA",
     siteType: "rooftop",
@@ -50,7 +51,7 @@ const MOCK_PROJECTS: readonly ProjectRecord[] = [
     siteAddressRaw: "1075 Ralph David Abernathy Blvd SW, Atlanta, GA 30310",
     siteLatitude: 33.7351,
     siteLongitude: -84.4229,
-    ownerUserId: "u-1002",
+    ownerUserId: DEMO_SITE_OWNER_USER_ID,
     locality: "West End, Atlanta",
     region: "GA",
     siteType: "land",
@@ -72,7 +73,7 @@ const MOCK_PROJECTS: readonly ProjectRecord[] = [
     siteAddressRaw: "1000 McDaniel St SW, Atlanta, GA 30310",
     siteLatitude: 33.7318,
     siteLongitude: -84.4004,
-    ownerUserId: "u-1003",
+    ownerUserId: DEMO_SITE_OWNER_USER_ID,
     locality: "Mechanicsville, Atlanta",
     region: "GA",
     siteType: "rooftop",
@@ -95,7 +96,7 @@ const MOCK_PROJECTS: readonly ProjectRecord[] = [
     siteAddressRaw: "1701 Donald Lee Hollowell Pkwy NW, Atlanta, GA 30318",
     siteLatitude: 33.7712,
     siteLongitude: -84.4643,
-    ownerUserId: "u-1004",
+    ownerUserId: DEMO_SITE_OWNER_USER_ID,
     locality: "Grove Park, Atlanta",
     region: "GA",
     siteType: "rooftop",
@@ -117,7 +118,7 @@ const MOCK_PROJECTS: readonly ProjectRecord[] = [
     siteAddressRaw: "200 Riverfront Pkwy, Chattanooga, TN 37402",
     siteLatitude: 35.0558,
     siteLongitude: -85.3113,
-    ownerUserId: "u-1005",
+    ownerUserId: DEMO_SITE_OWNER_USER_ID,
     locality: "Riverfront, Chattanooga",
     region: "TN",
     siteType: "land",

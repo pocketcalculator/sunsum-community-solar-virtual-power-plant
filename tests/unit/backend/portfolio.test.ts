@@ -14,7 +14,7 @@ import {
 } from "@/backend/handlers/investors";
 
 const onboardedInvestor: InvestorProfile = {
-  id: "inv-1",
+  id: "150bbd86-f79c-48db-8579-e7c79db8c468",
   organizationName: "Test Endowment",
   fundingStageFocus: [],
   geographies: [],
@@ -23,12 +23,18 @@ const onboardedInvestor: InvestorProfile = {
 
 const investor: Viewer = {
   role: "investor",
-  userId: "u-inv-1",
+  userId: "9727021a-7b77-418d-a802-faa4bc230032",
   investor: onboardedInvestor,
 };
 
-const operator: Viewer = { role: "operator", userId: "u-op-1" };
-const siteOwner: Viewer = { role: "site_owner", userId: "u-so-1" };
+const operator: Viewer = {
+  role: "operator",
+  userId: "188d99df-33ce-4cd5-9744-a17968679b50",
+};
+const siteOwner: Viewer = {
+  role: "site_owner",
+  userId: "cd865e91-942b-48d3-a6f1-7b2053e4c890",
+};
 
 function project(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
   return {
@@ -40,7 +46,7 @@ function project(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
     siteAddressRaw: "148 Auburn Ave NE, Atlanta, GA 30303",
     siteLatitude: 33.7554,
     siteLongitude: -84.3766,
-    ownerUserId: "u-owner-1",
+    ownerUserId: "cd865e91-942b-48d3-a6f1-7b2053e4c890",
     locality: "Sweet Auburn, Atlanta",
     region: "GA",
     siteType: "rooftop",
@@ -91,7 +97,7 @@ describe("portfolio authorization", () => {
   it("refuses an investor who has not finished onboarding", async () => {
     const pending: Viewer = {
       role: "investor",
-      userId: "u-inv-2",
+      userId: "25a5169a-d6e1-476f-8665-fab80bf3c021",
       investor: { ...onboardedInvestor, onboardingCompletedAt: null },
     };
 
@@ -162,7 +168,7 @@ describe("tier 0 disclosure", () => {
     const serialized = JSON.stringify(portfolio);
 
     expect(serialized).not.toContain("148 Auburn Ave NE");
-    expect(serialized).not.toContain("u-owner-1");
+    expect(serialized).not.toContain("cd865e91-942b-48d3-a6f1-7b2053e4c890");
     expect(serialized).not.toContain("33.7554");
     expect(serialized).not.toContain("-84.3766");
   });
@@ -211,7 +217,7 @@ describe("mandate matching", () => {
   it("respects stage focus and region", async () => {
     const focused: Viewer = {
       role: "investor",
-      userId: "u-inv-3",
+      userId: "0ca3d9f1-a950-449e-b53a-dc5cbf21f67f",
       investor: {
         ...onboardedInvestor,
         fundingStageFocus: ["development"],
@@ -328,6 +334,7 @@ describe("query validation", () => {
     ["stage=not_a_stage", "stage"],
     ["viability=maybe", "viability"],
     ["mandate_match=yes", "mandate_match"],
+    ["unexpected=value", "unexpected"],
   ])("rejects %s rather than ignoring it", (queryString, parameter) => {
     const result = parsePortfolioQuery(new URLSearchParams(queryString));
 

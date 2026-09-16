@@ -22,6 +22,7 @@ import {
 } from "../../core/investors";
 import { isProjectStage, isViabilityStatus } from "../../core/projects";
 import { failure, ok, type Result } from "../../core/shared";
+import { demoBackendStore, type BackendStore } from "../../core/store";
 import { resolveDemoViewer } from "../identity";
 import { failureResponse, jsonResponse } from "../shared";
 
@@ -32,6 +33,7 @@ import { failureResponse, jsonResponse } from "../shared";
 export async function handleGetPortfolio(
   request: Request,
   viewer: Viewer,
+  store: BackendStore = demoBackendStore,
 ): Promise<Response> {
   const query = parsePortfolioQuery(new URL(request.url).searchParams);
 
@@ -39,7 +41,7 @@ export async function handleGetPortfolio(
     return failureResponse(query.failure);
   }
 
-  const result = await getPortfolio(viewer, query.value);
+  const result = await getPortfolio(viewer, query.value, store);
 
   return result.ok
     ? jsonResponse(result.value)
@@ -62,6 +64,19 @@ export function getPortfolioRoute(request: Request): Promise<Response> {
 export function parsePortfolioQuery(
   params: URLSearchParams,
 ): Result<PortfolioQuery> {
+  const allowed = new Set([
+    "mandate_match",
+    "stage",
+    "viability",
+    "project_type",
+  ]);
+  const unknown = [...params.keys()].find((parameter) => !allowed.has(parameter));
+  if (unknown !== undefined) {
+    return failure("invalid_query", "Unknown query parameter.", {
+      parameter: unknown,
+    });
+  }
+
   const mandateMatch = parseBoolean(
     params.get("mandate_match"),
     DEFAULT_PORTFOLIO_QUERY.mandateMatch,

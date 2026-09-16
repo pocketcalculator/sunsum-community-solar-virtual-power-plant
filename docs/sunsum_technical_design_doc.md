@@ -167,7 +167,7 @@ Eleven tables: six from the charter's minimum data model, five added to support 
 
 **`activity`** - `id` · `site_id` (nullable) · `project_id` (nullable) · `actor_user_id` · `action` · `note` · `from_value` · `to_value` · `created_at`
 
-**`documents`** - `id` · `site_id` / `project_id` · `blob_path` · `original_filename` · `content_type` · `size_bytes` · `doc_type` · `uploaded_by_user_id` · `created_at`
+**`documents`** - `id` · `site_id` / `project_id` · `blob_path` · `original_filename` · `content_type` · `size_bytes` · `doc_type` · `disclosure_class` (`owner_private` or `investor_tier_1`) · `uploaded_by_user_id` · `created_at`
 
 **`acknowledgements`** - `id` · `project_id` · `user_id` · `agreement_key` · `typed_name` · `acknowledged_at` · `ip_address`
 
@@ -176,7 +176,7 @@ Eleven tables: six from the charter's minimum data model, five added to support 
 
 **`funding_needs`** - `id` · `project_id` · `need_type` · `stage` · `description` · `amount_requested` · `amount_committed` · `status` · `deliverable_doc_id` · `completed_at` · `created_at`
 
-**`investor_engagements`** - one live engagement per investor per opportunity, unique on (`investor_id`, `project_id`, `funding_need_id`)
+**`investor_engagements`** - one live engagement per investor per opportunity. Persistence must enforce a filtered/partial unique constraint on (`investor_id`, `project_id`, `funding_need_id`) for live states, with null `funding_need_id` values treated as equal; application checks alone are not concurrency-safe.
 `id` · `investor_id` · `project_id` · `funding_need_id` (null when evaluating the whole project) · `state` · `state_changed_at` · `committed_amount` · `commitment_instrument` · `is_binding` (default false) · `commitment_terms` (json) · `decline_reason` · `created_at`
 
 **`diligence_requests`** - `id` · `engagement_id` · `project_id` · `raised_by_user_id` · `assigned_to_role` · `item_type` · `title` · `description` · `status` · `due_date` · `resolved_document_id` · `resolved_at` · `created_at`
@@ -366,6 +366,7 @@ stateDiagram-v2
 
 - One composed endpoint returning: site, submission status, viability result, outstanding information, documents and acknowledgements, project stage, next expected action, contact.
 - Outstanding information is the owner's single inbox - operator `request_info` items and, later, forwarded diligence items appear in one list, never a separate investor surface.
+- **Scoped implementation limit.** `request_info` currently ends at `info_requested`; owner resubmission is not implemented, so this release does not provide a complete request-information loop.
 
 **Done when** the owner sees the same stage the operator and investor see (S7).
 
@@ -414,7 +415,9 @@ stateDiagram-v2
 
 - **Onboarding.** Profile form: organisation, investor type, capital type, funding stage focus, ticket size, geographies, objectives, impact priorities, decision criteria. Picklists rather than free text, so answers can drive filters. Sets `deal_room_profile`. Self-declared, not verified.
 - **Portfolio (tier 0).** Project count and total capacity, with filters for stage, viability and project type. Defaults to a mandate match against open funding needs, which the investor can widen.
+- **Demo live-project defaults.** Until structured locality and region capture lands, an accepted submission uses `Community solar project` and `Location withheld` when the operator has not supplied a non-sensitive project label; the raw address is never reused. Acceptance creates one amountless, open `feasibility_study` funding need, and an unknown project region does not exclude the project from a geography-focused mandate. These are explicit demo-storyline defaults, not inferred location or financial data.
 - **Deal room (tier 1).** Panel order comes from `deal_room_profile`, held in a config file so it can be retuned without a redeploy. Two profiles ship; every other investor type gets the default.
+- **Tier-1 privacy.** The deal room still withholds exact address, coordinates, owner identity, raw assessment inputs, override notes and raw blob paths. It uses coarse locality when available, otherwise `Location withheld`. Its investor-facing timeline is limited to shared project stage/status events and the current investor's own interest event; other investors' engagement activity and internal free-text notes are excluded.
 
 | Profile | Panel order |
 |---|---|
@@ -423,6 +426,8 @@ stateDiagram-v2
 | Default | Viability and site · Impact · Documents |
 
 **Rule.** The profile decides what is relevant; the tier decides what is permitted. A panel listed in a profile stays hidden until the tier unlocks it.
+
+Every document is classified as `owner_private` or `investor_tier_1`. Tier 1 returns only `investor_tier_1` metadata; private owner uploads such as electricity bills remain owner/operator-only, and raw blob paths are never returned.
 
 **Done when** an investor sees only tier 0 before expressing interest, and the full deal room after (S8).
 
@@ -451,7 +456,7 @@ stateDiagram-v2
 - Investors never contact site owners directly; requests route through the operator.
 - Declining or withdrawing revokes tiers 1 and 2 immediately - access does not ratchet.
 
-**Done when** expressing interest opens the deal room and lands in the shared timeline visible to all three roles.
+**Done when** expressing interest opens the deal room and lands in the operator timeline and that investor's filtered deal-room timeline.
 
 ---
 

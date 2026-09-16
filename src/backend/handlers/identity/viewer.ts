@@ -18,19 +18,48 @@
  */
 
 import type { Viewer } from "../../core/identity";
+import {
+  DEMO_INVESTOR_ID,
+  DEMO_INVESTOR_USER_ID,
+  DEMO_OPERATOR_USER_ID,
+  DEMO_SITE_OWNER_USER_ID,
+} from "../../demo-principals";
 
-const DEMO_INVESTOR_VIEWER: Viewer = {
+const DEMO_INVESTOR_VIEWER = {
   role: "investor",
-  userId: "demo-investor",
+  userId: DEMO_INVESTOR_USER_ID,
   investor: {
-    id: "demo-investor",
+    id: DEMO_INVESTOR_ID,
     organizationName: "Demo Community Endowment",
     fundingStageFocus: ["pre_development", "development", "construction"],
     geographies: ["GA"],
     onboardingCompletedAt: "2026-09-01T00:00:00.000Z",
   },
-};
+} satisfies Viewer;
 
-export function resolveDemoViewer(): Viewer {
+const DEMO_SITE_OWNER_VIEWER = {
+  role: "site_owner",
+  userId: DEMO_SITE_OWNER_USER_ID,
+} satisfies Viewer;
+
+const DEMO_OPERATOR_VIEWER = {
+  role: "operator",
+  userId: DEMO_OPERATOR_USER_ID,
+} satisfies Viewer;
+
+export function resolveDemoViewer() {
+  return DEMO_INVESTOR_VIEWER;
+}
+
+/** Demo-only fixed identities. They never inspect caller-controlled input. */
+export function resolveDemoSiteOwner() {
+  return DEMO_SITE_OWNER_VIEWER;
+}
+
+export function resolveDemoOperator() {
+  return DEMO_OPERATOR_VIEWER;
+}
+
+export function resolveDemoInvestor() {
   return DEMO_INVESTOR_VIEWER;
 }

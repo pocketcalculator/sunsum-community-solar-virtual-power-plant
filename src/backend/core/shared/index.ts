@@ -12,6 +12,7 @@
 
 export {
   failure,
+  isFailedResult,
   ok,
   type Failure,
   type FailureCode,

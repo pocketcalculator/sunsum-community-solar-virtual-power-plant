@@ -10,10 +10,11 @@
  * `PATCH /projects/{id}`, `PATCH /projects/{id}/visibility`.
  */
 
-export { mockProjectStore } from "./mock-store";
+export { MOCK_PROJECTS, mockProjectStore } from "./mock-store";
 export { type ProjectStore } from "./store";
 export {
   isProjectStage,
+  isSiteType,
   isViabilityStatus,
   PROJECT_STAGES,
   SITE_TYPES,
@@ -23,3 +24,13 @@ export {
   type SiteType,
   type ViabilityStatus,
 } from "./types";
+export {
+  advanceProjectStage,
+  decideSubmission,
+  toProjectPayload,
+  updateProjectVisibility,
+  type DecisionInput,
+  type DecisionResponse,
+  type ProjectPayload,
+  type SubmissionDecision,
+} from "./workflows";

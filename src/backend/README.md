@@ -5,10 +5,18 @@ service catalogue and API surface it is expected to grow into are described in
 sections 9 and 10 of
 [the technical design](../../docs/sunsum_technical_design_doc.md).
 
-**`GET /portfolio` is the worked example.** It is implemented end to end against
-mock data so that later endpoints have a pattern to copy; see
-[Adding an endpoint](#adding-an-endpoint). Persistence and identity are still
-not implemented, and the project store is an in-memory fixture.
+**`GET /portfolio` is the worked example.** The agreed owner, operator and
+investor workflow endpoints now follow the same handler/core split. Persistence
+and identity are still demo seams: one shared in-memory state makes mutations
+visible across endpoints, and each route uses a fixed role-specific identity.
+
+> [!WARNING]
+> **Do not expose these privileged demo routes as a production API.** They do
+> not authenticate requests: each route always resolves to a fixed demo owner,
+> operator, or investor. The core authorization checks and role-specific route
+> wiring must remain in place, but production exposure additionally requires
+> authenticated request-to-viewer resolution plus CSRF protection for
+> cookie-based sessions or appropriate bearer-token protection.
 
 ## Layout
 
@@ -23,12 +31,20 @@ src/backend/
   core/
     shared/             primitives with no domain meaning: Result, ok, failure
     identity/           S-IAM   who the caller is
-    projects/           S-PROJ  project records, vocabulary, the store seam
+    projects/           S-PROJ  project records, transitions and visibility
+    sites/              S-SITE  intake, assessments and submission queue
+    engagements/        S-ENG   interest and disclosure tier
+    views/              S-VIEW  owner dashboard and deal room
+    store/              shared in-memory persistence seam
     investors/          S-INV   portfolio, mandate matching, visibility rule
   handlers/
     shared/             JSON, the error envelope, failure-code to status
     identity/           S-IAM   resolving the caller at the transport edge
     investors/          S-INV   query parsing and status mapping
+    sites/              S-SITE  site body and submission query parsing
+    projects/           S-PROJ  decision, stage and visibility bodies
+    engagements/        S-ENG   interest and operator engagement reads
+    views/              S-VIEW  composed reads
 ```
 
 Each directory's `index.ts` is its public face. A sibling imports
@@ -45,14 +61,14 @@ it is misplaced.
 | Service     | Directory      | Endpoints                                                                    | Status  |
 | ----------- | -------------- | ---------------------------------------------------------------------------- | ------- |
 | **S-IAM**   | `identity/`    | `/auth/*`, `/me`                                                             | seam    |
-| **S-SITE**  | `sites/`       | `/sites/*`, `/me/sites`, `/submissions/*`, `/me/outstanding`                 | to do   |
+| **S-SITE**  | `sites/`       | `/sites/*`, `/me/sites`, `/submissions/*`, `/me/outstanding`                 | partial |
 | **S-ASSESS**| `assessments/` | `/sites/{id}/assessments/override`                                           | to do   |
 | **S-PROJ**  | `projects/`    | `/pipeline`, `/projects/{id}`, `/projects/{id}/stage`, `.../visibility`      | partial |
 | **S-INV**   | `investors/`   | `/portfolio`, `/investors/me/profile`                                        | done    |
-| **S-ENG**   | `engagements/` | `/projects/{id}/engagements`, `/engagements/*`, funding needs, diligence     | to do   |
+| **S-ENG**   | `engagements/` | `/projects/{id}/engagements`, `/engagements/*`, funding needs, diligence     | partial |
 | **S-DOC**   | `documents/`   | `/sites/{id}/documents`, `/sites/{id}/acknowledgements`                      | to do   |
-| **S-ACT**   | `activity/`    | `/projects/{id}/activity`                                                    | to do   |
-| **S-VIEW**  | `views/`       | Composed reads: the site-owner dashboard, `/projects/{id}/deal-room`         | to do   |
+| **S-ACT**   | `activity/`    | `/projects/{id}/activity`                                                    | partial |
+| **S-VIEW**  | `views/`       | Composed reads: the site-owner dashboard, `/projects/{id}/deal-room`         | partial |
 
 S-VIA, the viability engine, is deliberately absent: the charter puts it in a
 separate Python deployable, so it will be reached as a client from
@@ -65,15 +81,17 @@ layers, each with an `index.ts`. An empty directory is not worth the import.
 
 | Directory   | Owns                                                                                                                                    | Must not                                                                       |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `handlers/` | The transport edge: establishing who is calling, validating the request into typed values, and turning a `Result` into a status code     | Decide permission, or hold workflow rules, stage transitions or solar math      |
+| `handlers/` | The transport edge: selecting the fixed demo principal, validating the request into typed values, and turning a `Result` into a status code | Decide permission, accept caller-selectable roles, or hold workflow rules, stage transitions or solar math |
 | `core/`     | Authorization, workflow rules, visibility scoping and the response payload, written as ordinary functions over plain values              | Import `handlers/`, or reach for `next/server`, `next/headers` or `next/cache` |
 
-Handlers **authenticate**; core **authorizes**. A handler establishes identity
-because that is a transport concern — a cookie, a header, a token. Core decides
-what that identity may see, because a permission that lived in the handler
-would be skipped the moment a scheduled job, the seeding CLI or a second route
-called the same function. This is what "enforce authorization at service
-boundaries, not only in the user interface" means here.
+Core **authorizes**. In this MVP, handlers do **not authenticate**; each route
+selects its fixed role-specific demo principal and never accepts a
+caller-supplied role. Replacing that seam with authenticated request-to-viewer
+resolution is future WS3 work. Core still decides what the resolved identity
+may see, because a permission that lived only in the handler would be skipped
+the moment a scheduled job, seeding CLI or second route called the same
+function. This is what "enforce authorization at service boundaries, not only
+in the user interface" means here.
 
 `index.ts` is the public entry point. Routes import `@/backend` and nothing
 deeper, which keeps handler and core module paths free to move.
@@ -159,15 +177,16 @@ open.
 Two seams exist specifically so those decisions can land without touching any
 rule:
 
-- **Persistence.** `core/projects/mock-store.ts` is an in-memory fixture behind
-  the `ProjectStore` interface in `core/projects/store.ts`. The data is
-  invented for the demo and is not real customer data. Replacing the
-  implementation is the whole change; the interface is kept in its own file
-  because it is the part that survives.
-- **Identity.** `handlers/identity/viewer.ts` returns the same demo investor for
-  every request. **It has no security value.** It reads nothing from the request
-  on purpose, so it cannot be used to choose a role; a real session lookup drops
-  into the same function.
+- **Persistence.** `core/store/index.ts` provides the shared in-memory demo
+  implementation behind `BackendStore`; `createMemoryBackendStore` gives tests
+  isolated state and `resetDemoBackendStore` resets route-level state. Its
+  serialized transactions discard the working copy when the callback throws or
+  returns a failed `Result`, preventing partial mutations on domain failures.
+- **Identity.** `handlers/identity/viewer.ts` exposes fixed demo owner, operator
+  and investor resolvers. **They have no security value.** They read nothing
+  from the request, so a caller cannot choose a role. Before production, replace
+  them with authenticated request-to-viewer resolution and add CSRF protection
+  for cookie sessions or suitable bearer-token protection.
 
 Neither is production ready, and nothing here has been reviewed against a
 deployment, a real data set or an identity provider.

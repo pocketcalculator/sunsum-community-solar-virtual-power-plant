@@ -1,10 +1,10 @@
 /**
  * API handlers: the transport edge of the backend.
  *
- * A handler reads a request, validates the shape of its input, enforces
- * authorization, and maps a core result or failure onto a status code. Workflow
- * rules belong in `../core` instead, so that they stay callable from a test, a
- * scheduled job or the seeding CLI without constructing an HTTP request.
+ * A handler reads a request, selects the route's fixed demo principal, validates
+ * the input, and maps a core result or failure onto a status code. Core enforces
+ * authorization and workflow rules so they remain callable from a test,
+ * scheduled job or seeding CLI without constructing an HTTP request.
  *
  * Organised to mirror `../core`: one directory per service from design document
  * section 9.2, plus `shared` for the JSON and status-code plumbing. A
@@ -16,5 +16,46 @@ export {
   handleGetPortfolio,
   parsePortfolioQuery,
 } from "./investors";
-export { resolveDemoViewer } from "./identity";
-export { failureResponse, jsonResponse } from "./shared";
+export {
+  getSubmissionsRoute,
+  handleGetSubmissions,
+  handlePostSite,
+  parseSiteCreate,
+  parseSubmissionQuery,
+  postSiteRoute,
+} from "./sites";
+export {
+  handlePatchProjectVisibility,
+  handlePostProjectStage,
+  handlePostSubmissionDecision,
+  parseDecision,
+  patchProjectVisibilityRoute,
+  postProjectStageRoute,
+  postSubmissionDecisionRoute,
+} from "./projects";
+export {
+  getProjectEngagementsRoute,
+  handleGetProjectEngagements,
+  handlePostEngagement,
+  postEngagementRoute,
+} from "./engagements";
+export {
+  getDealRoomRoute,
+  getOwnerSitesRoute,
+  handleGetDealRoom,
+  handleGetOwnerSites,
+} from "./views";
+export {
+  resolveDemoInvestor,
+  resolveDemoOperator,
+  resolveDemoSiteOwner,
+  resolveDemoViewer,
+} from "./identity";
+export {
+  failureResponse,
+  isUuid,
+  jsonResponse,
+  readJsonObject,
+  rejectUnknownKeys,
+  validatePathId,
+} from "./shared";
