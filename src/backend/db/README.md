@@ -162,6 +162,12 @@ A probe that passes for the wrong reason is worse than no probe: the append-only
 check originally used an invalid enum value, so the `CHECK` constraint rejected
 the update and the trigger was never exercised.
 
+The whole file runs in one transaction that always ends in `ROLLBACK`. The
+probes insert deliberately malformed rows and a valid graph to hang them off,
+and none of it survives — so `db:verify` is safe to run repeatedly against your
+seeded development database rather than only against a scratch one. A verifier
+that dirties the database it verifies can only be run once.
+
 ## The two stores must be indistinguishable
 
 `tests/integration/store-parity.test.ts` compares `PostgresProjectStore` with
@@ -171,7 +177,8 @@ changed behaviour, and every test written against the mock has stopped being
 evidence about the real system.
 
 It needs a live database, so it is not part of `npm test` — which must keep
-passing on a machine with no PostgreSQL. Run it with `npm run test:db`.
+passing on a machine with no PostgreSQL. Run it with `npm run test:db`, which
+reads `DATABASE_URL` from `.env.local` the way `next dev` does.
 
 ### Review the generated SQL
 
