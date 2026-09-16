@@ -7,8 +7,12 @@ import { failure, ok, type Result } from "../shared";
 import { demoBackendStore, type BackendStore } from "../store";
 import { journeyStageId } from "../journey";
 import { toSitePayload, type SitePayload, type SubmissionQuery } from "../sites";
-import { FUNDING_STAGE_BY_PROJECT_STAGE } from "./funding";
-import { PROJECT_STAGES, type ProjectRecord, type ProjectStage } from "./types";
+import {
+  fundingStageForProject,
+  PROJECT_STAGES,
+  type ProjectRecord,
+  type ProjectStage,
+} from "./types";
 
 export type SubmissionDecision = "accept" | "reject" | "request_info";
 
@@ -185,7 +189,7 @@ export async function decideSubmission(
       id: transaction.nextId("funding"),
       projectId: project.id,
       needType: "feasibility_study",
-      stage: FUNDING_STAGE_BY_PROJECT_STAGE[project.stage],
+      stage: fundingStageForProject(project.stage),
       description: "Demo project development funding need.",
       amountRequested: null,
       amountCommitted: 0,

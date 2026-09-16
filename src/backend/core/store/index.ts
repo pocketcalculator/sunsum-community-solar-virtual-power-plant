@@ -1,7 +1,7 @@
 import type { ActivityRecord } from "../activity";
 import type { EngagementRecord, FundingNeedRecord } from "../engagements";
 import {
-  FUNDING_STAGE_BY_PROJECT_STAGE,
+  fundingStageForProject,
   MOCK_PROJECTS,
   type ProjectRecord,
   type ProjectStore,
@@ -155,7 +155,7 @@ function demoState(seedDemoProjects: boolean): StoreState {
         id: demoFundingNeedId(projectIndex, needIndex),
         projectId: project.id,
         needType: "feasibility_study",
-        stage: FUNDING_STAGE_BY_PROJECT_STAGE[project.stage],
+        stage: fundingStageForProject(project.stage),
         description: "Demo-only funding need.",
         amountRequested: null,
         amountCommitted: 0,

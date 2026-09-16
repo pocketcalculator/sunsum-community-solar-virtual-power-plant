@@ -15,10 +15,20 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node scripts/db.mjs migrate",
+    "db:studio": "node scripts/db.mjs studio",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down -v",
+    "db:seed": "node scripts/db.mjs seed",
+    "db:reset": "node scripts/db.mjs reset",
+    "db:verify": "node scripts/db.mjs verify"
   },
   "dependencies": {
+    "drizzle-orm": "0.45.2",
     "next": "16.3.4",
+    "pg": "8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -28,8 +38,10 @@
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
     "@types/node": "22.20.1",
+    "@types/pg": "8.23.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
+    "drizzle-kit": "0.31.10",
     "eslint": "9.39.5",
     "eslint-config-next": "16.3.4",
     "jsdom": "30.0.1",

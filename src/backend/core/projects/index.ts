@@ -11,20 +11,19 @@
  */
 
 export { MOCK_PROJECTS, mockProjectStore } from "./mock-store";
+export { type ProjectStore } from "./store";
 export {
   FUNDING_STAGE_BY_PROJECT_STAGE,
   FUNDING_STAGES,
   fundingStageForProject,
-  type FundingStage,
-} from "./funding";
-export { type ProjectStore } from "./store";
-export {
+  isFundingStage,
   isProjectStage,
   isSiteType,
   isViabilityStatus,
   PROJECT_STAGES,
   SITE_TYPES,
   VIABILITY_STATUSES,
+  type FundingStage,
   type ProjectRecord,
   type ProjectStage,
   type SiteType,

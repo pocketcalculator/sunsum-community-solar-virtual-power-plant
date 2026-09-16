@@ -45,6 +45,7 @@ src/backend/
     projects/           S-PROJ  decision, stage and visibility bodies
     engagements/        S-ENG   interest and operator engagement reads
     views/              S-VIEW  composed reads
+  db/                   the schema. Imports core; core never imports it
 ```
 
 Each directory's `index.ts` is its public face. A sibling imports
@@ -157,6 +158,8 @@ transitive imports.
 | `handlers/investors` -> `../../core/investors/x`    | Rejected service internals        |
 | `core/shared` -> `../investors`                     | Rejected shared must stay domain-free |
 | `core/` -> `../handlers` or `@/backend/handlers`    | Rejected upward dependency        |
+| `core/` or `handlers/` -> `@/backend/db`            | Rejected persistence must not invert |
+| `db/` -> `@/backend/core/projects`                  | Allowed schema uses domain vocabulary |
 | `core/` -> `next/server`, `next/headers`            | Rejected transport dependency     |
 | Backend -> `@/domain/roles`                         | Allowed shared vocabulary         |
 | Backend -> `@/features/...` or `@/components/...`   | Rejected upward dependency        |
@@ -169,57 +172,71 @@ imported by a component.
 Unlike presentation code, the backend may use Node built-ins. That is the point
 of the separate boundary.
 
-## Not decided here
+## Selected persistence and remaining integration
 
-[The technical design](../../docs/sunsum_technical_design_doc.md) proposes
-Azure SQL or PostgreSQL, Blob Storage and Entra ID. None of that is selected,
-installed or configured here, and
-[the WS1 architecture note](../../docs/ws1/architecture.md) is explicit that the
-WS2 topology — an in-process Next.js module or a separate service — remains
-open.
+[The technical design](../../docs/sunsum_technical_design_doc.md) selects
+**Azure Database for PostgreSQL Flexible Server with Drizzle ORM** for
+persistence and private Blob Storage for document files. Drizzle Kit is the
+selected schema/migration tooling. None of the database packages, schema,
+migrations, provisioning, or authentication is implemented yet; the PostgreSQL
+driver and connection configuration remain to be selected. The proposed Entra
+integration and the broader WS2 deployment topology also remain separate from
+this scaffold.
 
-Two seams exist specifically so those decisions can land without touching any
-rule:
+Two seams allow those integrations without changing the workflow rules:
 
 - **Persistence.** `core/store/index.ts` provides the shared in-memory demo
   implementation behind `BackendStore`; `createMemoryBackendStore` gives tests
   isolated state and `resetDemoBackendStore` resets route-level state. Its
   serialized transactions discard the working copy when the callback throws or
   returns a failed `Result`, preventing partial mutations on domain failures.
+
+  A schema now exists in [`db/`](./db/README.md) and
+  [ADR 0001](../../infrastructure/docs/adr-0001-database-and-persistence.md)
+  records the decision, but **nothing is wired up yet**: the running endpoints
+  are still served by the in-memory store. Adopting it means adding a
+  Drizzle-backed implementation behind `BackendStore`, not moving persistence
+  into the handlers.
 - **Identity.** `handlers/identity/viewer.ts` exposes fixed demo owner, operator
   and investor resolvers. **They have no security value.** They read nothing
   from the request, so a caller cannot choose a role. Before production, replace
   them with authenticated request-to-viewer resolution and add CSRF protection
   for cookie sessions or suitable bearer-token protection.
 
-Neither is production ready, and nothing here has been reviewed against a
-deployment, a real data set or an identity provider.
+Neither is production ready. The App Service smoke test exercises the
+in-memory-backed API, not a real database, data set, or identity provider.
 
-### Reconciling with the Drizzle schema PR
+### Reconciling with the database schema
 
-PR #11 introduces the real database schema. The two branches merge textually
-clean (the only file conflict is this README), so every mismatch below would
-have merged green and failed at runtime. #11's rework (375231c) resolved its
-side; the remaining items were resolved here:
+The schema landed on `main` in #19 and this branch has merged it. The two lines
+of work merged textually clean — including the funding-stage vocabulary, which
+was declared in both trees and so was exported twice without git noticing —
+so every mismatch below would have merged green and failed at runtime rather
+than being caught by the merge. #19 resolved its side; the rest were resolved
+here:
 
 | Concern | Resolution |
 | --- | --- |
-| Screening status token | #11 moved to `screening`, matching this branch and `src/domain/journey.ts`. |
-| Draft sites with null address/type/ownership | #11 made those columns nullable while `submission_status = 'draft'`. Draft save works as written. |
-| `amount_requested` | #11 relaxed to `IS NULL OR > 0`. An amountless feasibility need inserts cleanly. |
-| `amount_committed` | Fixed here: was written as `null` against a `NOT NULL DEFAULT '0'` column, and a column default does not apply to an explicitly inserted null. Now `0`, and the field is typed `number` rather than `number \| null` — nothing committed is zero, not unknown. |
+| Screening status token | #19 uses `screening`, matching this code and `src/domain/journey.ts`. |
+| Draft sites with null address/type/ownership | #19 made those columns nullable while `submission_status = 'draft'`, so saving an incomplete draft works as written. |
+| `amount_requested` | #19 relaxed to `IS NULL OR > 0`. An amountless feasibility need inserts cleanly. |
+| `amount_committed` | Fixed here: was written as `null` against a `NOT NULL DEFAULT '0'` column, and a column default does not apply to an explicitly inserted null. Now `0`, typed `number` rather than `number \| null` — nothing committed is zero, not unknown. |
 | Funding-need stage | Fixed here: typed `FundingStage` and written through `fundingStageForProject`, so `commissioning`/`operations` can no longer reach a column whose CHECK rejects them. |
 | `activity_single_parent_check` | Fixed here: activity rows carry exactly one parent, enforced by a discriminated `ActivityParent` rather than two independently nullable ids. Submission events are parented to the site, project events to the project, and both `listActivity` and `listSiteActivity` join across the boundary so no view lost history. |
 | Documents with two parents | Fixed here, in the seed and in `addSiteDocument`. A site upload is parented to the site; the demo project document to the project. `listDocuments` already matched either side. |
-| `documents.disclosure_class` | #11 added the column, `NOT NULL DEFAULT 'owner_private'` — it fails closed, and it is what the deal-room filter reads. |
+| `documents.disclosure_class` | #19 added the column, `NOT NULL DEFAULT 'owner_private'` — it fails closed, and it is what the deal-room filter reads. |
 
-`core/projects/funding.ts` mirrors #11's funding stage vocabulary and exports
-`fundingStageForProject` under the same name #11 uses, so adopting #11 is a
-deletion of that file and its re-export rather than a rewrite of call sites.
+The investor mandate is typed `FundingStage[]` and matched against open funding
+needs rather than `project.stage`. Reinstating `ProjectStage[]` would silently
+restore a filter that never matches, because `permanent` is not a project stage
+and `commissioning`/`operations` are not funded stages.
 
-Both branches modify `core/identity/viewer.ts` and `core/investors/portfolio.ts`.
-Both now type the investor mandate as `FundingStage[]` and match against open
-funding needs rather than `project.stage`, so whichever merges second must keep
-that shape — reinstating `ProjectStage[]` silently restores a mandate filter
-that never matches.
+This branch's `core/projects/funding.ts` mirror has been deleted: the
+vocabulary now comes from `core/projects/types.ts`, which is what `db/enums.ts`
+re-exports, so there is one declaration rather than two that merge silently.
+`tests/unit/backend/workflows.test.ts` asserts the single-parent and
+funding-need invariants against those shared constants, so a future write that
+the CHECK constraints would reject fails in unit tests instead of at insert
+time.
+
 

@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { ThemeScript } from "@/components/ui/theme/ThemeScript";
-import { PublicShell } from "@/features/participation";
+import { Assistant } from "@/features/assistant";
+import {
+  ENTRY_PATHS,
+  PublicShell,
+  entryPathHref,
+} from "@/features/participation";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,6 +24,11 @@ interface RootLayoutProps {
 }
 
 export default function RootLayout({ children }: RootLayoutProps) {
+  const assistantOptions = ENTRY_PATHS.map((path) => ({
+    href: entryPathHref(path),
+    label: path.label,
+  }));
+
   return (
     // The theme script sets `data-theme` here before React runs, so this
     // element is expected to differ from what the server sent.
@@ -27,7 +37,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
         <ThemeScript />
       </head>
       <body>
-        <PublicShell>{children}</PublicShell>
+        <PublicShell headerAction={<Assistant options={assistantOptions} />}>
+          {children}
+        </PublicShell>
       </body>
     </html>
   );

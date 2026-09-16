@@ -14,14 +14,16 @@ sends nothing.
 - Public landing, three participation paths, project-journey explanation, FAQ,
   and a create-profile flow that saves nothing.
 - Provisional semantic UI and scoped styles, with no data/control operations.
-- Ordinary local production build/start; Azure service selection stays with WS3.
+- Ordinary local production build/start; WS3 owns Azure delivery and service configuration.
 
 The revised September 14, 2026 charter remains the MVP scope authority.
-[pocketcalculator/sunsum-community-solar-virtual-power-plant#3](https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/issues/3),
-updated September 14, 2026, proposes Aspire, Azure SQL, private Blob, Entra,
-Container Apps and optional Fabric alongside Next.js. Those proposals do not
-establish service availability, a schema, team approval, or a dependency for
-this increment.
+The September 16 database decision in the
+[technical design](../sunsum_technical_design_doc.md) selects **Azure Database
+for PostgreSQL Flexible Server with Drizzle ORM and Drizzle Kit**, and the
+web preview uses Linux App Service code deployment.
+Private Blob Storage, Entra integration, and optional Fabric remain integration
+work. These decisions do not supply a database schema, configure those
+services, or make them dependencies of the current browser-only profile flow.
 
 ## External acceptance gates
 
@@ -31,7 +33,7 @@ this increment.
 | Screening                | WS4                    | Units, range shapes, rules/assumptions/version, and three outcome examples    | Pending handoff            |
 | Demo data                | WS2/WS4                | Approved synthetic Atlanta examples and repeatable seed mechanism             | Published, awaiting WS1 acceptance |
 | Identity and permissions | WS2/WS3                | Actor/session semantics, object ownership, investor scope and document access | Published, awaiting WS1 acceptance |
-| Azure delivery           | WS3                    | Selected service/artifact/startup, access, configuration and budget           | Pending handoff            |
+| Azure delivery           | WS3                    | Service/artifact/startup, access, configuration and budget                    | App Service F1 preview verified; backend integration pending |
 | UX                       | WS5                    | Shared design decision and review disposition                                 | Provisional local baseline |
 | Core acceptance          | WS6 and service owners | Actual persisted/deployed three-role journey and adverse cases                | Blocked on integration     |
 

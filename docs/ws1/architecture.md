@@ -16,10 +16,12 @@ taxonomy. The earlier SolarEase dashboard informs visual hierarchy only, not
 financial or AI feature scope. Private source documents and screenshots are not
 included in this repository.
 
-Next.js, TypeScript, and Azure are the contributor's selected direction.
-[pocketcalculator/sunsum-community-solar-virtual-power-plant#3](https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/issues/3)
-proposes additional platform components; it is not evidence that they are
-installed, approved, or required by this foundation.
+Next.js and TypeScript remain the frontend stack. The
+[technical design](../sunsum_technical_design_doc.md) selects Azure Database
+for PostgreSQL Flexible Server with Drizzle ORM and Drizzle Kit for server-side
+persistence, and Linux App Service for web hosting. The preview has been
+smoke-tested on F1, but the database and Drizzle integration are not installed or
+connected. This frontend foundation still requires no database credentials.
 
 ## Implemented responsibility boundaries
 
@@ -169,9 +171,10 @@ identity, persistence, and document tests belong to later integrated work.
 ## Delivery boundary
 
 Ordinary `next build` and `next start` are the only hosting contract implemented.
-No AppHost, container, Azure resources, standalone ZIP packaging, or production
-secret configuration is supplied. WS3 must select and verify that contract
-before deployment work is accepted.
+WS3 has verified the existing application through source ZIP deployment and a
+remote build on Linux App Service F1. This does not add an AppHost, database,
+identity provider, or production secret configuration. Full backend integration
+and production delivery remain separate from the public-preview smoke test.
 
 No credentials or private data belong in public runtime configuration. Future
 server-only exports must remain separate from client-safe public feature entries.

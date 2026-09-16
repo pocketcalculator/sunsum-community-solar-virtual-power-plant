@@ -26,6 +26,52 @@ export function isProjectStage(value: string): value is ProjectStage {
   return PROJECT_STAGES.some((stage) => stage === value);
 }
 
+/**
+ * The stages capital is raised against — **not** `PROJECT_STAGES`.
+ *
+ * The two lists share three values and then diverge. An investor funds
+ * `permanent` capital, which is not a project stage; a project reaches
+ * `commissioning` and `operations`, which nothing is raised against. Treating
+ * them as one enumeration makes a `permanent` mandate unrepresentable, which is
+ * the defect review found in `Viewer.fundingStageFocus`.
+ *
+ * It lives beside `PROJECT_STAGES` so that the difference is visible at the
+ * point someone reaches for the wrong one, and in `core` rather than in `db`
+ * because the matcher has to be able to import it.
+ */
+export const FUNDING_STAGES = [
+  "pre_development",
+  "development",
+  "construction",
+  "permanent",
+] as const;
+
+export type FundingStage = (typeof FUNDING_STAGES)[number];
+
+export function isFundingStage(value: string): value is FundingStage {
+  return FUNDING_STAGES.some((stage) => stage === value);
+}
+
+/**
+ * Which funding stage a project at a given project stage raises against.
+ *
+ * Comparing a mandate to a project needs this mapping, never an equality test.
+ * `commissioning` and `operations` map to `permanent` because a built asset
+ * raises permanent capital rather than construction finance — an inference from
+ * section 7.8 that is recorded as an open question on ADR 0001.
+ */
+export const FUNDING_STAGE_BY_PROJECT_STAGE = {
+  pre_development: "pre_development",
+  development: "development",
+  construction: "construction",
+  commissioning: "permanent",
+  operations: "permanent",
+} as const satisfies Record<ProjectStage, FundingStage>;
+
+export function fundingStageForProject(stage: ProjectStage): FundingStage {
+  return FUNDING_STAGE_BY_PROJECT_STAGE[stage];
+}
+
 export const VIABILITY_STATUSES = [
   "potentially_viable",
   "more_information_required",

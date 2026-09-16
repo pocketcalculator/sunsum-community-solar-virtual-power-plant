@@ -9,6 +9,7 @@ import {
   updateProjectVisibility,
 } from "@/backend/core/projects";
 import { MOCK_PROJECTS } from "@/backend/core/projects/mock-store";
+import { FUNDING_STAGES } from "@/backend/core/projects";
 import { failure } from "@/backend/core/shared";
 import {
   createSite,
@@ -1248,9 +1249,10 @@ describe("new endpoint workflows", () => {
     }, store);
 
     /**
-     * PR #11 enforces `activity_single_parent_check`. A row naming both parents
-     * is invisible to any access rule that starts from one of them, so assert
-     * the invariant here rather than discovering it at insert time.
+     * The schema enforces `activity_single_parent_check` and
+     * `documents_single_parent_check`. A row naming both parents is invisible to
+     * any access rule that starts from one of them, so assert the invariant here
+     * rather than discovering it at insert time.
      */
     const rows = [
       ...(await store.listActivity(projectId)),
@@ -1260,6 +1262,26 @@ describe("new endpoint workflows", () => {
     for (const row of rows) {
       const parents = [row.siteId, row.projectId].filter((value) => value !== null);
       expect(parents, `row ${row.id} has ${parents.length} parents`).toHaveLength(1);
+    }
+  });
+
+  it("writes funding needs the schema's CHECK constraints accept", async () => {
+    const { store, projectId } = await acceptedStore();
+
+    /**
+     * `funding_needs.stage` admits only `FUNDING_STAGES`, which excludes the
+     * `commissioning` and `operations` project stages; `amount_committed` is
+     * `NOT NULL CHECK (>= 0)`, and a column default does not apply to an
+     * explicitly inserted null. Assert against the shared constants so this
+     * cannot drift from the migration.
+     */
+    for (const need of await store.listFundingNeeds(projectId)) {
+      expect(FUNDING_STAGES, `stage ${need.stage}`).toContain(need.stage);
+      expect(need.amountCommitted).not.toBeNull();
+      expect(need.amountCommitted).toBeGreaterThanOrEqual(0);
+      if (need.amountRequested !== null) {
+        expect(need.amountRequested).toBeGreaterThan(0);
+      }
     }
   });
 
