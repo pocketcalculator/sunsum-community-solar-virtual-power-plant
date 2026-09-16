@@ -95,13 +95,29 @@ function handleSchemeChange(): void {
 function watchSystemScheme(): () => void {
   const query = lightSchemeQuery();
 
-  // Safari carried the older `addListener` shape until 14, and some test
-  // environments stub the list without any listener support at all.
-  if (!query || typeof query.addEventListener !== "function") return () => {};
+  if (!query) return () => {};
 
-  query.addEventListener("change", handleSchemeChange);
+  if (typeof query.addEventListener === "function") {
+    query.addEventListener("change", handleSchemeChange);
 
-  return () => query.removeEventListener("change", handleSchemeChange);
+    return () => query.removeEventListener("change", handleSchemeChange);
+  }
+
+  /*
+   * Safari only grew `addEventListener` on a media query list in 14, and the
+   * versions before it are pinned to hardware that cannot move. Without this
+   * branch the theme still works and is still remembered there; it just stops
+   * noticing the device switching to night mode, which is the entire job of
+   * "follow the device".
+   */
+  if (typeof query.addListener === "function") {
+    query.addListener(handleSchemeChange);
+
+    return () => query.removeListener(handleSchemeChange);
+  }
+
+  // Neither shape: some test environments stub the list with no listeners.
+  return () => {};
 }
 
 let stopWatchingSystemScheme: (() => void) | null = null;

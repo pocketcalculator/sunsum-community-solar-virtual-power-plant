@@ -19,20 +19,38 @@ import {
 } from "@/components/ui/theme/themeStore";
 
 /**
+ * Which listener API the stubbed device exposes.
+ *
+ * "modern" is every current browser. "legacy" is Safari before 14, which only
+ * has `addListener`; the versions that stop there are pinned to hardware that
+ * cannot move, so the branch has to keep working rather than be assumed away.
+ */
+type ListenerApi = "modern" | "legacy";
+
+/**
  * A device whose colour scheme can be changed mid-test, which is the only way
  * to check that "follow the device" keeps following after the page has loaded.
  */
-function stubDevice(prefersLight: boolean) {
+function stubDevice(prefersLight: boolean, api: ListenerApi = "modern") {
   const listeners = new Set<() => void>();
+  const add = (listener: () => void) => {
+    listeners.add(listener);
+  };
+  const remove = (listener: () => void) => {
+    listeners.delete(listener);
+  };
+
   const query = {
     matches: prefersLight,
     media: LIGHT_SCHEME_QUERY,
-    addEventListener: (_type: string, listener: () => void) => {
-      listeners.add(listener);
-    },
-    removeEventListener: (_type: string, listener: () => void) => {
-      listeners.delete(listener);
-    },
+    ...(api === "modern"
+      ? {
+          addEventListener: (_type: string, listener: () => void) =>
+            add(listener),
+          removeEventListener: (_type: string, listener: () => void) =>
+            remove(listener),
+        }
+      : { addListener: add, removeListener: remove }),
   };
 
   vi.stubGlobal(
@@ -273,6 +291,30 @@ describe("keeping up with the world outside the page", () => {
     expect(paintedTheme()).toBe(LIGHT_THEME);
     unsubscribe();
   });
+
+  /**
+   * Safari before 14 has only `addListener`. Preferring `addEventListener` and
+   * giving up when it is absent silently turns "follow the device" into "the
+   * device as it was when the page loaded", which is the one thing that choice
+   * exists to avoid.
+   */
+  it.each(["modern", "legacy"] as const)(
+    "follows the device through the %s listener API",
+    (api) => {
+      const device = stubDevice(false, api);
+      const unsubscribe = activate();
+
+      expect(device.listenerCount).toBe(1);
+      expect(paintedTheme()).toBe(DARK_THEME);
+
+      device.switchTo(true);
+
+      expect(paintedTheme()).toBe(LIGHT_THEME);
+
+      unsubscribe();
+      expect(device.listenerCount).toBe(0);
+    },
+  );
 
   it("stops listening to the device once nothing is subscribed", () => {
     const device = stubDevice(false);
