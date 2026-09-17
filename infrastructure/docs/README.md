@@ -17,8 +17,11 @@ The web application uses Linux App Service code deployment; its F1 smoke test
 does not require Container Apps or a container registry. See the
 [technical design](../../docs/sunsum_technical_design_doc.md) for the decision.
 
-PostgreSQL has not been provisioned or connected, and Drizzle packages and
-migrations have not been added. The current backend uses in-memory fixtures.
+PostgreSQL is provisioned and the application reads from it. The hosted
+application authenticates with a managed identity rather than a password, so no
+database credential exists in the repository or in the deployment pipeline. See
+[deployment](deployment.md) for how the application reaches Azure and for the
+one-time database grant that a template cannot perform.
 F1 is the web-hosting tier only; PostgreSQL compute and storage costs must be
 confirmed separately.
 

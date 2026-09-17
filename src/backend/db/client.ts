@@ -90,8 +90,22 @@ export function buildPoolConfig(url: string = getDatabaseUrl()): PoolConfig {
     return { connectionString: url };
   }
 
+  /**
+   * Deliberately not `connectionString`. `pg` merges the parsed connection
+   * string over the rest of the config, and the parser always produces a
+   * `password` key — an empty string when the URL carries no password, which
+   * is exactly the shape an Entra connection has. Passing both would therefore
+   * replace the function below with an empty password, and the server rejects
+   * the connection with "Password returned by client is empty". Supplying the
+   * fields separately is what keeps the token function intact.
+   */
+  const parsed = new URL(url);
+
   return {
-    connectionString: url,
+    host: parsed.hostname,
+    port: parsed.port === "" ? 5432 : Number(parsed.port),
+    database: decodeURIComponent(parsed.pathname.replace(/^\//, "")),
+    user: decodeURIComponent(parsed.username),
     /**
      * A function, not a string: `pg` calls it for every new connection, so the
      * pool keeps working after the first token expires. A token fetched once at
