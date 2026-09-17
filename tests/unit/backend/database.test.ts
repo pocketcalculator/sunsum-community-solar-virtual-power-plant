@@ -35,6 +35,31 @@ afterEach(async () => {
 });
 
 describe("pooled server dependencies", () => {
+  const operatorEnvironment = {
+    ...local, PGPASSWORD: undefined, SUNSUM_DATABASE_AUTH: "azure-cli",
+    PGHOST: "example-sunsum.postgres.database.azure.com", PGSSLMODE: "verify-full",
+  };
+
+  it.each([5_000, 60_000, 600_000])("uses an explicitly bounded migration timeout of %i ms", async (timeout) => {
+    const database = createDatabase(operatorEnvironment, { allowOperatorIdentity: true, migrationStatementTimeoutMs: timeout });
+    try {
+      expect(database.pool.options).toMatchObject({
+        max: 1, application_name: "sunsum-migration", statement_timeout: timeout, query_timeout: timeout + 5_000,
+      });
+      expect(database.pool.totalCount).toBe(0);
+      expect(postgresPoolConfig(readDatabaseConfig(local)).statement_timeout).toBe(5_000);
+    } finally { await database.close(); }
+  });
+
+  it.each([0, 4_999, 600_001, NaN, Infinity, 5000.5])("rejects unsafe migration timeout %s", (timeout) => {
+    expect(() => createDatabase(operatorEnvironment, { allowOperatorIdentity: true, migrationStatementTimeoutMs: timeout })).toThrow("5000-600000");
+  });
+
+  it("does not let runtime or local password pools select migration limits", () => {
+    expect(() => createDatabase(local, { migrationStatementTimeoutMs: 60_000 })).toThrow("Azure CLI operator");
+    expect(() => createDatabase({ ...operatorEnvironment, SUNSUM_DATABASE_AUTH: "managed-identity" }, { migrationStatementTimeoutMs: 60_000 })).toThrow("Azure CLI operator");
+  });
+
   it("uses finite connection, query, idle and pool-lifetime limits", () => {
     expect(postgresPoolConfig(readDatabaseConfig(local))).toMatchObject({
       max: 5,

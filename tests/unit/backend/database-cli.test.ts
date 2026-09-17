@@ -71,6 +71,19 @@ describe("database CLI safety gates", () => {
     expect(result.stdout).not.toContain("applied");
   });
 
+  it.each(["0", "4999", "600001", "NaN", "5e4", " 60000", "5000.5", ""])("rejects migration timeout %j before connecting", (timeout) => {
+    const result = run([...operatorArgs, "scripts/db-migrate.ts", "--apply"], {
+      SUNSUM_DATABASE_AUTH: "azure-cli",
+      PGHOST: "example-sunsum.postgres.database.azure.com",
+      PGPORT: "5432", PGDATABASE: "sunsum", PGUSER: "sunsum_migrator", PGSSLMODE: "verify-full",
+      SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS: timeout,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS must be an integer");
+    expect(result.stdout).not.toContain("applied");
+  });
+
   it("keeps the real server-only import guard outside the test mock", () => {
     const result = run(
       [

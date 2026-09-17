@@ -10,7 +10,7 @@ import type {
   DatabaseEnvironment,
 } from "./config";
 import { databasePassword } from "./credentials";
-import { databaseErrorCode } from "./errors";
+import { DatabaseConfigurationError, databaseErrorCode } from "./errors";
 import * as schema from "../../db";
 
 export const postgresPoolConfig = (
@@ -39,10 +39,21 @@ export const postgresPoolConfig = (
 
 export const createDatabase = (
   environment: DatabaseEnvironment,
-  options: DatabaseConfigOptions & { readonly credential?: TokenCredential } = {},
+  options: DatabaseConfigOptions & { readonly credential?: TokenCredential; readonly migrationStatementTimeoutMs?: number } = {},
 ) => {
   const config = readDatabaseConfig(environment, options);
-  const pool = new Pool(postgresPoolConfig(config, options.credential));
+  const poolConfig = postgresPoolConfig(config, options.credential);
+  if (options.migrationStatementTimeoutMs !== undefined) {
+    const timeout = options.migrationStatementTimeoutMs;
+    if (config.auth.mode !== "azure-cli" || !Number.isSafeInteger(timeout) || timeout < 5_000 || timeout > 600_000) {
+      throw new DatabaseConfigurationError("Migration statement timeout requires an Azure CLI operator and 5000-600000 milliseconds.");
+    }
+    poolConfig.max = 1;
+    poolConfig.application_name = "sunsum-migration";
+    poolConfig.statement_timeout = timeout;
+    poolConfig.query_timeout = timeout + 5_000;
+  }
+  const pool = new Pool(poolConfig);
   pool.on("error", (error) => {
     console.error("PostgreSQL idle connection failed.", {
       code: databaseErrorCode(error),

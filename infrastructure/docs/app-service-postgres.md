@@ -427,7 +427,14 @@ Its targeted Azure CLI update changes only
 network mode/bypass/public-endpoint properties, preserving tags and containers.
 The storage Bicep parameter exposes the same approved choice for declarative
 deployment. `BlobRoles` verifies that the supplied principal matches the named
-web app before deploying the two container assignments. Role-assignment writes
+web app, checks disabled shared-key/anonymous account access and HTTPS/TLS,
+and reads both containers through ARM to require `publicAccess=None` before
+deploying assignments. These are control-plane reads, not Blob data access or
+account-key requests. The template itself resolves the identity from
+`webAppName`, not a free-form principal parameter. Its assignment names now use
+the web resource ID; inspect legacy principal-based assignments and identity
+recreation conflicts before deploying. Cleanup requires separate review.
+Role-assignment writes
 require an administrator only for this setup/change, not every code deployment.
 Switching Reader/Contributor is additive in incremental deployments: inspect and
 explicitly remove the obsolete, precisely identified assignment after review.
@@ -478,7 +485,7 @@ The two bounded, transactional phases are:
    nonadmin flags match, with no privileged role attributes or memberships.
    A local password role or changed MI object ID is **not** silently relabeled.
 2. Connect to the chosen app database. Refuse runtime-owned objects,
-   runtime/operator database ownership, incorrectly owned existing schemas,
+  runtime/operator database or `public` schema ownership, incorrectly owned existing schemas,
   PUBLIC database/public/metadata schema grants, runtime metadata access, and
   runtime application schema CREATE privileges.
    Create only the `drizzle` metadata schema, owned by the migration role.
@@ -519,6 +526,12 @@ npm run db:check
 # Future explicit SQL WRITE only after migration SQL and permissions review:
 npm run db:migrate:azure -- --apply
 ```
+
+Longer migrations can explicitly set `SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS`
+in the operator process to a reviewed integer from 5,000 through 600,000 ms.
+The default remains 5,000 ms. The migration client uses one connection and a
+client query deadline 5,000 ms above the statement deadline. Application pool
+limits remain unchanged; this is not an unlimited or whole-run timeout.
 
 **Important Drizzle prerequisite:** PostgreSQL checks database `CREATE` before
 honoring `CREATE SCHEMA IF NOT EXISTS`. The standard Drizzle PostgreSQL migrator
@@ -659,6 +672,15 @@ directory. This is a **full authsettingsV2 replacement**, not an additive provid
 patch. Directory assignments, secret validity/expiry and guest redemption cannot
 be inferred from a parameter file and still require administrator verification.
 
+Immediately before the deployment command, the script re-reads authsettingsV2
+and aborts if the properties differ from its recorded baseline or cannot be
+read, even when replacement was approved. This is a best-effort drift check,
+not an atomic conditional update: the API contract used here does not document
+an `If-Match` precondition and another writer can still act after the final
+read. Serialize all sign-in configuration changes during the approved window
+and verify the resulting configuration afterward. Do not rely on the recheck
+as a lock or bypass it with a direct template deployment.
+
 Verify anonymously (redirect, no application data), as an approved member, as an
 approved guest, as an unassigned tenant user, as an unapproved guest, and with a
 token issued for another tenant/audience. Only approved members/guests should
@@ -711,7 +733,12 @@ pwsh -NoProfile -File infrastructure\scripts\Deploy-AppServiceCode.ps1 `
 ```
 
 The explicit Azure CLI path checks the existing Linux/HTTPS target and disabled
-FTP/SCM policies, then uses `az webapp deploy --type zip --track-status false
+FTP/SCM policies. It also requires `NODE|22-lts`, the exact documented npm startup
+command, `SCM_DO_BUILD_DURING_DEPLOYMENT=true`, and the documented custom build
+command. An enabled `WEBSITE_RUN_FROM_PACKAGE` is rejected. Missing or different
+settings stop the source ZIP upload and require a separately reviewed correction,
+including when the foundation uses Existing web mode.
+It then uses `az webapp deploy --type zip --track-status false
 --timeout 600000`. It never changes resource definitions, roles or app settings. It follows
 deployment with at most 12 public-preview checks (10-second request timeout,
 10-second retry delay), rather than relying on unbounded startup tracking.

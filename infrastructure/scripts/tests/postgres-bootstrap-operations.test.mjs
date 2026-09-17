@@ -90,14 +90,17 @@ test("another role for the same runtime identity requires review", async () => {
   assert.equal(client.queries.at(-1)[0], "ROLLBACK");
 });
 
-const schemaClient = (owner, { publicGrants = [], unsafeRuntimeAccess = [], elevated = false } = {}) => {
+const schemaClient = (owner, { publicGrants = [], unsafeRuntimeAccess = [], elevated = false, publicOwner } = {}) => {
   const queries = [];
   return {
     queries,
-    query: async (sql) => {
+    query: async (sql, values = []) => {
       queries.push(sql);
       if (sql.startsWith("SELECT current_database")) {
         return { rows: [{ database: config.database, role: config.administratorRole }] };
+      }
+      if (sql.includes("nspname = 'public' AND pg_catalog.pg_get_userbyid(nspowner) = ANY")) {
+        return { rows: values[0].includes(publicOwner) ? [{}] : [] };
       }
       if (sql.includes("aclexplode")) return { rows: publicGrants };
       if (sql.includes("has_schema_privilege")) return { rows: unsafeRuntimeAccess };
@@ -156,6 +159,15 @@ test("wrong schema ownership rolls back before changing any grants", async () =>
   await assert.rejects(bootstrapSchemas(client, config, quote), /different owner/u);
   assert.ok(!client.queries.some((sql) => /^(GRANT|REVOKE|CREATE)/u.test(sql)));
   assert.equal(client.queries.at(-1), "ROLLBACK");
+});
+
+test("public schema ownership is never adopted from runtime or operator", async () => {
+  for (const publicOwner of [config.runtimeRole, config.operatorRole]) {
+    const client = schemaClient(config.operatorRole, { publicOwner });
+    await assert.rejects(bootstrapSchemas(client, config, quote), /public schema/u);
+    assert.ok(!client.queries.some((sql) => /^(GRANT|REVOKE|CREATE|ALTER)/u.test(sql)));
+    assert.equal(client.queries.at(-1), "ROLLBACK");
+  }
 });
 
 test("rollback failure is explicit rather than silently discarded", async () => {
@@ -246,6 +258,11 @@ test("PostgreSQL preserves unrelated ACLs and application grants across bootstra
       [runtimeRole],
     )).rows[0];
     assert.deepEqual(access, { usage: true, read: true, metadata: false });
+    await application.query(`ALTER SCHEMA public OWNER TO ${quote(operatorRole)}`);
+    const operatorOwned = await aclSnapshot();
+    await assert.rejects(bootstrapSchemas(application, localConfig, quote), /public schema/u);
+    assert.deepEqual(await aclSnapshot(), operatorOwned);
+    await application.query("ALTER SCHEMA public OWNER TO pg_database_owner");
     await application.query(`GRANT CREATE ON SCHEMA public TO ${quote(runtimeRole)}`);
     const unsafeSchema = await aclSnapshot();
     await assert.rejects(bootstrapSchemas(application, localConfig, quote), /application schema CREATE/u);

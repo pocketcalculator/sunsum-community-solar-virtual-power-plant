@@ -87,8 +87,14 @@ application-user sign-in.
 | Maximum connection lifetime | 300 seconds |
 
 These are small development defaults, not load-test-derived production sizing.
-Longer migrations require an explicit timeout and operational review rather
-than an unbounded pool. Background pool errors are logged with safe error codes,
+The Azure migration command uses one connection. Its statement timeout defaults
+to 5,000 ms; an operator may explicitly set
+`SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS` to an integer from 5,000 through 600,000
+after reviewing the migration and lock duration. Its client query timeout is
+the chosen statement timeout plus 5,000 ms. This variable is read only by the
+migration command, never by the application or connectivity check. It bounds
+each statement, not the entire migration run; no automatic retry is performed.
+Background pool errors are logged with safe error codes,
 never SQL text, parameters, passwords, or token values.
 
 ## Connectivity and migrations

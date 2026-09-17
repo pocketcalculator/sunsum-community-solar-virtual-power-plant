@@ -49,7 +49,10 @@ foreach ($patch in @(
     foreach ($key in $patch.Keys) { $invalid[$key] = $patch[$key] }
     Assert-Throws { Assert-AccessConfiguration $invalid SignIn $subscription $group }
 }
-Assert-AccessConfiguration $roles BlobRoles $subscription $group | Out-Null
+$roleParameters = Assert-AccessConfiguration $roles BlobRoles $subscription $group
+if ($roleParameters.webAppName.value -cne $roles.webAppName -or $roleParameters.Contains('webPrincipalId')) {
+    throw 'The role template must bind assignments to the named web app, not an arbitrary principal parameter.'
+}
 $invalid = $roles.Clone(); $invalid.blobDataAccess = 'Owner'
 Assert-Throws { Assert-AccessConfiguration $invalid BlobRoles $subscription $group }
 Assert-AccessConfiguration $network StorageNetwork $subscription $group | Out-Null
@@ -153,6 +156,55 @@ try {
         (Get-Content -LiteralPath "$global:MvpRaceOutput.before-auth.json" -Raw).Trim() -cne 'concurrent-review-baseline') {
         throw 'Create-only writes must preserve a concurrent audit record and stop before deployment.'
     }
+    $global:MvpAuthReads = 0
+    $global:MvpAuthWrites = 0
+    $global:MvpLatestAuth = ''
+    function global:az {
+        $global:LASTEXITCODE = 0
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
+            return '{"id":"synthetic-test-resource","httpsOnly":true,"kind":"app,linux"}'
+        }
+        if ($args[0] -ceq 'rest') {
+            $global:MvpAuthReads++
+            if ($global:MvpAuthReads -eq 1) { return '{"properties":{"platform":{"enabled":false}}}' }
+            if ($global:MvpLatestAuth -ceq 'failed-read') { $global:LASTEXITCODE = 1; return '' }
+            return $global:MvpLatestAuth
+        }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') {
+            return '[{"name":"MICROSOFT_PROVIDER_AUTHENTICATION_SECRET","value":"synthetic-test-only","slotSetting":true}]'
+        }
+        if ($args[0] -ceq 'deployment') { $global:MvpAuthWrites++; return }
+        throw 'Unexpected sign-in command.'
+    }
+    foreach ($allowReplace in @($false, $true)) {
+        $signIn.directoryPrerequisitesConfirmed = $true
+        $signIn.allowReplaceExistingSignIn = $allowReplace
+        $path = Join-Path $fixture 'SignIn.json'
+        $signIn | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding utf8NoBOM
+        foreach ($latest in @(
+            '{"properties":{"platform":{"enabled":false}}}',
+            '{"properties":{"platform":{"enabled":true}}}',
+            '{"properties":{"platform":{"enabled":false},"httpSettings":{"requireHttps":true}}}',
+            '{"properties":null}', 'failed-read'
+        )) {
+            $global:MvpLatestAuth = $latest
+            $global:MvpAuthReads = 0
+            $global:MvpAuthWrites = 0
+            $signInArgs = @{
+                Operation = 'SignIn'; SubscriptionId = $subscription; ResourceGroupName = $group
+                ConfigurationPath = $path; ExpectedSha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+                OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
+            }
+            if ($latest -ceq '{"properties":{"platform":{"enabled":false}}}') {
+                & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @signInArgs -Apply | Out-Null
+                if ($global:MvpAuthWrites -ne 1) { throw 'Unchanged sign-in configuration should allow deployment.' }
+            } else {
+                Assert-Throws { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @signInArgs -Apply }
+                if ($global:MvpAuthWrites -ne 0) { throw 'Changed or unreadable sign-in configuration must block deployment.' }
+            }
+            if ($global:MvpAuthReads -ne 2) { throw 'Expected a final authentication recheck.' }
+        }
+    }
     $baseline = @{
         location = 'centralus'; sku = @{ name = 'Standard_LRS' }; kind = 'StorageV2'
         allowSharedKeyAccess = $false; allowBlobPublicAccess = $false
@@ -213,11 +265,62 @@ try {
             throw 'Storage transport baseline was not preserved in the audit record.'
         }
     }
+    $global:MvpBlobWrites = 0
+    $global:MvpContainerPrivacy = @('None', 'None')
+    $global:MvpContainerReads = 0
+    function global:az {
+        $global:LASTEXITCODE = 0
+        if ($args[0] -ceq 'webapp') {
+            return '{"id":"synthetic-test-resource","httpsOnly":true,"kind":"app,linux","identity":{"principalId":"44444444-4444-4444-8444-444444444444"}}'
+        }
+        if ($args[0] -ceq 'storage' -and $args[2] -ceq 'show') { return ($global:MvpStorageState | ConvertTo-Json -Depth 8) }
+        if ($args[0] -ceq 'rest') {
+            $privacy = $global:MvpContainerPrivacy[$global:MvpContainerReads]
+            $global:MvpContainerReads++
+            if ($privacy -ceq 'failed-read') { $global:LASTEXITCODE = 1; return '' }
+            return (@{ properties = @{ publicAccess = $privacy } } | ConvertTo-Json -Depth 4)
+        }
+        if ($args[0] -ceq 'deployment') { $global:MvpBlobWrites++; return }
+        throw 'Unexpected Blob role command.'
+    }
+    $path = Join-Path $fixture 'BlobRoles.json'
+    $blobArgs = @{
+        Operation = 'BlobRoles'; SubscriptionId = $subscription; ResourceGroupName = $group
+        ConfigurationPath = $path; ExpectedSha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+    }
+    foreach ($property in @('allowSharedKeyAccess', 'allowBlobPublicAccess')) {
+        foreach ($value in @($true, $null, 'false')) {
+            $global:MvpStorageState = $baseline.Clone()
+            $global:MvpStorageState[$property] = $value
+            $global:MvpContainerReads = 0
+            $blobArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
+            Assert-Throws { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @blobArgs -Apply }
+            if ($global:MvpBlobWrites -ne 0 -or $global:MvpContainerReads -ne 0) { throw 'Insecure account must block before container checks or grants.' }
+        }
+    }
+    $global:MvpStorageState = $baseline
+    foreach ($containerIndex in @(0, 1)) {
+        foreach ($privacy in @('Blob', 'Container', $null, 'failed-read')) {
+            $global:MvpContainerPrivacy = @('None', 'None')
+            $global:MvpContainerPrivacy[$containerIndex] = $privacy
+            $global:MvpContainerReads = 0
+            $blobArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
+            Assert-Throws { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @blobArgs -Apply }
+            if ($global:MvpBlobWrites -ne 0 -or $global:MvpContainerReads -ne $containerIndex + 1) { throw 'Nonprivate or unreadable containers must block grants.' }
+        }
+    }
+    $global:MvpContainerPrivacy = @('None', 'None')
+    $global:MvpContainerReads = 0
+    $blobArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
+    & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @blobArgs -Apply | Out-Null
+    if ($global:MvpBlobWrites -ne 1 -or $global:MvpContainerReads -ne 2) { throw 'Private containers should permit the scoped grant.' }
 } finally {
     Remove-Item -LiteralPath Function:\az -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpAccessCalls -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpRaceOutput -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name MvpAuthReads, MvpAuthWrites, MvpLatestAuth -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpStorageState, MvpStorageUpdate -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name MvpBlobWrites, MvpContainerPrivacy, MvpContainerReads -Scope Global -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }
 Write-Output 'MVP access safety checks passed: explicit identities, directory approval, scoped roles, storage policy approval and no-cloud dry-runs.'

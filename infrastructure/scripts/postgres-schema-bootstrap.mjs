@@ -11,11 +11,14 @@ export const bootstrapSchemas = async (client, config, quoteIdentifier) => inTra
      UNION ALL
      SELECT 1 FROM pg_catalog.pg_namespace WHERE pg_catalog.pg_get_userbyid(nspowner) = $2
      UNION ALL
+     SELECT 1 FROM pg_catalog.pg_namespace
+       WHERE nspname = 'public' AND pg_catalog.pg_get_userbyid(nspowner) = ANY($1::text[])
+     UNION ALL
      SELECT 1 FROM pg_catalog.pg_class WHERE pg_catalog.pg_get_userbyid(relowner) = $2`,
     [[config.runtimeRole, config.operatorRole], config.runtimeRole],
   );
   if (owners.length !== 0) {
-    throw new BootstrapSafetyError("Runtime owns database objects, or runtime/operator owns the database; review privileges manually.");
+    throw new BootstrapSafetyError("Runtime owns database objects, or runtime/operator owns the database or public schema; review privileges manually.");
   }
   const { rows: publicGrants } = await client.query(
     `SELECT 1 FROM pg_catalog.pg_database AS database,

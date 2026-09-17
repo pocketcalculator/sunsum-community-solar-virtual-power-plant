@@ -73,7 +73,7 @@ function Assert-AccessConfiguration {
         'BlobRoles' {
             Assert-AccessUuid $Config.webPrincipalId
             if ($Config.blobDataAccess -cnotin @('Reader', 'Contributor')) { throw 'Only explicit Blob data Reader or Contributor is supported at the two container scopes.' }
-            foreach ($key in @('storageAccountName', 'webPrincipalId', 'blobDataAccess', 'approvalReference')) {
+            foreach ($key in @('storageAccountName', 'webAppName', 'blobDataAccess', 'approvalReference')) {
                 $parameters[$key] = @{ value = $Config[$key] }
             }
         }

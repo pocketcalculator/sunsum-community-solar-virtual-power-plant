@@ -42,6 +42,30 @@ foreach ($policy in @('ftp', 'scm')) {
     }
 }
 
+$raw = & az webapp config show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
+    --query '{linuxFxVersion:linuxFxVersion,appCommandLine:appCommandLine}' --output json --only-show-errors
+if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the existing Node and startup configuration before source deployment.' }
+$runtime = ($raw -join "`n") | ConvertFrom-Json -AsHashtable
+if ($runtime.linuxFxVersion -cne 'NODE|22-lts' -or $runtime.appCommandLine -cne 'npm run start -- --hostname 0.0.0.0') {
+    throw 'Source deployment requires the reviewed Node 22 and npm startup configuration; correct settings through a separate approved operation.'
+}
+$raw = & az webapp config appsettings list --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
+    --query "[?name=='SCM_DO_BUILD_DURING_DEPLOYMENT' || name=='CUSTOM_BUILD_COMMAND' || name=='WEBSITE_RUN_FROM_PACKAGE']" --output json --only-show-errors
+if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the existing remote-build settings before source deployment.' }
+$buildSettings = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
+if ($buildSettings -isnot [array]) { throw 'Expected a remote-build settings array.' }
+foreach ($required in @{
+    SCM_DO_BUILD_DURING_DEPLOYMENT = 'true'
+    CUSTOM_BUILD_COMMAND = 'npm ci --include=dev && npm run build'
+}.GetEnumerator()) {
+    $matches = @($buildSettings | Where-Object { $_.name -ceq $required.Key })
+    if ($matches.Count -ne 1 -or $matches[0].value -cne $required.Value) {
+        throw 'Source ZIP deployment requires the reviewed Oryx build settings; this script will not change them automatically.'
+    }
+}
+if (@($buildSettings | Where-Object { $_.name -ceq 'WEBSITE_RUN_FROM_PACKAGE' -and -not [string]::IsNullOrWhiteSpace($_.value) -and $_.value -cne '0' }).Count -gt 0) {
+    throw 'Run-from-package is incompatible with this source ZIP remote-build path.'
+}
 & az webapp deploy --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
     --src-path $artifact.Path --type zip --async false --track-status false --timeout 600000 `
     --only-show-errors --output none

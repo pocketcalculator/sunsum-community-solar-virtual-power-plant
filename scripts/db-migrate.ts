@@ -22,6 +22,12 @@ try {
   if (config.auth.mode !== "azure-cli") {
     throw new DatabaseConfigurationError("Azure migrations require azure-cli authentication. Use db:migrate for local password databases.");
   }
+  const timeoutText = environment.SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS ?? "5000";
+  const migrationStatementTimeoutMs = Number(timeoutText);
+  if (!/^[1-9][0-9]*$/.test(timeoutText) || !Number.isSafeInteger(migrationStatementTimeoutMs) ||
+      migrationStatementTimeoutMs < 5_000 || migrationStatementTimeoutMs > 600_000) {
+    throw new DatabaseConfigurationError("SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS must be an integer from 5000 to 600000.");
+  }
   const migrations = readMigrationFiles({ migrationsFolder });
   if (migrations.length === 0) {
     console.log("No versioned SQL migrations are present; nothing was applied.");
@@ -30,7 +36,7 @@ try {
       import("../src/backend/infrastructure/database"),
       import("drizzle-orm/node-postgres/migrator"),
     ]);
-    const database = createDatabase(environment, { allowOperatorIdentity: true });
+    const database = createDatabase(environment, { allowOperatorIdentity: true, migrationStatementTimeoutMs });
     try {
       await assertMigrationPermission(database);
       await migrate(database.db, { migrationsFolder, migrationsSchema: "drizzle" });

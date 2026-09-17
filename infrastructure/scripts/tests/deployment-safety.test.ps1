@@ -230,6 +230,56 @@ try {
         & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply | Out-Null
         if ($global:AzureProvisionWrites -ne 1) { throw 'Unrelated resources should not block provisioning.' }
     }
+    $global:AzureCodeWrites = 0
+    $global:AzureCodeReadFailure = $false
+    $global:AzureCodeRuntime = @{}
+    $global:AzureCodeBuildSettings = @()
+    function global:az {
+        $global:LASTEXITCODE = 0
+        if ($args -contains '--help') { return '--track-status' }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
+            return '{"id":"synthetic-test-resource","host":"sample-web.azurewebsites.net","httpsOnly":true,"kind":"app,linux"}'
+        }
+        if ($args[0] -ceq 'resource' -and $args[1] -ceq 'show') { return 'false' }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') {
+            if ($global:AzureCodeReadFailure) { $global:LASTEXITCODE = 1; return '' }
+            if ($args[2] -ceq 'show') { return ($global:AzureCodeRuntime | ConvertTo-Json) }
+            return (ConvertTo-Json -InputObject $global:AzureCodeBuildSettings -Depth 5)
+        }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'deploy') {
+            $global:AzureCodeWrites++
+            $global:LASTEXITCODE = 1
+            return
+        }
+        throw 'Unexpected code deployment command.'
+    }
+    $deploy.ExpectedSha256 = $package.SHA256
+    foreach ($scenario in @('missing-runtime', 'wrong-node', 'wrong-startup', 'missing-build', 'build-disabled', 'wrong-build', 'duplicate-build', 'run-from-package', 'read-failure', 'valid')) {
+        $global:AzureCodeWrites = 0
+        $global:AzureCodeReadFailure = $scenario -ceq 'read-failure'
+        $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0' }
+        $global:AzureCodeBuildSettings = @(
+            @{ name = 'SCM_DO_BUILD_DURING_DEPLOYMENT'; value = 'true' },
+            @{ name = 'CUSTOM_BUILD_COMMAND'; value = 'npm ci --include=dev && npm run build' }
+        )
+        switch ($scenario) {
+            'missing-runtime' { $global:AzureCodeRuntime = @{} }
+            'wrong-node' { $global:AzureCodeRuntime.linuxFxVersion = 'NODE|20-lts' }
+            'wrong-startup' { $global:AzureCodeRuntime.appCommandLine = '' }
+            'missing-build' { $global:AzureCodeBuildSettings = @() }
+            'build-disabled' { $global:AzureCodeBuildSettings[0].value = 'false' }
+            'wrong-build' { $global:AzureCodeBuildSettings[1].value = 'npm ci' }
+            'duplicate-build' { $global:AzureCodeBuildSettings += $global:AzureCodeBuildSettings[0] }
+            'run-from-package' { $global:AzureCodeBuildSettings += @{ name = 'WEBSITE_RUN_FROM_PACKAGE'; value = '1' } }
+        }
+        $message = ''
+        try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+        if ($scenario -ceq 'valid') {
+            if ($global:AzureCodeWrites -ne 1 -or $message -notlike 'Deployment did not report success*') { throw 'Valid source-build configuration must reach the mocked deployment.' }
+        } elseif ($global:AzureCodeWrites -ne 0 -or $message -eq '') {
+            throw "Unsafe source-build scenario $scenario reached deployment."
+        }
+    }
     $zip = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Update)
     try { $null = $zip.CreateEntry('.env') } finally { $zip.Dispose() }
     Assert-Throws { & (Join-Path $PSScriptRoot '..\Test-AppServicePackage.ps1') -Path $zipPath } 'Accepted a tampered archive.'
@@ -237,6 +287,7 @@ try {
     Remove-Item -LiteralPath Function:\az -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureSafetyTestCalls -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureProvisionInventory, AzureProvisionExitCode, AzureProvisionWrites -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name AzureCodeWrites, AzureCodeReadFailure, AzureCodeRuntime, AzureCodeBuildSettings -Scope Global -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }
 }
 Write-Output 'Deployment safety: IPv4, real ZIP exclusion/tamper checks and target-bound approval checks passed.'

@@ -47,6 +47,8 @@ if ($Operation -eq 'SignIn') {
     $raw = & az rest --method get --url "https://management.azure.com$($web.id)/config/authsettingsV2?api-version=2024-04-01" --output json --only-show-errors
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect current authentication; do not activate blindly.' }
     $auth = ($raw -join "`n") | ConvertFrom-Json -AsHashtable
+    if ($auth.properties -isnot [System.Collections.IDictionary]) { throw 'Authentication configuration did not contain a valid properties object.' }
+    $authSnapshot = $auth.properties | ConvertTo-Json -Depth 50 -Compress
     if ($auth.properties.Contains('platform') -and $auth.properties.platform.Contains('enabled') -and
         $auth.properties.platform.enabled -and -not $config.allowReplaceExistingSignIn) { throw 'Existing sign-in is enabled; review its full replacement before opting in.' }
     $raw = & az webapp config appsettings list --subscription $SubscriptionId --resource-group $ResourceGroupName --name $config.webAppName --output json --only-show-errors
@@ -64,12 +66,13 @@ if ($Operation -eq 'BlobRoles' -and
     (-not $web.Contains('identity') -or $web.identity.principalId -ine $config.webPrincipalId)) {
     throw 'Approved Blob principal is not the existing web app system-assigned identity.'
 }
-if ($Operation -eq 'StorageNetwork') {
+if ($Operation -in @('StorageNetwork', 'BlobRoles')) {
     $raw = & az storage account show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $config.storageAccountName --output json --only-show-errors
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the existing storage account before network changes.' }
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the existing storage account before access changes.' }
     $storage = ($raw -join "`n") | ConvertFrom-Json -AsHashtable
-    if ($storage.location -ine $config.location -or $storage.sku.name -cne 'Standard_LRS' -or
-        $storage.kind -cne 'StorageV2' -or $storage.allowSharedKeyAccess -ne $false -or $storage.allowBlobPublicAccess -ne $false) {
+    if (($Operation -eq 'StorageNetwork' -and $storage.location -ine $config.location) -or $storage.sku.name -cne 'Standard_LRS' -or
+        $storage.kind -cne 'StorageV2' -or $storage.allowSharedKeyAccess -isnot [bool] -or $storage.allowSharedKeyAccess -ne $false -or
+        $storage.allowBlobPublicAccess -isnot [bool] -or $storage.allowBlobPublicAccess -ne $false) {
         throw 'Storage does not match the reviewed LRS/private/passwordless baseline; no takeover is allowed.'
     }
     if (-not $storage.Contains('enableHttpsTrafficOnly') -or $storage.enableHttpsTrafficOnly -isnot [bool] -or
@@ -77,6 +80,17 @@ if ($Operation -eq 'StorageNetwork') {
         $storage.minimumTlsVersion -cne 'TLS1_2') {
         throw 'Storage must already require HTTPS and minimum TLS 1.2. Missing or incompatible transport settings require separate review before network changes.'
     }
+}
+if ($Operation -eq 'BlobRoles') {
+    foreach ($containerName in @('site-documents', 'project-documents')) {
+        $containerId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Storage/storageAccounts/$($config.storageAccountName)/blobServices/default/containers/$containerName"
+        $raw = & az rest --method get --url "https://management.azure.com${containerId}?api-version=2024-01-01" --output json --only-show-errors
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot verify existing private containers before role assignment.' }
+        $container = ($raw -join "`n") | ConvertFrom-Json -AsHashtable
+        if ($container.properties.publicAccess -cne 'None') { throw 'Both document containers must already disable public access before role assignment.' }
+    }
+}
+if ($Operation -eq 'StorageNetwork') {
     if ($storage.networkRuleSet.ipRules.Count -ne 0 -or $storage.networkRuleSet.virtualNetworkRules.Count -ne 0 -or
         ($storage.networkRuleSet.Contains('resourceAccessRules') -and $storage.networkRuleSet.resourceAccessRules.Count -gt 0)) {
         throw 'Existing network exceptions require separate review; this template would replace them.'
@@ -94,6 +108,15 @@ if ($Operation -eq 'StorageNetwork') {
 $templateName = switch ($Operation) {
     'SignIn' { 'web-sign-in.bicep' }
     'BlobRoles' { 'storage-role-grants.bicep' }
+}
+if ($Operation -eq 'SignIn') {
+    $raw = & az rest --method get --url "https://management.azure.com$($web.id)/config/authsettingsV2?api-version=2024-04-01" --output json --only-show-errors
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot recheck authentication immediately before deployment; no update was attempted.' }
+    $latestAuth = ($raw -join "`n") | ConvertFrom-Json -AsHashtable
+    if ($latestAuth.properties -isnot [System.Collections.IDictionary] -or
+        ($latestAuth.properties | ConvertTo-Json -Depth 50 -Compress) -cne $authSnapshot) {
+        throw 'Authentication changed after preflight. Obtain a new review and output path; no update was attempted.'
+    }
 }
 & az deployment group create --subscription $SubscriptionId --resource-group $ResourceGroupName `
     --name "sunsum-$($Operation.ToLowerInvariant())-$([DateTime]::UtcNow.ToString('yyyyMMddHHmmss'))" `

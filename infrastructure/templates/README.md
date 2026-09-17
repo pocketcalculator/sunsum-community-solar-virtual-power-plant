@@ -43,6 +43,20 @@ policy. The web module has no implicit paid-tier fallback.
 
 Use the validating firewall script rather than passing raw IP input to the
 network template. Incremental deployment does not remove old allowances.
+The firewall template does not classify public/reserved IP ranges, and the core
+template does not enforce first-time creation. Those checks belong to the
+supported `Set-PostgresFirewall.ps1` and `Provision-Infrastructure.ps1` entry
+points. A caller with direct Azure write permissions can bypass local checks;
+enforcing restrictions against that caller requires separately managed Azure
+Policy/RBAC controls. No such policy enforcement is provisioned here.
+
+The Blob-role template takes `webAppName` and derives its system-assigned
+principal from that resource in the target group. `webPrincipalId` remains an
+approval check in the wrapper's input, not a template parameter. Assignment
+names now derive from the web resource ID rather than the principal ID. Review
+existing assignments before upgrading from older templates or recreating an
+identity; do not automatically delete or retarget conflicting assignments.
+
 Follow the [operating guide](../docs/app-service-postgres.md) for approval,
 provisioning, bootstrap and code-only deployment; never use group complete mode
 or resource-group deletion to clean up this shared/persistent foundation.
