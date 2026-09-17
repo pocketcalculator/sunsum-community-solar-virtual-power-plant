@@ -10,8 +10,10 @@
  *
  * Nothing in `core` or `handlers` may import this. The composition root —
  * `src/backend/index.ts` — is the one module that sees both sides and decides
- * which store the running process uses.
+ * which store the running process uses, based on `SUNSUM_STORE`.
  */
 
+export * from "./client";
 export * from "./enums";
+export * from "./backend-store";
 export * from "./schema";
