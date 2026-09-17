@@ -32,11 +32,9 @@ param postgresPort int = 5432
 @description('Commit the deployed build was produced from, recorded as a tag so a running site can be traced back to a revision.')
 param sourceCommit string = 'unknown'
 
-@description('Tags applied to the web app. Declaring them here keeps a deployment from removing the tags the environment was created with.')
+@description('Tags applied to the web app. Declaring them here keeps a deployment from removing the tags the environment was created with, so each environment passes its own set rather than relying on this default.')
 param tags object = {
   project: 'sunsum'
-  purpose: 'nextjs-smoke-test'
-  'review-after': '2026-09-18'
 }
 
 // Always On is unavailable on the free tier, so the site cold-starts there.
