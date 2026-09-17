@@ -149,7 +149,7 @@ Review found `fundingStageFocus` typed as `ProjectStage[]`, which makes a
 demo investor's mandate includes `permanent` so the case is exercised rather
 than merely permitted.
 
-An earlier version of this file declared the mapping _here_, which could not
+An earlier version of this file declared the mapping *here*, which could not
 work: `core` is forbidden from importing `db`, so nothing that needed the
 mapping could reach it.
 
