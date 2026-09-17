@@ -24,6 +24,7 @@
     "db:seed": "node scripts/db.mjs seed",
     "db:reset": "node scripts/db.mjs reset",
     "db:verify": "node scripts/db.mjs verify",
+    "test:db": "node scripts/db.mjs verify && vitest run --config vitest.integration.config.ts",
     "blob:up": "azurite-blob --location .azurite --blobHost 127.0.0.1 --blobPort 10000",
     "blob:seed": "node scripts/blob.mjs seed",
     "blob:list": "node scripts/blob.mjs list",

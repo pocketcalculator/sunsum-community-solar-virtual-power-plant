@@ -317,7 +317,18 @@ export const documents = pgTable(
     originalFilename: text("original_filename").notNull(),
     contentType: text("content_type").notNull(),
     sizeBytes: numeric("size_bytes", { precision: 20, scale: 0 }).notNull(),
-    docType: text("doc_type").notNull(),
+    /**
+     * Nullable, matching `DocumentRecord.docType` and the upload handler, which
+     * maps an absent `doc_type` in the request body to null rather than
+     * rejecting it. This column was `NOT NULL` and nothing on the write path
+     * could satisfy it: every upload that omitted the field failed the insert.
+     *
+     * Unlike `disclosure_class` there is no fail-closed argument for a default.
+     * That column decides who may read the row, so an unset value has to mean
+     * "private"; this one is a label, and inventing one would put a category on
+     * a document nobody classified.
+     */
+    docType: text("doc_type"),
     /**
      * Fail closed. The deal room filters on this to decide what an investor may
      * see, so a document whose class nobody set must be treated as the owner's

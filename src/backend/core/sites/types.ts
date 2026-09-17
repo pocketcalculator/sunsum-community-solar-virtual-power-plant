@@ -125,9 +125,11 @@ export interface DocumentRecord {
   contentType: string;
   sizeBytes: number;
   /**
-   * Never null: `documents.doc_type` is `text NOT NULL` with no column default,
-   * so an upload that omits it is resolved to `other` rather than carried as
-   * null into a record the database would reject.
+   * Never null on the record, though `documents.doc_type` is nullable in the
+   * database (migration 0002 dropped the NOT NULL). It is a blob-path segment,
+   * so an upload that omits it is resolved to `other` on the way in and a null
+   * row is resolved the same way on the way out, rather than formatting a path
+   * with an empty segment.
    */
   docType: string;
   disclosureClass: DocumentDisclosureClass;

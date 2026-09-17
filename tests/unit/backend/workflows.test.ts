@@ -627,9 +627,23 @@ describe("demo funding needs", () => {
     const projects = await store.listProjects();
     expect(projects).not.toHaveLength(0);
     for (const project of projects) {
-      expect(project.ownerUserId).toBe(demoOwner.userId);
+      // Not all one owner: the fixtures spread projects across several site
+      // owners the way `db/seed.sql` does, so that owner-scoped reads have rows
+      // they must *not* return. What has to hold is that each owner is a real
+      // seeded person rather than an id invented at the reference site — a
+      // dangling principal is the bug this test exists to catch.
+      expect(project.ownerUserId).toMatch(uuid);
+      await expect(store.getUser(project.ownerUserId)).resolves.toMatchObject({
+        id: project.ownerUserId,
+        role: "site_owner",
+      });
       expect(project.assignedOperatorUserId).toBe(demoOperator.userId);
     }
+
+    expect(
+      projects.some((project) => project.ownerUserId === demoOwner.userId),
+      "the demo site owner owns nothing, so signing in as them shows an empty portfolio",
+    ).toBe(true);
 
     await expect(store.getUser(demoOwner.userId)).resolves.toMatchObject({
       role: "site_owner",

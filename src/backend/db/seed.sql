@@ -19,6 +19,14 @@
 --
 -- The assertions at the end are the point: running this file verifies the
 -- charter's demo criteria rather than merely loading rows.
+--
+-- Every timestamp is the fixed instant `2026-09-01T00:00:00Z` rather than
+-- `now()`, because `DEMO_CREATED_AT` in `core/store/index.ts` is that instant
+-- and the two stores are supposed to be indistinguishable. Seeding with `now()`
+-- made `created_at` depend on when the file was run, so every response carried a
+-- timestamp the fixtures could not produce and `store-parity.test.ts` failed on
+-- data rather than on behaviour. It also means re-seeding is a no-op instead of
+-- quietly moving every row's `updated_at`.
 
 BEGIN;
 
@@ -29,13 +37,13 @@ BEGIN;
 -- exist so that owner-scoped reads have rows they must *not* return.
 -- ---------------------------------------------------------------------------
 
-INSERT INTO users (id, name, email, role) VALUES
-  ('7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40', 'Ava Mitchell',    'ava.mitchell@example.org',    'site_owner'),
-  ('11111111-1111-4111-8111-000000001002', 'Marcus Webb',     'marcus.webb@example.org',     'site_owner'),
-  ('11111111-1111-4111-8111-000000001004', 'Ray Thompson',    'ray.thompson@example.org',    'site_owner'),
-  ('11111111-1111-4111-8111-000000001005', 'Lena Brooks',     'lena.brooks@example.org',     'site_owner'),
-  ('2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'Jordan Ellis',    'jordan.ellis@example.org',    'operator'),
-  ('91e3b7c4-2d65-4a08-bf19-7c5e0a6d3b82', 'Priya Raman',     'priya.raman@example.org',     'investor')
+INSERT INTO users (id, name, email, role, created_at) VALUES
+  ('7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40', 'Ava Mitchell',    'ava.mitchell@example.org',    'site_owner', '2026-09-01T00:00:00Z'),
+  ('11111111-1111-4111-8111-000000001002', 'Marcus Webb',     'marcus.webb@example.org',     'site_owner', '2026-09-01T00:00:00Z'),
+  ('11111111-1111-4111-8111-000000001004', 'Ray Thompson',    'ray.thompson@example.org',    'site_owner', '2026-09-01T00:00:00Z'),
+  ('11111111-1111-4111-8111-000000001005', 'Lena Brooks',     'lena.brooks@example.org',     'site_owner', '2026-09-01T00:00:00Z'),
+  ('2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'Jordan Ellis',    'jordan.ellis@example.org',    'operator',   '2026-09-01T00:00:00Z'),
+  ('91e3b7c4-2d65-4a08-bf19-7c5e0a6d3b82', 'Priya Raman',     'priya.raman@example.org',     'investor',   '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
   SET name = EXCLUDED.name, email = EXCLUDED.email, role = EXCLUDED.role;
 
@@ -52,35 +60,43 @@ ON CONFLICT (id) DO UPDATE
 -- ---------------------------------------------------------------------------
 
 INSERT INTO sites (id, owner_user_id, address_raw, latitude, longitude, locality, region,
-                   site_type, ownership_status, submission_status, consent_given_at) VALUES
+                   site_type, ownership_status, submission_status, consent_given_at,
+                   created_at, updated_at) VALUES
   ('8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01', '7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40',
    '148 Auburn Ave NE, Atlanta, GA 30303', 33.755400, -84.376600, 'Sweet Auburn, Atlanta', 'GA',
-   'rooftop', 'confirmed', 'accepted', now()),
+   'rooftop', 'confirmed', 'accepted', '2026-09-01T00:00:00Z',
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z'),
   ('8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c02', '11111111-1111-4111-8111-000000001002',
    '1075 Ralph David Abernathy Blvd SW, Atlanta, GA 30310', 33.735100, -84.422900, 'West End, Atlanta', 'GA',
-   'land', 'confirmed', 'accepted', now()),
+   'land', 'confirmed', 'accepted', '2026-09-01T00:00:00Z',
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z'),
   ('8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c03', '7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40',
    '1000 McDaniel St SW, Atlanta, GA 30310', 33.731800, -84.400400, 'Mechanicsville, Atlanta', 'GA',
-   'rooftop', 'confirmed', 'accepted', now()),
+   'rooftop', 'confirmed', 'accepted', '2026-09-01T00:00:00Z',
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z'),
   ('8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c04', '11111111-1111-4111-8111-000000001004',
    '1701 Donald Lee Hollowell Pkwy NW, Atlanta, GA 30318', 33.771200, -84.464300, 'Grove Park, Atlanta', 'GA',
-   'rooftop', 'confirmed', 'accepted', now()),
+   'rooftop', 'confirmed', 'accepted', '2026-09-01T00:00:00Z',
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z'),
   ('8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c05', '11111111-1111-4111-8111-000000001005',
    '200 Riverfront Pkwy, Chattanooga, TN 37402', 35.055800, -85.311300, 'Riverfront, Chattanooga', 'TN',
-   'land', 'confirmed', 'accepted', now()),
+   'land', 'confirmed', 'accepted', '2026-09-01T00:00:00Z',
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z'),
   ('8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c06', '7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40',
    NULL, NULL, NULL, NULL, NULL,
-   NULL, NULL, 'draft', NULL),
+   NULL, NULL, 'draft', NULL,
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z'),
   -- Submitted but not yet accepted, so the operator queue is not empty and the
   -- `screening` value is exercised by real data.
   ('8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c07', '11111111-1111-4111-8111-000000001002',
    '675 Metropolitan Pkwy SW, Atlanta, GA 30310', 33.717900, -84.408800, 'Capitol View, Atlanta', 'GA',
-   'rooftop', 'pending', 'screening', now())
+   'rooftop', 'pending', 'screening', '2026-09-01T00:00:00Z',
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
   SET address_raw = EXCLUDED.address_raw, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
       locality = EXCLUDED.locality, region = EXCLUDED.region, site_type = EXCLUDED.site_type,
       ownership_status = EXCLUDED.ownership_status, submission_status = EXCLUDED.submission_status,
-      updated_at = now();
+      updated_at = EXCLUDED.updated_at;
 
 -- ---------------------------------------------------------------------------
 -- Assessments
@@ -93,40 +109,47 @@ ON CONFLICT (id) DO UPDATE
 
 INSERT INTO assessments (id, site_id, ruleset_version, inputs_used, preliminary_project_type, viability_status,
                          estimated_system_size_kw_low, estimated_system_size_kw_high,
-                         estimated_annual_generation_kwh_low, estimated_annual_generation_kwh_high) VALUES
+                         estimated_annual_generation_kwh_low, estimated_annual_generation_kwh_high,
+                         created_at) VALUES
   ('a55e5500-0000-4000-8000-000000000001', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01', 'v1', '{"source":"seed"}',
-   'community_rooftop', 'potentially_viable',            180,  240,  243000,  324000),
+   'community_rooftop', 'potentially_viable',            180,  240,  243000,  324000, '2026-09-01T00:00:00Z'),
   ('a55e5500-0000-4000-8000-000000000002', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c02', 'v1', '{"source":"seed"}',
-   'solar_canopy',     'potentially_viable',            320,  410,  432000,  553500),
+   'solar_canopy',     'potentially_viable',            320,  410,  432000,  553500, '2026-09-01T00:00:00Z'),
   ('a55e5500-0000-4000-8000-000000000003', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c03', 'v1', '{"source":"seed"}',
-   'community_rooftop', 'more_information_required',      95,  130,  128250,  175500),
+   'community_rooftop', 'more_information_required',      95,  130,  128250,  175500, '2026-09-01T00:00:00Z'),
   ('a55e5500-0000-4000-8000-000000000004', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c04', 'v1', '{"source":"seed"}',
-   'community_rooftop', 'potentially_viable',            500,  640,  675000,  864000),
+   'community_rooftop', 'potentially_viable',            500,  640,  675000,  864000, '2026-09-01T00:00:00Z'),
   ('a55e5500-0000-4000-8000-000000000005', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c05', 'v1', '{"source":"seed"}',
-   'ground_mount',     'potentially_viable',            700,  900,  945000, 1215000)
+   'ground_mount',     'potentially_viable',            700,  900,  945000, 1215000, '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- Projects
 -- ---------------------------------------------------------------------------
 
-INSERT INTO projects (id, site_id, name, assigned_operator_user_id, stage, estimated_capacity_kw, visible_to_investors) VALUES
+INSERT INTO projects (id, site_id, name, assigned_operator_user_id, stage, estimated_capacity_kw, visible_to_investors,
+                      created_at, updated_at) VALUES
   ('3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7101', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01',
-   'Sweet Auburn rooftop array',    '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'pre_development', 210.0,  true),
+   'Sweet Auburn rooftop array',    '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'pre_development', 210.0,  true,
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z'),
   ('3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7102', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c02',
-   'West End community canopy',     '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'development',     365.0,  true),
+   'West End community canopy',     '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'development',     365.0,  true,
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z'),
   ('3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7103', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c03',
-   'Mechanicsville school roof',    '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'construction',    112.5,  true),
+   'Mechanicsville school roof',    '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'construction',    112.5,  true,
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z'),
   -- Not published. The seed asserts below that it stays invisible.
   ('3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7104', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c04',
-   'Grove Park warehouse roof',     '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'pre_development', 570.0,  false),
+   'Grove Park warehouse roof',     '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'pre_development', 570.0,  false,
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z'),
   ('3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7105', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c05',
-   'Chattanooga riverfront field',  '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'operations',      800.0,  true)
+   'Chattanooga riverfront field',  '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', 'operations',      800.0,  true,
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
   SET name = EXCLUDED.name, stage = EXCLUDED.stage,
       estimated_capacity_kw = EXCLUDED.estimated_capacity_kw,
       visible_to_investors = EXCLUDED.visible_to_investors,
-      updated_at = now();
+      updated_at = EXCLUDED.updated_at;
 
 -- ---------------------------------------------------------------------------
 -- Funding needs
@@ -136,21 +159,21 @@ ON CONFLICT (id) DO UPDATE
 -- are funded.
 -- ---------------------------------------------------------------------------
 
-INSERT INTO funding_needs (id, project_id, need_type, stage, description, amount_requested, status) VALUES
+INSERT INTO funding_needs (id, project_id, need_type, stage, description, amount_requested, status, created_at) VALUES
   ('fdfdfdfd-0000-4000-8000-000000000101', '3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7101',
-   'feasibility_study',       'pre_development', 'Structural and shading feasibility study',  45000, 'open'),
+   'feasibility_study',       'pre_development', 'Structural and shading feasibility study',  45000, 'open', '2026-09-01T00:00:00Z'),
   ('fdfdfdfd-0000-4000-8000-000000000102', '3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7101',
-   'interconnection_study',   'pre_development', 'Utility interconnection application',       28000, 'open'),
+   'interconnection_study',   'pre_development', 'Utility interconnection application',       28000, 'open', '2026-09-01T00:00:00Z'),
   ('fdfdfdfd-0000-4000-8000-000000000201', '3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7102',
-   'engineering_assessment',  'development',     'Canopy structural engineering package',    120000, 'open'),
+   'engineering_assessment',  'development',     'Canopy structural engineering package',    120000, 'open', '2026-09-01T00:00:00Z'),
   ('fdfdfdfd-0000-4000-8000-000000000401', '3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7104',
-   'site_visit',              'pre_development', 'Roof condition site visit',                 12000, 'open'),
+   'site_visit',              'pre_development', 'Roof condition site visit',                 12000, 'open', '2026-09-01T00:00:00Z'),
   ('fdfdfdfd-0000-4000-8000-000000000402', '3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7104',
-   'environmental_review',    'pre_development', 'Phase I environmental review',              34000, 'open'),
+   'environmental_review',    'pre_development', 'Phase I environmental review',              34000, 'open', '2026-09-01T00:00:00Z'),
   ('fdfdfdfd-0000-4000-8000-000000000403', '3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7104',
-   'engineering_assessment',  'development',     'Preliminary engineering package',           95000, 'open'),
+   'engineering_assessment',  'development',     'Preliminary engineering package',           95000, 'open', '2026-09-01T00:00:00Z'),
   ('fdfdfdfd-0000-4000-8000-000000000501', '3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7105',
-   'permanent_financing',     'permanent',       'Permanent capital for operating asset',    850000, 'open')
+   'permanent_financing',     'permanent',       'Permanent capital for operating asset',    850000, 'open', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
   SET need_type = EXCLUDED.need_type, stage = EXCLUDED.stage, description = EXCLUDED.description,
       amount_requested = EXCLUDED.amount_requested, status = EXCLUDED.status;
@@ -165,10 +188,11 @@ ON CONFLICT (id) DO UPDATE
 
 INSERT INTO investors (id, user_id, organization_name, investor_type, capital_type,
                        funding_stage_focus, ticket_size_min, ticket_size_max, geographies,
-                       onboarding_completed_at) VALUES
+                       onboarding_completed_at, created_at) VALUES
   ('4d7a2c91-8e56-43bf-9a10-5c6d2f7b8e34', '91e3b7c4-2d65-4a08-bf19-7c5e0a6d3b82',
    'Southeast Community Solar Fund', 'impact_investor', 'concessionary_debt',
-   '["pre_development","development","permanent"]', 25000, 1000000, '["GA","TN"]', now())
+   '["pre_development","development","permanent"]', 25000, 1000000, '["GA","TN"]',
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
   SET organization_name = EXCLUDED.organization_name, investor_type = EXCLUDED.investor_type,
       capital_type = EXCLUDED.capital_type, funding_stage_focus = EXCLUDED.funding_stage_focus,
@@ -195,20 +219,20 @@ ON CONFLICT (id) DO UPDATE
 -- owner under a single prefix.
 
 INSERT INTO documents (id, site_id, blob_path, original_filename, content_type, size_bytes,
-                       doc_type, uploaded_by_user_id) VALUES
+                       doc_type, uploaded_by_user_id, created_at) VALUES
   ('d0c00000-0000-4000-8000-000000000001', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01',
    'owner-private/owners/7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40/sites/8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01/electricity_bill/d0c00000-0000-4000-8000-000000000001/electricity-bill.pdf',
    'electricity-bill.pdf', 'application/pdf', 184320,
-   'electricity_bill', '7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40')
+   'electricity_bill', '7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
   SET blob_path = EXCLUDED.blob_path, original_filename = EXCLUDED.original_filename;
 
 INSERT INTO documents (id, site_id, blob_path, original_filename, content_type, size_bytes,
-                       doc_type, disclosure_class, uploaded_by_user_id) VALUES
+                       doc_type, disclosure_class, uploaded_by_user_id, created_at) VALUES
   ('d0c00000-0000-4000-8000-000000000002', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01',
    'investor-tier-1/owners/7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40/sites/8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01/site_summary/d0c00000-0000-4000-8000-000000000002/site-summary.pdf',
    'site-summary.pdf', 'application/pdf', 96256,
-   'site_summary', 'investor_tier_1', '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71')
+   'site_summary', 'investor_tier_1', '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
   SET blob_path = EXCLUDED.blob_path, original_filename = EXCLUDED.original_filename,
       disclosure_class = EXCLUDED.disclosure_class;

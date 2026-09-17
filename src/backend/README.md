@@ -6,9 +6,11 @@ sections 9 and 10 of
 [the technical design](../../docs/sunsum_technical_design_doc.md).
 
 **`GET /portfolio` is the worked example.** The agreed owner, operator and
-investor workflow endpoints now follow the same handler/core split. Persistence
-and identity are still demo seams: one shared in-memory state makes mutations
-visible across endpoints, and each route uses a fixed role-specific identity.
+investor workflow endpoints now follow the same handler/core split. It runs
+against either an in-memory fixture or a real PostgreSQL database, chosen by
+one environment variable, so that later endpoints have a pattern to copy; see
+[Adding an endpoint](#adding-an-endpoint). Identity is still a demo seam: each
+route uses a fixed role-specific identity.
 
 > [!WARNING]
 > **Do not expose these privileged demo routes as a production API.** They do
@@ -28,6 +30,7 @@ code goes is a lookup rather than a judgement call.
 ```text
 src/backend/
   index.ts              the only entry point a route may use
+  composition.ts        the composition root — picks the store from the environment
   core/
     shared/             primitives with no domain meaning: Result, ok, failure
     identity/           S-IAM   who the caller is
@@ -45,7 +48,7 @@ src/backend/
     projects/           S-PROJ  decision, stage and visibility bodies
     engagements/        S-ENG   interest and operator engagement reads
     views/              S-VIEW  composed reads
-  db/                   the schema. Imports core; core never imports it
+  db/                   schema, migrations, driver, store. Imports core; core never imports it
 ```
 
 Each directory's `index.ts` is its public face. A sibling imports
@@ -97,6 +100,42 @@ in the user interface" means here.
 `index.ts` is the public entry point. Routes import `@/backend` and nothing
 deeper, which keeps handler and core module paths free to move.
 
+## The composition root
+
+Neither `core/` nor `handlers/` may import `db/`. Something has to, or the
+database would never be reached — so one module does, and only one:
+`composition.ts`, imported by `index.ts`.
+
+```text
+composition.ts  installSelectedStore()  reads SUNSUM_STORE, points core's seam at a BackendStore
+index.ts        re-exports the routes, having imported composition.ts first
+```
+
+Handlers export a **factory**, not a wired route:
+
+```ts
+export function createPortfolioRoute(store: BackendStore = demoBackendStore) { … }
+```
+
+The factory takes the store as an argument, so a test supplies a fixture
+without touching the environment. The default is `core`'s store seam rather
+than a concrete store, so a handler never learns which implementation it got —
+`installSelectedStore()` decides that once, at module load, and every handler
+follows.
+
+| `SUNSUM_STORE` | Store                     | Needs a database |
+| -------------- | ------------------------- | ---------------- |
+| unset, `mock`  | `core/store/index.ts`     | no               |
+| `db`           | `db/backend-store.ts`     | yes              |
+
+Both return the same payloads, and
+`tests/integration/store-parity.test.ts` asserts it against a live database.
+See [`db/README.md`](./db/README.md) for how to run one.
+
+This is the only exception to the persistence rule, and it is deliberate: the
+choice of implementation is made once, at the top, where it is visible — not
+by an import buried in a rule.
+
 ## Adding an endpoint
 
 Follow `GET /portfolio`. Pick the service directory from
@@ -108,16 +147,21 @@ Follow `GET /portfolio`. Pick the service directory from
    internal records into the payload with an explicit field list, never a
    spread, so a new column cannot publish itself. Export it from the
    directory's `index.ts`.
-2. **Handler** — add a module under `handlers/<service>/` that validates the
-   request into typed values, calls core, and maps the result with
-   `jsonResponse` or `failureResponse`. Reject unknown input rather than
-   ignoring it: a silently dropped filter shows the caller more than they asked
-   for. Export it from the directory's `index.ts`.
-3. **Route** — add `app/api/<path>/route.ts` as a one-line re-export of the
+2. **Handler** — add a module under `handlers/<service>/` exporting a
+   `create<Name>Route(store?)` factory that validates the request into typed
+   values, calls core, and maps the result with `jsonResponse` or
+   `failureResponse`. Reject unknown input rather than ignoring it: a silently
+   dropped filter shows the caller more than they asked for. Export it from the
+   directory's `index.ts`.
+3. **Wire it** — in `src/backend/index.ts`, call the factory with no argument.
+   It picks up `core`'s store seam, which `composition.ts` has already pointed
+   at the selected implementation.
+4. **Route** — add `app/api/<path>/route.ts` as a one-line re-export of the
    wired handler from `@/backend`.
-4. **Tests** — cover the authorization paths, the visibility rule, the failure
+5. **Tests** — cover the authorization paths, the visibility rule, the failure
    statuses, and that the payload does not carry anything the caller's tier
-   forbids.
+   forbids. Pass a fixture store to the factory rather than setting
+   `SUNSUM_STORE`.
 
 Reading another service's data is a normal import of its barrel — as
 `core/investors` imports `../projects`. Keep it to the barrel and those

@@ -17,8 +17,12 @@
 
 import type { ProjectStore } from "./store";
 import type { ProjectRecord } from "./types";
-import { DEMO_SITE_OWNER_USER_ID } from "../../demo-principals";
-
+import {
+  DEMO_SITE_OWNER_BROOKS_USER_ID,
+  DEMO_SITE_OWNER_THOMPSON_USER_ID,
+  DEMO_SITE_OWNER_USER_ID,
+  DEMO_SITE_OWNER_WEBB_USER_ID,
+} from "../../demo-principals";
 export const MOCK_PROJECTS: readonly ProjectRecord[] = [
   {
     id: "3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7101",
@@ -51,7 +55,7 @@ export const MOCK_PROJECTS: readonly ProjectRecord[] = [
     siteAddressRaw: "1075 Ralph David Abernathy Blvd SW, Atlanta, GA 30310",
     siteLatitude: 33.7351,
     siteLongitude: -84.4229,
-    ownerUserId: DEMO_SITE_OWNER_USER_ID,
+    ownerUserId: DEMO_SITE_OWNER_WEBB_USER_ID,
     locality: "West End, Atlanta",
     region: "GA",
     siteType: "land",
@@ -96,7 +100,7 @@ export const MOCK_PROJECTS: readonly ProjectRecord[] = [
     siteAddressRaw: "1701 Donald Lee Hollowell Pkwy NW, Atlanta, GA 30318",
     siteLatitude: 33.7712,
     siteLongitude: -84.4643,
-    ownerUserId: DEMO_SITE_OWNER_USER_ID,
+    ownerUserId: DEMO_SITE_OWNER_THOMPSON_USER_ID,
     locality: "Grove Park, Atlanta",
     region: "GA",
     siteType: "rooftop",
@@ -118,7 +122,7 @@ export const MOCK_PROJECTS: readonly ProjectRecord[] = [
     siteAddressRaw: "200 Riverfront Pkwy, Chattanooga, TN 37402",
     siteLatitude: 35.0558,
     siteLongitude: -85.3113,
-    ownerUserId: DEMO_SITE_OWNER_USER_ID,
+    ownerUserId: DEMO_SITE_OWNER_BROOKS_USER_ID,
     locality: "Riverfront, Chattanooga",
     region: "TN",
     siteType: "land",

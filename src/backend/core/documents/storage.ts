@@ -57,11 +57,11 @@ export type KnownDocumentType = (typeof DOCUMENT_TYPES)[number];
 export const DEFAULT_DOCUMENT_TYPE: KnownDocumentType = "other";
 
 /**
- * `documents.doc_type` is `text NOT NULL` with no column default, but the
- * upload endpoint accepts a request with no `doc_type`. Writing the absent case
- * through as `null` inserts cleanly against the in-memory store and fails
- * against PostgreSQL, so the absent case is resolved here to a real value
- * instead of being carried as null into the record.
+ * The upload endpoint accepts a request with no `doc_type`, and the column is
+ * nullable, so the absent case could be carried through as null. It is resolved
+ * to a real value here instead because the result is a blob-path segment: a null
+ * would format a path with an empty segment, which is a different blob from the
+ * one any other caller would compute for the same document.
  */
 export function normalizeDocType(value: string | null | undefined): string {
   if (typeof value !== "string") return DEFAULT_DOCUMENT_TYPE;

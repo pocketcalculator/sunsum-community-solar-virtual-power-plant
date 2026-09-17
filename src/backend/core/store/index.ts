@@ -19,7 +19,10 @@ import {
   DEMO_INVESTOR_ID,
   DEMO_INVESTOR_USER_ID,
   DEMO_OPERATOR_USER_ID,
+  DEMO_SITE_OWNER_BROOKS_USER_ID,
+  DEMO_SITE_OWNER_THOMPSON_USER_ID,
   DEMO_SITE_OWNER_USER_ID,
+  DEMO_SITE_OWNER_WEBB_USER_ID,
 } from "../../demo-principals";
 
 export interface BackendStore extends ProjectStore {
@@ -214,25 +217,57 @@ function demoState(seedDemoProjects: boolean): StoreState {
           },
         ]
       : [],
+    /**
+     * The same six people as `db/seed.sql`, with the same ids, names, emails
+     * and roles.
+     *
+     * Three of them are site owners the fixtures do not use as a primary demo
+     * principal but do reference as project owners; without rows here those
+     * references dangle, `getUser` answers null where PostgreSQL answers a
+     * person, and the two stores stop being substitutable. The names and
+     * emails match the seed for the same reason — anything rendered from a
+     * user row would otherwise change when the store changed.
+     */
     users: [
       {
         id: DEMO_SITE_OWNER_USER_ID,
-        name: "Demo Site Owner",
-        email: "owner@example.invalid",
+        name: "Ava Mitchell",
+        email: "ava.mitchell@example.org",
+        role: "site_owner",
+        createdAt: DEMO_CREATED_AT,
+      },
+      {
+        id: DEMO_SITE_OWNER_WEBB_USER_ID,
+        name: "Marcus Webb",
+        email: "marcus.webb@example.org",
+        role: "site_owner",
+        createdAt: DEMO_CREATED_AT,
+      },
+      {
+        id: DEMO_SITE_OWNER_THOMPSON_USER_ID,
+        name: "Ray Thompson",
+        email: "ray.thompson@example.org",
+        role: "site_owner",
+        createdAt: DEMO_CREATED_AT,
+      },
+      {
+        id: DEMO_SITE_OWNER_BROOKS_USER_ID,
+        name: "Lena Brooks",
+        email: "lena.brooks@example.org",
         role: "site_owner",
         createdAt: DEMO_CREATED_AT,
       },
       {
         id: DEMO_OPERATOR_USER_ID,
-        name: "Demo Operator",
-        email: "operator@example.invalid",
+        name: "Jordan Ellis",
+        email: "jordan.ellis@example.org",
         role: "operator",
         createdAt: DEMO_CREATED_AT,
       },
       {
         id: DEMO_INVESTOR_USER_ID,
-        name: "Demo Investor",
-        email: "investor@example.invalid",
+        name: "Priya Raman",
+        email: "priya.raman@example.org",
         role: "investor",
         createdAt: DEMO_CREATED_AT,
       },
@@ -489,8 +524,76 @@ export function createMemoryBackendStore(
 }
 
 const demoMemoryStore = new MemoryBackendStore({ seedDemoProjects: true });
-export const demoBackendStore: BackendStore = demoMemoryStore;
 
+/**
+ * The in-memory fixtures, as a store.
+ *
+ * Exported so the composition root can name the thing it installs. Resolving
+ * "mock" to {@link backendStore} instead would be circular — the proxy answers
+ * with whatever is currently installed, so it would report PostgreSQL as the
+ * mock store once PostgreSQL had been installed once.
+ */
+export const memoryBackendStore: BackendStore = demoMemoryStore;
+
+/**
+ * The store every handler actually talks to.
+ *
+ * It starts as the in-memory fixtures and stays that way unless the composition
+ * root replaces it, so `npm run dev`, `npm test` and CI work with no database
+ * and no `DATABASE_URL` at all — and forgetting to configure one produces the
+ * demo data rather than a connection error.
+ *
+ * Indirection rather than a mutable binding, because a `let` exported from here
+ * would be captured by value at import time: the twenty-odd handlers that hold
+ * this as a default parameter all resolve it once, before `SUNSUM_STORE` has
+ * been read, and would keep the fixtures forever. Reading through a proxy moves
+ * that resolution to the call, which is the only moment the answer is known.
+ *
+ * `core` still never imports `db`. It does not learn which store it received —
+ * only that something implementing the interface was installed.
+ */
+export const backendStore: BackendStore = new Proxy({} as BackendStore, {
+  get(_target, property: keyof BackendStore) {
+    const member = activeStore[property];
+    return typeof member === "function" ? member.bind(activeStore) : member;
+  },
+});
+
+let activeStore: BackendStore = demoMemoryStore;
+
+/**
+ * Installs the store the process runs on. Called once by `composition.ts`, the
+ * only module that sees both `core` and `db`.
+ *
+ * Returns the store being replaced, so a caller that needs to put things back —
+ * a test swapping in a fake — can do so without this module having to hand out
+ * a reference to the memory store for that purpose alone.
+ */
+export function setActiveStore(store: BackendStore): BackendStore {
+  const previous = activeStore;
+  activeStore = store;
+  return previous;
+}
+
+/** Which store is installed, for the diagnostics route and tests. */
+export function isMemoryStoreActive(): boolean {
+  return activeStore === demoMemoryStore;
+}
+
+/**
+ * The former name for {@link backendStore}, kept because it is the default
+ * parameter on every handler. It is no longer necessarily the demo store — the
+ * composition root may have pointed it at PostgreSQL — which is why new code
+ * should say `backendStore`.
+ */
+export const demoBackendStore: BackendStore = backendStore;
+
+/**
+ * Restores the in-memory fixtures. Tests only; it resets the memory store
+ * itself rather than whatever is currently installed, so it is a no-op against
+ * PostgreSQL by design — truncating a real database from a test helper is not a
+ * behaviour worth having.
+ */
 export function resetDemoBackendStore(): void {
   demoMemoryStore.reset();
 }
