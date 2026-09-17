@@ -49,6 +49,14 @@ Two blockers, both needing permissions this workstream does not have. Until
 both are cleared, `SUNSUM_BLOB` must stay `memory` — which is the default, so
 nothing breaks by leaving it alone.
 
+**Order matters: fix the network first.** Granting the role on its own changes
+nothing, because the network rejection happens before RBAC is evaluated. The
+evidence is the error code: an authenticated request carrying a valid
+`https://storage.azure.com/` token is refused with `AuthorizationFailure`, not
+the `AuthorizationPermissionMismatch` that a missing role produces. Both an
+anonymous and an authenticated request return the identical response, which is
+only possible if neither reached authorization.
+
 ### 1. Public network access is disabled by tenant policy
 
 An Azure Policy with a **modify** effect, `StorageAccount_PublicNetwork_Modify`,
@@ -58,8 +66,9 @@ value stays `Disabled` — nothing errors, which is what makes this easy to miss
 Two sibling policies enforce `allowSharedKeyAccess` and `allowBlobPublicAccess`
 the same way.
 
-The effect is that an unauthenticated request to the blob endpoint is rejected
-with `AuthorizationFailure` at the network layer, before any token is looked at:
+The effect is that a request to the blob endpoint is rejected at the network
+layer, before any token is looked at — the same response whether or not one is
+supplied:
 
 ```text
 403 AuthorizationFailure
@@ -83,6 +92,9 @@ Creating the containers worked because `az storage container-rm create` is a
 control-plane call. Reading or writing a *blob* is a data-plane call and needs
 an RBAC role, which this workstream cannot grant: it holds Contributor, not
 `Microsoft.Authorization/roleAssignments/write`.
+
+This cannot be verified until blocker 1 is cleared — while the network refuses
+the request, a correct role assignment and a missing one look identical.
 
 A subscription Owner or User Access Administrator needs to run:
 
