@@ -5,13 +5,17 @@ description: How the Sunsum application reaches Azure, and the one-time database
 
 ## What deploys
 
-`.github/workflows/deploy.yml` runs on every push to `main` and on demand. It
-builds the application as a gate, applies
-`infrastructure/templates/app-service.bicep`, uploads the tracked files to App
-Service, and then fails the run unless the deployed site serves records out of
-PostgreSQL.
+`infrastructure/templates/app-service.bicep` describes the App Service plan, the
+web app, and the settings that point it at PostgreSQL. Applying it and shipping
+the code is a manual sequence today, written out under [Deploying](#deploying)
+below.
 
-The workflow signs in with a federated credential rather than a stored
+A workflow that performs that sequence on every push to `main` is not in the
+repository yet. It is written, but adding it needs a credential carrying
+GitHub's `workflow` scope, which the change that introduced this template could
+not supply. Until it lands, the manual steps are the supported path.
+
+That workflow signs in with a federated credential rather than a stored
 password. `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` are
 repository secrets that identify the application registration to sign in as;
 none of them is itself a secret value, and no deployment credential is stored in
@@ -120,11 +124,11 @@ creates for the site identity.
 user-assigned identity to authenticate as, and setting it on a site that uses a
 system-assigned identity sends the token request looking for an identity that
 does not exist. The repository secret of the same name is unrelated: it belongs
-to the workflow's own sign-in and never reaches the site.
+to the deployment sign-in described above and never reaches the site.
 
-## Deploying by hand
+## Deploying
 
-The workflow is the supported path. If a deployment has to be made directly:
+Apply the template, then ship the tracked files:
 
 ```bash
 az deployment group create \
@@ -146,6 +150,19 @@ the deployment.
 `az webapp deploy` can report a gateway timeout for a deployment that is in fact
 still running and will succeed. Confirm the outcome with
 `az webapp log deployment show` rather than trusting the timeout.
+
+Then confirm the site serves records out of PostgreSQL:
+
+```bash
+curl -s https://app-sunsum-smoke-928e5e28.azurewebsites.net/api/portfolio \
+  | jq '.project_count'
+```
+
+This is the check that matters. `SUNSUM_STORE` is set to `db` with no fallback
+to the in-memory fixtures, so a successful read exercises the managed identity,
+the TLS verification and the table grants together. Allow for a cold start on
+the free tier: the first request after an idle period can fail while the site is
+still waking.
 
 ## Environment notes
 
