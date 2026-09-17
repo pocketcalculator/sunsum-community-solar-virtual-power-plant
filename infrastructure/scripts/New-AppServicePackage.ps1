@@ -9,6 +9,10 @@ Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'DeploymentSafety.psm1') -Force
 
 $root = (Resolve-Path -LiteralPath $SourceRoot).Path
+$rootEntry = Get-Item -LiteralPath $root -Force
+if (-not $rootEntry.PSIsContainer -or ($rootEntry.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+    throw 'Deployment source root must be a directory, not a symbolic link or junction.'
+}
 $destination = [System.IO.Path]::GetFullPath($OutputPath)
 if (Test-Path -LiteralPath $destination) { throw 'The output archive already exists. Use a new path for each reviewed artifact.' }
 $files = [System.Collections.Generic.List[object]]::new()

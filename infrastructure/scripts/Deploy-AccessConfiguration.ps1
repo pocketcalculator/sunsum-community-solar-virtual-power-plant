@@ -41,7 +41,10 @@ if ($Operation -in @('SignIn', 'BlobRoles')) {
     $raw = & az webapp show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $config.webAppName --output json --only-show-errors
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the explicit existing web app.' }
     $web = ($raw -join "`n") | ConvertFrom-Json -AsHashtable
-    if (-not $web.httpsOnly -or $web.kind -notmatch 'linux') { throw 'Expected the existing HTTPS-only Linux app.' }
+    if ($web.httpsOnly -isnot [bool] -or $web.httpsOnly -ne $true -or $web.kind -isnot [string] -or
+        'app' -notin ($web.kind -split ',') -or 'linux' -notin ($web.kind -split ',') -or 'functionapp' -in ($web.kind -split ',')) {
+        throw 'Expected the existing HTTPS-only Linux web app, not a Function App.'
+    }
 }
 if ($Operation -eq 'SignIn') {
     $raw = & az rest --method get --url "https://management.azure.com$($web.id)/config/authsettingsV2?api-version=2024-04-01" --output json --only-show-errors

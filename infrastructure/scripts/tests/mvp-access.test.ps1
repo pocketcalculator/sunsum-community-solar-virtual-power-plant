@@ -97,6 +97,29 @@ try {
         Assert-Throws { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @args -Apply }
     }
     if ($global:MvpAccessCalls -ne 0) { throw 'A dry-run or invalid hash called Azure.' }
+    $global:MvpTargetKind = ''
+    function global:az {
+        $global:MvpAccessCalls++
+        $global:LASTEXITCODE = 0
+        if ($args[0] -cne 'webapp' -or $args[1] -cne 'show') { throw 'Invalid web kind must stop before any additional operation.' }
+        return (@{ id = 'synthetic-test-resource'; httpsOnly = $true; kind = $global:MvpTargetKind } | ConvertTo-Json)
+    }
+    foreach ($operation in @('SignIn', 'BlobRoles')) {
+        foreach ($kind in @('functionapp,linux', 'app', 'linux', 'app,linux-extra', 'app,functionapp,linux')) {
+            $global:MvpTargetKind = $kind
+            $global:MvpAccessCalls = 0
+            $path = Join-Path $fixture "$operation.json"
+            $message = ''
+            try {
+                & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') -Operation $operation `
+                    -SubscriptionId $subscription -ResourceGroupName $group -ConfigurationPath $path `
+                    -ExpectedSha256 (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash `
+                    -OutputPath (Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json") -Apply | Out-Null
+            } catch { $message = $_.Exception.Message }
+            if ($global:MvpAccessCalls -ne 1 -or $message -notlike '*not a Function App*') { throw 'Unexpected target kind was not rejected during web preflight.' }
+        }
+    }
+    $global:MvpAccessCalls = 0
     $signIn.directoryPrerequisitesConfirmed = $false
     $path = Join-Path $fixture 'unapproved.json'
     $signIn | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding utf8NoBOM
@@ -359,6 +382,7 @@ param approvedWebPrincipalId = bindApprovedPrincipal('$actual', '$approved')
 } finally {
     Remove-Item -LiteralPath Function:\az -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpAccessCalls -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name MvpTargetKind -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpRaceOutput -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpAuthReads, MvpAuthWrites, MvpLatestAuth -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpStorageState, MvpStorageUpdate -Scope Global -ErrorAction SilentlyContinue

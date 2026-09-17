@@ -22,6 +22,9 @@ try {
   if (config.auth.mode !== "azure-cli") {
     throw new DatabaseConfigurationError("Azure migrations require azure-cli authentication. Use db:migrate for local password databases.");
   }
+  if (config.user !== "sunsum_migrator") {
+    throw new DatabaseConfigurationError("Azure migrations require PGUSER=sunsum_migrator, the separately approved operator role; bootstrap administrators and other roles are not permitted.");
+  }
   const timeoutText = environment.SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS ?? "5000";
   const migrationStatementTimeoutMs = Number(timeoutText);
   if (!/^[1-9][0-9]*$/.test(timeoutText) || !Number.isSafeInteger(migrationStatementTimeoutMs) ||

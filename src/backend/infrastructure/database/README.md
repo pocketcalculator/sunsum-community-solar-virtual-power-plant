@@ -135,7 +135,12 @@ same committed SQL through the explicit `PG*` and Entra contract above.
 
 Review generated SQL, snapshots, locks, data compatibility, and least-privilege
 grants before using `--apply`. Azure migrations require the separately granted
-operator identity; the command refuses runtime managed identity. Never run
+operator identity; the command requires `PGUSER=sunsum_migrator` and refuses
+runtime managed identity, local passwords, administrator names and other roles
+before constructing a client. Use the same designated role in bootstrap;
+custom operator role names require a reviewed contract change. The role name
+does not prove non-admin privileges or identity mapping: those remain verified
+by the separate bootstrap and administrator review. Never run
 migrations automatically at web startup or as part
 of routine app deployment. See the [canonical database guide](../../db/README.md)
 and [Azure permission window](../../../../infrastructure/docs/app-service-postgres.md#5-operator-connectivity-and-migrations).

@@ -71,6 +71,18 @@ describe("database CLI safety gates", () => {
     expect(result.stdout).not.toContain("applied");
   });
 
+  it.each(["postgres", "azure_pg_admin", "sunsum_runtime", "bootstrap_admin", "other_operator", "SUNSUM_MIGRATOR"])("rejects unapproved migration role %s before connecting", (role) => {
+    const result = run([...operatorArgs, "scripts/db-migrate.ts", "--apply"], {
+      SUNSUM_DATABASE_AUTH: "azure-cli",
+      PGHOST: "example-sunsum.postgres.database.azure.com",
+      PGPORT: "5432", PGDATABASE: "sunsum", PGUSER: role, PGSSLMODE: "verify-full",
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Azure migrations require PGUSER=sunsum_migrator");
+    expect(result.stdout).not.toContain("applied");
+  });
+
   it.each(["0", "4999", "600001", "NaN", "5e4", " 60000", "5000.5", ""])("rejects migration timeout %j before connecting", (timeout) => {
     const result = run([...operatorArgs, "scripts/db-migrate.ts", "--apply"], {
       SUNSUM_DATABASE_AUTH: "azure-cli",

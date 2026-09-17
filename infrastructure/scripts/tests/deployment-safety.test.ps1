@@ -96,6 +96,17 @@ try {
     if ($package.Files -ne 6 -or $package.SHA256 -notmatch '^[A-F0-9]{64}$') {
         throw 'The real packaging script did not enforce its source allowlist.'
     }
+    $linkedRoot = Join-Path $fixture 'linked-source'
+    $linkType = if ($IsWindows) { 'Junction' } else { 'SymbolicLink' }
+    $null = New-Item -ItemType $linkType -Path $linkedRoot -Target ([System.IO.Path]::GetFullPath($source))
+    try {
+        $linkedZip = Join-Path $fixture 'linked-source.zip'
+        $message = ''
+        try { & (Join-Path $PSScriptRoot '..\New-AppServicePackage.ps1') -SourceRoot $linkedRoot -OutputPath $linkedZip | Out-Null } catch { $message = $_.Exception.Message }
+        if ($message -notlike '*source root must be a directory*' -or (Test-Path -LiteralPath $linkedZip)) {
+            throw 'A linked source root was not rejected before packaging.'
+        }
+    } finally { Remove-Item -LiteralPath $linkedRoot -Force }
     $global:AzureSafetyTestCalls = 0
     function global:az {
         $global:AzureSafetyTestCalls++
@@ -328,11 +339,13 @@ try {
     $global:AzureCodeReadFailure = $false
     $global:AzureCodeRuntime = @{}
     $global:AzureCodeBuildSettings = @()
+    $global:AzureCodeKind = 'app,linux'
+    $global:AzureCodeHelp = '--track-status --clean'
     function global:az {
         $global:LASTEXITCODE = 0
-        if ($args -contains '--help') { return '--track-status' }
+        if ($args -contains '--help') { return $global:AzureCodeHelp }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
-            return '{"id":"synthetic-test-resource","host":"sample-web.azurewebsites.net","httpsOnly":true,"kind":"app,linux"}'
+            return (@{ id = 'synthetic-test-resource'; host = 'sample-web.azurewebsites.net'; httpsOnly = $true; kind = $global:AzureCodeKind } | ConvertTo-Json)
         }
         if ($args[0] -ceq 'resource' -and $args[1] -ceq 'show') { return 'false' }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') {
@@ -341,6 +354,9 @@ try {
             return (ConvertTo-Json -InputObject $global:AzureCodeBuildSettings -Depth 5)
         }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'deploy') {
+            if ($args -notcontains '--clean' -or $args[[array]::IndexOf($args, '--clean') + 1] -cne 'true') {
+                throw 'Source ZIP upload must explicitly request target cleanup.'
+            }
             $global:AzureCodeWrites++
             $global:LASTEXITCODE = 1
             return
@@ -348,8 +364,10 @@ try {
         throw 'Unexpected code deployment command.'
     }
     $deploy.ExpectedSha256 = $package.SHA256
-    foreach ($scenario in @('missing-runtime', 'wrong-node', 'wrong-startup', 'missing-build', 'build-disabled', 'wrong-build', 'duplicate-build', 'run-from-package', 'read-failure', 'valid')) {
+    foreach ($scenario in @('function-app', 'wrong-kind', 'mixed-function-kind', 'no-clean-support', 'no-track-support', 'missing-runtime', 'wrong-node', 'wrong-startup', 'missing-build', 'build-disabled', 'wrong-build', 'duplicate-build', 'run-from-package', 'read-failure', 'valid')) {
         $global:AzureCodeWrites = 0
+        $global:AzureCodeKind = 'app,linux'
+        $global:AzureCodeHelp = '--track-status --clean'
         $global:AzureCodeReadFailure = $scenario -ceq 'read-failure'
         $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0' }
         $global:AzureCodeBuildSettings = @(
@@ -357,6 +375,11 @@ try {
             @{ name = 'CUSTOM_BUILD_COMMAND'; value = 'npm ci --include=dev && npm run build' }
         )
         switch ($scenario) {
+            'function-app' { $global:AzureCodeKind = 'functionapp,linux' }
+            'wrong-kind' { $global:AzureCodeKind = 'app,linux-extra' }
+            'mixed-function-kind' { $global:AzureCodeKind = 'app,functionapp,linux' }
+            'no-clean-support' { $global:AzureCodeHelp = '--track-status' }
+            'no-track-support' { $global:AzureCodeHelp = '--clean' }
             'missing-runtime' { $global:AzureCodeRuntime = @{} }
             'wrong-node' { $global:AzureCodeRuntime.linuxFxVersion = 'NODE|20-lts' }
             'wrong-startup' { $global:AzureCodeRuntime.appCommandLine = '' }
@@ -421,6 +444,7 @@ try {
     Remove-Variable -Name AzureProvisionInventory, AzureProvisionExitCode, AzureProvisionWrites -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureExistingWeb, AzureWebReadFailure, AzureWebReads, AzureAvailabilityFailureType, AzureAvailabilityResponse, AzureAvailabilityExitCode, AzureAvailabilityChecks -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureCodeWrites, AzureCodeReadFailure, AzureCodeRuntime, AzureCodeBuildSettings -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name AzureCodeKind, AzureCodeHelp -Scope Global -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }
 }
 Write-Output 'Deployment safety: IPv4, real ZIP exclusion/tamper checks and target-bound approval checks passed.'

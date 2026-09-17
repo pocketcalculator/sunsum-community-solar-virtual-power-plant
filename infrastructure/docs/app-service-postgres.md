@@ -82,7 +82,7 @@ resource-group creation/deletion or deployment during ordinary app development.
   CLI-managed Bicep **0.42.1**. No cloud validation or Azure what-if is required
   for these local checks.
 - Azure CLI **2.48.1+** supports Entra deployment when basic publishing is
-  disabled. The installed CLI must also expose `webapp deploy --track-status`;
+  disabled. The installed CLI must also expose `webapp deploy --track-status` and `--clean`;
   the deployment script checks that capability instead of assuming it.
 - Required providers are `Microsoft.Web`, `Microsoft.Storage` and
   `Microsoft.DBforPostgreSQL`; the relevant web/storage/identity and PostgreSQL
@@ -582,6 +582,12 @@ runtime MI or bootstrap administrator. Set local process variables
 `PGUSER=sunsum_migrator` and `PGSSLMODE=verify-full`. Do not add these operator
 credentials or its SQL role to App Service. Then:
 
+The migration command requires that exact operator role name before constructing
+a database client; administrator, runtime and arbitrary role names are rejected.
+Use the same role in bootstrap. Custom names require a reviewed contract change,
+and the name restriction does not substitute for bootstrap's non-admin identity
+mapping and permission checks.
+
 ```powershell
 npm run db:check
 # Future explicit SQL WRITE only after migration SQL and permissions review:
@@ -771,7 +777,9 @@ The packaging script uses a source allowlist: root app manifests/lock/build
 config, `app`, `src` and optional `public`. It excludes local env files, raw
 `.npmrc`, `.azure`, `.git`, tests, unrelated tooling,
 `.next`, caches, Windows `node_modules`, credential/certificate paths and
-symbolic links. Review source contents too: a path allowlist is not a secret
+symbolic links. The source root itself must also be a real directory, not a
+symbolic link or junction; a linked root is rejected before archive creation.
+Review source contents too: a path allowlist is not a secret
 scanner. Configuration added outside this allowlist needs an explicit packaging
 review. Each ZIP puts `package.json` at its root, not under a repository folder.
 
@@ -793,13 +801,17 @@ pwsh -NoProfile -File infrastructure\scripts\Deploy-AppServiceCode.ps1 `
 # Future WRITE: add -Apply only after authorization.
 ```
 
+Both access-configuration and code-deployment operations require the `app` and
+`linux` kind tokens and reject `functionapp`, including mixed-kind responses.
+These operations are for the web application, not the separate viability service.
+
 The explicit Azure CLI path checks the existing Linux/HTTPS target and disabled
 FTP/SCM policies. It also requires `NODE|22-lts`, the exact documented npm startup
 command, `SCM_DO_BUILD_DURING_DEPLOYMENT=true`, and the documented custom build
 command. An enabled `WEBSITE_RUN_FROM_PACKAGE` is rejected. Missing or different
 settings stop the source ZIP upload and require a separately reviewed correction,
 including when the foundation uses Existing web mode.
-It then uses `az webapp deploy --type zip --track-status false
+It then uses `az webapp deploy --type zip --clean true --track-status false
 --timeout 600000`. It never changes resource definitions, roles or app settings. It follows
 deployment with at most 12 public-preview checks (10-second request timeout,
 10-second retry delay), rather than relying on unbounded startup tracking.
@@ -811,6 +823,14 @@ successful participant login nor application readiness.
 On timeout, inspect deployment logs before retrying: a remote operation can
 continue after the client exits. No automatic redeploy, tier change or rollback
 is attempted.
+
+`--clean true` explicitly requests cleanup of the deployment target before
+installing the new artifact instead of relying on artifact/stack defaults.
+The target directory must contain only replaceable application files; keep
+documents, uploads and other persistent data outside it. Approve this cleanup
+as part of code rollout, retain a compatible rollback ZIP, and account for
+possible unavailability if the subsequent build/deployment fails. Local tests
+verify the requested option and CLI capability gate, not live Kudu cleanup.
 
 Preserve the reviewed source ZIP, hash, code revision, deployment record and
 explicit target in an approved artifact store. F1 has no staging-slot rollback

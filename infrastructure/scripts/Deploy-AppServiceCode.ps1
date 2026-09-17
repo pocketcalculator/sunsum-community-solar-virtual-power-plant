@@ -23,14 +23,15 @@ if (-not $Apply) {
     return
 }
 $help = & az webapp deploy --help
-if ($LASTEXITCODE -ne 0 -or ($help -join "`n") -notmatch '--track-status') {
-    throw 'This Azure CLI must support webapp deploy --track-status; update tooling separately.'
+if ($LASTEXITCODE -ne 0 -or ($help -join "`n") -notmatch '--track-status' -or ($help -join "`n") -notmatch '--clean') {
+    throw 'This Azure CLI must support webapp deploy --track-status and --clean; update tooling separately.'
 }
 $raw = & az webapp show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
     --query '{id:id,host:defaultHostName,httpsOnly:httpsOnly,kind:kind}' --output json --only-show-errors
 if ($LASTEXITCODE -ne 0) { throw 'Could not verify the existing App Service target.' }
 $app = ($raw -join "`n") | ConvertFrom-Json
-if (-not $app.httpsOnly -or $app.kind -notmatch 'linux' -or
+if ($app.httpsOnly -isnot [bool] -or $app.httpsOnly -ne $true -or $app.kind -isnot [string] -or
+    'app' -notin ($app.kind -split ',') -or 'linux' -notin ($app.kind -split ',') -or 'functionapp' -in ($app.kind -split ',') -or
     $app.host -cnotmatch '^[a-z0-9][a-z0-9.-]*\.azurewebsites\.net$') {
     throw 'The target must be the HTTPS-only Linux app in Azure public cloud.'
 }
@@ -67,7 +68,7 @@ if (@($buildSettings | Where-Object { $_.name -ceq 'WEBSITE_RUN_FROM_PACKAGE' -a
     throw 'Run-from-package is incompatible with this source ZIP remote-build path.'
 }
 & az webapp deploy --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
-    --src-path $artifact.Path --type zip --async false --track-status false --timeout 600000 `
+    --src-path $artifact.Path --type zip --clean true --async false --track-status false --timeout 600000 `
     --only-show-errors --output none
 if ($LASTEXITCODE -ne 0) {
     throw 'Deployment did not report success. It may still finish remotely: inspect deployment logs before retrying; do not change the web tier.'
