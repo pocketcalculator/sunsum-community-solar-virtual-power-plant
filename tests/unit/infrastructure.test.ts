@@ -55,7 +55,8 @@ describe("the bounded Azure preparation contract", () => {
     expect(auth).not.toContain("allowAnonymous");
     const roles = read("infrastructure/templates/storage-role-grants.bicep");
     expect(roles).toContain("param webAppName string");
-    expect(roles).toContain("var webPrincipalId = web.identity.principalId");
+    expect(roles).toContain("param approvedWebPrincipalId string");
+    expect(roles).toContain("var webPrincipalId = bindApprovedPrincipal(web.?identity.?principalId ?? '', approvedWebPrincipalId)");
     expect(roles).not.toContain("param webPrincipalId");
     expect(roles).toContain("scope: containers[index]");
     expect(roles).toContain("principalType: 'ServicePrincipal'");

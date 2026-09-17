@@ -19,6 +19,10 @@ param postgresServerName string
 @maxLength(24)
 param storageAccountName string
 param databaseName string = 'sunsum'
+@description('This foundation configures only the designated runtime role. Its Entra mapping and non-admin privileges must be verified by the separate SQL bootstrap.')
+@allowed([
+  'sunsum_runtime'
+])
 param runtimeRoleName string = 'sunsum_runtime'
 @minLength(36)
 @maxLength(36)

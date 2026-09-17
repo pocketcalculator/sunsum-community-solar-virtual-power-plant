@@ -152,9 +152,19 @@ for future provisioning, not evidence that an identity already exists.
 | `PGHOST` | PostgreSQL server FQDN | Loopback |
 | `PGPORT` | `5432` | Assigned local port |
 | `PGDATABASE` | Chosen database, default `sunsum` | Injected |
-| `PGUSER` | Runtime Entra SQL role, default `sunsum_runtime` | Injected |
+| `PGUSER` | Designated runtime Entra SQL role `sunsum_runtime` | Injected |
 | `PGSSLMODE` | `verify-full` | `disable`, **only nonproduction loopback** |
 | `PGPASSWORD` | **Not an App Service setting** | Generated local secret |
+
+Both the root and standalone web templates constrain `runtimeRoleName` to
+`sunsum_runtime`; the provisioning script rejects other values before Azure
+calls. Use that same name for `runtimeRole` in the separate bootstrap config.
+Custom runtime role names require a reviewed change to the template/bootstrap
+contract, not an arbitrary parameter override. A role name does not prove
+least privilege: bootstrap must verify the distinct runtime identity's Entra
+mapping, non-admin role attributes, memberships and ownership before database
+access is enabled. Setting `PGUSER` alone cannot impersonate a different Entra
+principal, and these template constraints do not inspect existing SQL grants.
 
 Future Blob adapters receive server-only `AZURE_STORAGE_BLOB_ENDPOINT`,
 `SITE_DOCUMENTS_CONTAINER` and `PROJECT_DOCUMENTS_CONTAINER`. They must use the
@@ -194,6 +204,29 @@ Repository health also compiles every Bicep template with version 0.42.1, using
 a SHA-256-verified compiler and no Azure credentials. String-based policy tests
 remain supplemental checks, not a substitute for compilation.
 
+The Bicep job also runs the deployment safety suite with `-BicepPath` set to the
+verified compiler. It checks both runtime-role allowlists in compiled templates
+and tests accepted/default and rejected role parameters through `build-params`.
+The suite still runs its wrapper checks without Bicep when that option is absent.
+
+The access safety suite accepts the same `-BicepPath` option. The Bicep job uses
+it to evaluate matching, changed and missing Blob identity cases in both role
+modes and to verify that compiled assignments consume only the identity bound
+to the approved principal. Neither suite makes Azure calls.
+
+Its firewall check imports and evaluates the template's actual address validator
+using `bicep build-params`, compares results with the PowerShell wrapper, and
+checks that compiled resources consume only the validated list. Run it locally
+with the same installed compiler:
+
+```powershell
+pwsh -NoProfile -File infrastructure\scripts\tests\firewall-template.test.ps1 -BicepPath '<path-to-bicep-0.42.1>'
+```
+
+This evaluates valid/invalid inputs locally, including excluded ranges, malformed
+addresses, duplicates and mixed lists. It does not contact Azure or prove a live
+firewall rollout.
+
 The bootstrap operations suite includes an opt-in real PostgreSQL test. Use a
 dedicated, disposable PostgreSQL 17 instance exposed only on loopback with user
 `postgres` and the synthetic password `synthetic-bootstrap-test-only`. Set
@@ -220,8 +253,26 @@ availability and the planned resource diff before a future authorized deployment
 The provisioning script rejects existing PostgreSQL or Storage targets in both
 web modes, and existing web app/plan targets in Create mode. Failed or malformed
 inventory also blocks deployment. Use separately reviewed targeted operations
-for subsequent changes; the inventory preflight does not reserve names against
-concurrent provisioning. Directly reapplying the core template bypasses this guard
+for subsequent changes. Existing mode also reads the named web app before any
+deployment, requiring the exact subscription/group/resource ID, Linux web-app
+kind, HTTPS-only setting and a valid public-cloud hostname. An absent, malformed,
+or unreadable target stops provisioning rather than failing after new resources
+are created.
+
+After those checks, the script calls the providers' name-availability operations
+for PostgreSQL and Storage in both modes, and for the web app in Create mode.
+These POST operations are read-only: they neither reserve names nor create
+resources. Only a boolean `nameAvailable=true` permits continuation; unavailable,
+unknown, malformed and failed results stop before deployment. The names and
+types come from the hash-verified inputs, and temporary JSON request files are
+removed afterward. Operators need permission to perform these subscription-level
+checks; failure is not permission to skip them or grant broader roles.
+
+The preflights reduce predictable failures but do not reserve names against
+concurrent provisioning or guarantee an all-or-nothing ARM deployment. Failures
+from quotas, policy, later name claims or deleted targets can still leave partial
+resources. Inspect deployment state before retrying; do not automatically delete
+billable resources. Directly reapplying the core template bypasses these guards
 and restores Storage's **closed** default; it is not a code-only deployment.
 
 ```powershell
@@ -333,7 +384,12 @@ pwsh -NoProfile -File infrastructure\scripts\Set-PostgresFirewall.ps1 `
 
 Each generated rule uses **start=end**. The deployment records the nonsecret
 approval reference as an input/output for audit. Apply only through the validating
-script, not by hand-passing an unchecked array to Bicep. The template is
+script to retain the target-bound approval checks. The template independently
+rejects noncanonical addresses, the wrapper's excluded address ranges,
+duplicates and lists exceeding 128 entries, including direct-template inputs.
+Validation covers the whole list before the resource loop, so a mixed list fails
+rather than creating a valid subset. It does not prove ownership or approval of
+an address. The template is
 incremental: removed entries and `[]` **do not remove existing rules**. Inspect
 existing rules before/after updates and have an authorized operator explicitly
 delete reviewed stale/temporary allowances by their exact rule name:
@@ -430,8 +486,13 @@ deployment. `BlobRoles` verifies that the supplied principal matches the named
 web app, checks disabled shared-key/anonymous account access and HTTPS/TLS,
 and reads both containers through ARM to require `publicAccess=None` before
 deploying assignments. These are control-plane reads, not Blob data access or
-account-key requests. The template itself resolves the identity from
-`webAppName`, not a free-form principal parameter. Its assignment names now use
+account-key requests. The wrapper passes the reviewed `webPrincipalId` as
+`approvedWebPrincipalId`. The template resolves the identity from `webAppName`
+and fails if it differs from that approved ID or is absent. Assignments use only
+the normalized approved principal, not a newly discovered replacement. An
+identity removed after evaluation can still invalidate the deployment or leave
+an obsolete grant; inspect state and obtain new approval rather than retrying
+against a new identity automatically. Its assignment names now use
 the web resource ID; inspect legacy principal-based assignments and identity
 recreation conflicts before deploying. Cleanup requires separate review.
 Role-assignment writes

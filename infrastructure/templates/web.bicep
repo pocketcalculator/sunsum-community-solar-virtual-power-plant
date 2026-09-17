@@ -12,6 +12,10 @@ param blobEndpoint string
 @minLength(1)
 @maxLength(63)
 param databaseName string
+@description('Designated runtime SQL role; role naming does not establish its Entra mapping or privileges.')
+@allowed([
+  'sunsum_runtime'
+])
 @minLength(1)
 @maxLength(63)
 param runtimeRoleName string = 'sunsum_runtime'

@@ -7,6 +7,10 @@ param storageAccountName string
 @minLength(2)
 @maxLength(60)
 param webAppName string
+@description('Approved system-assigned principal ID. The current web identity must match before any grant is issued.')
+@minLength(36)
+@maxLength(36)
+param approvedWebPrincipalId string
 @description('Review the Contributor role including its delete permission; use Reader for read-only integrations.')
 @allowed([
   'Reader'
@@ -25,7 +29,12 @@ var roleId = blobDataAccess == 'Contributor'
 resource web 'Microsoft.Web/sites@2024-04-01' existing = {
   name: webAppName
 }
-var webPrincipalId = web.identity.principalId
+@export()
+func bindApprovedPrincipal(actualPrincipalId string, approvedPrincipalId string) string => !empty(actualPrincipalId) && toLower(actualPrincipalId) == toLower(approvedPrincipalId)
+  ? toLower(approvedPrincipalId)
+  : fail('The web identity changed or is absent; obtain new approval before granting Blob access.')
+
+var webPrincipalId = bindApprovedPrincipal(web.?identity.?principalId ?? '', approvedWebPrincipalId)
 
 resource storage 'Microsoft.Storage/storageAccounts@2024-01-01' existing = {
   name: storageAccountName

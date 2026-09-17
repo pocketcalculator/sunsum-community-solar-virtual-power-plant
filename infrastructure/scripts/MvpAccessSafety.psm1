@@ -76,6 +76,7 @@ function Assert-AccessConfiguration {
             foreach ($key in @('storageAccountName', 'webAppName', 'blobDataAccess', 'approvalReference')) {
                 $parameters[$key] = @{ value = $Config[$key] }
             }
+            $parameters.approvedWebPrincipalId = @{ value = $Config.webPrincipalId }
         }
         'StorageNetwork' {
             if ($Config.location -cnotmatch '^[a-z0-9]+$') { throw 'An explicit Azure location is required.' }

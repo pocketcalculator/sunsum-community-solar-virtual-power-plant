@@ -61,6 +61,9 @@ foreach ($name in @('tenantId', 'postgresAdminObjectId')) {
         throw 'Invalid web mode or storage account name.'
     }
 }
+if ($document.parameters.Contains('runtimeRoleName') -and $document.parameters.runtimeRoleName.value -cne 'sunsum_runtime') {
+    throw 'This foundation requires runtimeRoleName=sunsum_runtime; verify the distinct non-admin Entra role through SQL bootstrap before enabling database access.'
+}
 if (-not $Apply) {
     Write-Output 'Reviewed parameters, explicit target and budget acknowledgement validated. No Azure calls; -Apply requires separate provisioning authorization.'
     return
@@ -87,6 +90,40 @@ if ($webMode -ceq 'Create') {
     }).Count -gt 0) {
         throw 'Create mode would overwrite an existing app/plan. Use Existing mode and reviewed targeted identity/settings operations.'
     }
+} else {
+    $raw = & az webapp show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $document.parameters.webAppName.value `
+        --query '{id:id,kind:kind,httpsOnly:httpsOnly,defaultHostName:defaultHostName}' --output json --only-show-errors
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the existing web app; no infrastructure deployment was attempted.' }
+    $web = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
+    $expectedWebId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$($document.parameters.webAppName.value)"
+    if ($web -isnot [System.Collections.IDictionary] -or $web.id -ine $expectedWebId -or
+        $web.kind -isnot [string] -or 'app' -notin ($web.kind -split ',') -or 'linux' -notin ($web.kind -split ',') -or
+        $web.httpsOnly -isnot [bool] -or $web.httpsOnly -ne $true -or
+        $web.defaultHostName -isnot [string] -or $web.defaultHostName -cnotmatch '^[a-z0-9][a-z0-9.-]*\.azurewebsites\.net$') {
+        throw 'Existing mode requires the exact HTTPS-only Linux web app with a public-cloud hostname; no infrastructure deployment was attempted.'
+    }
+}
+$nameChecks = @(
+    @{ name = $document.parameters.postgresServerName.value; type = 'Microsoft.DBforPostgreSQL/flexibleServers'; apiVersion = '2021-06-01' },
+    @{ name = $document.parameters.storageAccountName.value; type = 'Microsoft.Storage/storageAccounts'; apiVersion = '2024-01-01' }
+)
+if ($webMode -ceq 'Create') {
+    $nameChecks += @{ name = $document.parameters.webAppName.value; type = 'Microsoft.Web/sites'; apiVersion = '2024-04-01' }
+}
+foreach ($check in $nameChecks) {
+    $provider = $check.type.Split('/')[0]
+    $requestPath = [System.IO.Path]::GetTempFileName()
+    try {
+        @{ name = $check.name; type = $check.type } | ConvertTo-Json -Compress | Set-Content -LiteralPath $requestPath -Encoding utf8NoBOM
+        $raw = & az rest --method post --url "https://management.azure.com/subscriptions/$SubscriptionId/providers/$provider/checkNameAvailability?api-version=$($check.apiVersion)" `
+            --body "@$requestPath" --output json --only-show-errors
+        if ($LASTEXITCODE -ne 0) { throw "Cannot check name availability for $($check.type); no infrastructure deployment was attempted." }
+        $availability = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
+        if ($availability -isnot [System.Collections.IDictionary] -or -not $availability.Contains('nameAvailable') -or
+            $availability.nameAvailable -isnot [bool] -or $availability.nameAvailable -ne $true) {
+            throw "Name is unavailable or availability is unknown for $($check.type); no infrastructure deployment was attempted."
+        }
+    } finally { Remove-Item -LiteralPath $requestPath -Force }
 }
 $template = Join-Path $PSScriptRoot '..\templates\resources.bicep'
 & az deployment group create --subscription $SubscriptionId --resource-group $ResourceGroupName `

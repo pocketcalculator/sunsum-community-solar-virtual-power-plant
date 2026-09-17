@@ -1,5 +1,8 @@
 #requires -Version 7.2
+[CmdletBinding()]
+param([string] $BicepPath)
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot '..\DeploymentSafety.psm1') -Force
 
@@ -123,6 +126,23 @@ try {
         StorageBudgetApproval = 'storage-budget-123'
     }
     & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision | Out-Null
+    $rejectedRoles = @('postgres', 'azure_pg_admin', 'pg_read_all_data', 'sunsum_migrator', 'other_existing_role', 'SUNSUM_RUNTIME')
+    foreach ($roleName in $rejectedRoles) {
+        $provisionParameters.parameters.runtimeRoleName = @{ value = $roleName }
+        $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+        $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
+        foreach ($apply in @($false, $true)) {
+            $message = ''
+            try { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply:$apply | Out-Null } catch { $message = $_.Exception.Message }
+            if ($message -notlike '*requires runtimeRoleName=sunsum_runtime*' -or $global:AzureSafetyTestCalls -ne 0) {
+                throw 'An unsupported runtime role must be rejected before Azure calls.'
+            }
+        }
+    }
+    $provisionParameters.parameters.runtimeRoleName = @{ value = 'sunsum_runtime' }
+    $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+    $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
+    & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision | Out-Null
     $provision.ExpectedSha256 = '0' * 64
     Assert-Throws { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply } 'Accepted changed provisioning parameters.'
     $provisionParameters.parameters.webAppName.value = '<placeholder>'
@@ -175,11 +195,45 @@ try {
     $global:AzureProvisionInventory = '[]'
     $global:AzureProvisionExitCode = 0
     $global:AzureProvisionWrites = 0
+    $global:AzureExistingWeb = '{"id":"/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/sample-resource-group/providers/Microsoft.Web/sites/sample-web","kind":"app,linux","httpsOnly":true,"defaultHostName":"sample-web.azurewebsites.net"}'
+    $global:AzureWebReadFailure = $false
+    $global:AzureWebReads = 0
+    $global:AzureAvailabilityFailureType = ''
+    $global:AzureAvailabilityResponse = '{"nameAvailable":true}'
+    $global:AzureAvailabilityExitCode = 0
+    $global:AzureAvailabilityChecks = @()
     function global:az {
         $global:AzureSafetyTestCalls++
         if ($args[0] -ceq 'resource' -and $args[1] -ceq 'list') {
             $global:LASTEXITCODE = $global:AzureProvisionExitCode
             return $global:AzureProvisionInventory
+        }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
+            $global:AzureWebReads++
+            $global:LASTEXITCODE = if ($global:AzureWebReadFailure) { 1 } else { 0 }
+            return $global:AzureExistingWeb
+        }
+        if ($args[0] -ceq 'rest') {
+            $bodyPath = [string]$args[[array]::IndexOf($args, '--body') + 1]
+            $body = Get-Content -LiteralPath $bodyPath.Substring(1) -Raw | ConvertFrom-Json -AsHashtable
+            $url = [string]$args[[array]::IndexOf($args, '--url') + 1]
+            $expected = switch ($body.type) {
+                'Microsoft.DBforPostgreSQL/flexibleServers' { @{ name = 'sample-postgres'; version = '2021-06-01' } }
+                'Microsoft.Storage/storageAccounts' { @{ name = 'samplestorage'; version = '2024-01-01' } }
+                'Microsoft.Web/sites' { @{ name = 'sample-web'; version = '2024-04-01' } }
+                default { throw 'Unexpected name-availability type.' }
+            }
+            $provider = $body.type.Split('/')[0]
+            $expectedUrl = "https://management.azure.com/subscriptions/11111111-1111-4111-8111-111111111111/providers/$provider/checkNameAvailability?api-version=$($expected.version)"
+            if ($url -cne $expectedUrl -or $body.name -cne $expected.name -or
+                $args[[array]::IndexOf($args, '--method') + 1] -cne 'post') { throw 'Name check was not bound to the reviewed target.' }
+            $global:AzureAvailabilityChecks += $body.type
+            if ($global:AzureAvailabilityFailureType -ceq $body.type) {
+                $global:LASTEXITCODE = $global:AzureAvailabilityExitCode
+                return $global:AzureAvailabilityResponse
+            }
+            $global:LASTEXITCODE = 0
+            return '{"nameAvailable":true}'
         }
         if ($args[0] -ceq 'deployment' -and $args[1] -ceq 'group' -and $args[2] -ceq 'create') {
             $global:AzureProvisionWrites++
@@ -190,6 +244,8 @@ try {
     }
     $provisionParameters.parameters.webAppName.value = 'sample-web'
     foreach ($mode in @('Existing', 'Create')) {
+        $global:AzureWebReads = 0
+        $global:AzureAvailabilityChecks = @()
         $provisionParameters.parameters.webAppMode = @{ value = $mode }
         $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
         $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
@@ -210,7 +266,11 @@ try {
         if ($global:AzureProvisionWrites -ne 0) { throw 'Failed discovery allowed deployment.' }
         $global:AzureProvisionExitCode = 0
         & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply | Out-Null
-        if ($global:AzureProvisionWrites -ne 1) { throw 'Empty inventory should permit first-time provisioning.' }
+        if ($global:AzureProvisionWrites -ne 1) { throw 'Available names and a valid web target should permit first-time provisioning.' }
+        $expectedChecks = @('Microsoft.DBforPostgreSQL/flexibleServers', 'Microsoft.Storage/storageAccounts')
+        if ($mode -ceq 'Create') { $expectedChecks += 'Microsoft.Web/sites' }
+        if (($global:AzureAvailabilityChecks -join '|') -cne ($expectedChecks -join '|') -or
+            $global:AzureWebReads -ne $(if ($mode -ceq 'Existing') { 1 } else { 0 })) { throw 'Provisioning preflights did not check the required targets.' }
         foreach ($inventory in @(
             '[{"type":"Microsoft.Web/sites","name":"sample-web"}]',
             '[{"type":"Microsoft.Web/serverfarms","name":"sample-plan"}]'
@@ -229,6 +289,40 @@ try {
         $global:AzureProvisionWrites = 0
         & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply | Out-Null
         if ($global:AzureProvisionWrites -ne 1) { throw 'Unrelated resources should not block provisioning.' }
+        $global:AzureProvisionInventory = '[]'
+        foreach ($failedType in $expectedChecks) {
+            $global:AzureAvailabilityFailureType = $failedType
+            foreach ($response in @('{"nameAvailable":false}', '{"nameAvailable":null}', '{"nameAvailable":"true"}', '{}', '[]', 'null', 'invalid-json', 'read-failure')) {
+                $global:AzureAvailabilityChecks = @()
+                $global:AzureAvailabilityResponse = $response
+                $global:AzureAvailabilityExitCode = if ($response -ceq 'read-failure') { 1 } else { 0 }
+                $global:AzureProvisionWrites = 0
+                Assert-Throws { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply } 'Unavailable or unknown global name allowed deployment.'
+                if ($global:AzureProvisionWrites -ne 0 -or $global:AzureAvailabilityChecks[-1] -cne $failedType) { throw 'Name preflight did not stop at the failed provider.' }
+            }
+        }
+        $global:AzureAvailabilityFailureType = ''
+        $global:AzureAvailabilityExitCode = 0
+        if ($mode -ceq 'Existing') {
+            $validWeb = $global:AzureExistingWeb
+            foreach ($response in @('{}', '[]', 'null', 'invalid-json', 'read-failure',
+                $validWeb.Replace('sample-web', 'wrong-web'),
+                $validWeb.Replace('sample-resource-group', 'wrong-group'),
+                $validWeb.Replace('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'),
+                $validWeb.Replace('app,linux', 'app'), $validWeb.Replace('app,linux', 'functionapp,linux'),
+                $validWeb.Replace('true', 'false'), $validWeb.Replace('true', '"true"'),
+                $validWeb.Replace('sample-web.azurewebsites.net', ''), $validWeb.Replace('azurewebsites.net', 'example.com'))) {
+                $global:AzureExistingWeb = $response
+                $global:AzureWebReadFailure = $response -ceq 'read-failure'
+                $global:AzureWebReads = 0
+                $global:AzureAvailabilityChecks = @()
+                $global:AzureProvisionWrites = 0
+                Assert-Throws { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply } 'Invalid existing web target allowed deployment.'
+                if ($global:AzureWebReads -ne 1 -or $global:AzureProvisionWrites -ne 0 -or $global:AzureAvailabilityChecks.Count -ne 0) { throw 'Existing target validation must stop before provisioning or name checks.' }
+            }
+            $global:AzureExistingWeb = $validWeb
+            $global:AzureWebReadFailure = $false
+        }
     }
     $global:AzureCodeWrites = 0
     $global:AzureCodeReadFailure = $false
@@ -280,6 +374,44 @@ try {
             throw "Unsafe source-build scenario $scenario reached deployment."
         }
     }
+    if ($BicepPath) {
+        foreach ($templateName in @('resources', 'web')) {
+            $templatePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\templates\$templateName.bicep"))
+            $compiledJson = & $BicepPath build $templatePath --no-restore --stdout
+            if ($LASTEXITCODE -ne 0) { throw "Cannot compile $templateName." }
+            $compiled = ($compiledJson -join "`n") | ConvertFrom-Json -AsHashtable
+            $roleParameter = $compiled.parameters.runtimeRoleName
+            if ($roleParameter.allowedValues.Count -ne 1 -or $roleParameter.allowedValues[0] -cne 'sunsum_runtime' -or
+                $roleParameter.defaultValue -cne 'sunsum_runtime') { throw 'Compiled runtime-role allowlist must contain only sunsum_runtime.' }
+            $templateParameters = @{}
+            if ($templateName -ceq 'resources') {
+                foreach ($entry in $provisionParameters.parameters.GetEnumerator()) { $templateParameters[$entry.Key] = $entry.Value.value }
+            } else {
+                $templateParameters = @{
+                    location = 'centralus'; planName = 'sample-plan'; webAppName = 'sample-web'
+                    databaseHost = 'sample-postgres.postgres.database.azure.com'; databaseName = 'sunsum'
+                    blobEndpoint = 'https://samplestorage.blob.core.windows.net/'
+                }
+            }
+            $relativeTemplate = [System.IO.Path]::GetRelativePath($fixture, $templatePath).Replace('\', '/')
+            foreach ($roleName in @('omitted', 'sunsum_runtime', '') + $rejectedRoles) {
+                $null = $templateParameters.Remove('runtimeRoleName')
+                if ($roleName -cne 'omitted') { $templateParameters.runtimeRoleName = $roleName }
+                $lines = @("using '$relativeTemplate'") + @($templateParameters.GetEnumerator() | ForEach-Object { "param $($_.Key) = '$($_.Value)'" })
+                $inputPath = Join-Path $fixture 'runtime-role.bicepparam'
+                $outputPath = Join-Path $fixture 'runtime-role.json'
+                if (Test-Path -LiteralPath $outputPath) { Remove-Item -LiteralPath $outputPath }
+                Set-Content -LiteralPath $inputPath -Value $lines -Encoding utf8NoBOM
+                $diagnostics = & $BicepPath build-params $inputPath --no-restore --outfile $outputPath 2>&1
+                if ($roleName -cin @('omitted', 'sunsum_runtime')) {
+                    if ($LASTEXITCODE -ne 0) { throw "Valid runtime role failed: $diagnostics" }
+                } elseif ($LASTEXITCODE -eq 0 -or ($diagnostics -join "`n") -notlike '*sunsum_runtime*') {
+                    throw "Unsupported runtime role did not fail template validation: $diagnostics"
+                }
+            }
+        }
+        Write-Output 'Runtime role template guards passed: both compiled allowlists and 18 parameter cases.'
+    }
     $zip = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Update)
     try { $null = $zip.CreateEntry('.env') } finally { $zip.Dispose() }
     Assert-Throws { & (Join-Path $PSScriptRoot '..\Test-AppServicePackage.ps1') -Path $zipPath } 'Accepted a tampered archive.'
@@ -287,6 +419,7 @@ try {
     Remove-Item -LiteralPath Function:\az -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureSafetyTestCalls -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureProvisionInventory, AzureProvisionExitCode, AzureProvisionWrites -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name AzureExistingWeb, AzureWebReadFailure, AzureWebReads, AzureAvailabilityFailureType, AzureAvailabilityResponse, AzureAvailabilityExitCode, AzureAvailabilityChecks -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureCodeWrites, AzureCodeReadFailure, AzureCodeRuntime, AzureCodeBuildSettings -Scope Global -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }
 }

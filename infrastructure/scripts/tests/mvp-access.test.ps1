@@ -1,5 +1,8 @@
 #requires -Version 7.2
+[CmdletBinding()]
+param([string] $BicepPath)
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot '..\MvpAccessSafety.psm1') -Force
 function Assert-Throws([scriptblock] $Action) {
@@ -50,8 +53,9 @@ foreach ($patch in @(
     Assert-Throws { Assert-AccessConfiguration $invalid SignIn $subscription $group }
 }
 $roleParameters = Assert-AccessConfiguration $roles BlobRoles $subscription $group
-if ($roleParameters.webAppName.value -cne $roles.webAppName -or $roleParameters.Contains('webPrincipalId')) {
-    throw 'The role template must bind assignments to the named web app, not an arbitrary principal parameter.'
+if ($roleParameters.webAppName.value -cne $roles.webAppName -or $roleParameters.Contains('webPrincipalId') -or
+    $roleParameters.approvedWebPrincipalId.value -cne $roles.webPrincipalId) {
+    throw 'The role template must bind the named web app to the approved principal ID.'
 }
 $invalid = $roles.Clone(); $invalid.blobDataAccess = 'Owner'
 Assert-Throws { Assert-AccessConfiguration $invalid BlobRoles $subscription $group }
@@ -314,6 +318,44 @@ try {
     $blobArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
     & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @blobArgs -Apply | Out-Null
     if ($global:MvpBlobWrites -ne 1 -or $global:MvpContainerReads -ne 2) { throw 'Private containers should permit the scoped grant.' }
+    if ($BicepPath) {
+        $templatePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\templates\storage-role-grants.bicep'))
+        $compiledJson = & $BicepPath build $templatePath --no-restore --stdout
+        if ($LASTEXITCODE -ne 0) { throw 'Blob role template did not compile.' }
+        $compiled = ($compiledJson -join "`n") | ConvertFrom-Json -AsHashtable
+        $expectedExpression = "[__bicep.bindApprovedPrincipal(coalesce(tryGet(tryGet(reference('web', '2024-04-01', 'full'), 'identity'), 'principalId'), ''), parameters('approvedWebPrincipalId'))]"
+        if ($compiled.resources.assignments.properties.principalId -cne $expectedExpression) {
+            throw 'Blob grants must consume the web identity lookup constrained by the approved principal.'
+        }
+        $approved = 'abcdef12-3456-4789-abcd-0123456789ab'
+        $relativeTemplate = [System.IO.Path]::GetRelativePath($fixture, $templatePath).Replace('\', '/')
+        foreach ($mode in @('Reader', 'Contributor')) {
+            foreach ($actual in @($approved, $approved.ToUpperInvariant(), '', '11111111-1111-4111-8111-111111111111')) {
+                $inputPath = Join-Path $fixture 'identity.bicepparam'
+                $outputPath = Join-Path $fixture 'identity.json'
+                if (Test-Path -LiteralPath $outputPath) { Remove-Item -LiteralPath $outputPath }
+                $source = @"
+using '$relativeTemplate'
+import { bindApprovedPrincipal } from '$relativeTemplate'
+param storageAccountName = 'samplestorage'
+param webAppName = 'sample-web'
+param approvalReference = 'synthetic-test-review'
+param blobDataAccess = '$mode'
+param approvedWebPrincipalId = bindApprovedPrincipal('$actual', '$approved')
+"@
+                Set-Content -LiteralPath $inputPath -Value $source -Encoding utf8NoBOM
+                $diagnostics = & $BicepPath build-params $inputPath --no-restore --outfile $outputPath 2>&1
+                if ($actual -ieq $approved) {
+                    if ($LASTEXITCODE -ne 0) { throw "Matching identity failed evaluation: $diagnostics" }
+                    $result = Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json -AsHashtable
+                    if ($result.parameters.approvedWebPrincipalId.value -cne $approved) { throw 'Grant identity must equal the normalized approved principal.' }
+                } elseif ($LASTEXITCODE -eq 0 -or ($diagnostics -join "`n") -notlike '*web identity changed or is absent*' -or (Test-Path -LiteralPath $outputPath)) {
+                    throw "Unapproved identity did not fail evaluation: $diagnostics"
+                }
+            }
+        }
+        Write-Output 'Blob identity template checks passed: 8 evaluation cases and compiled assignment binding.'
+    }
 } finally {
     Remove-Item -LiteralPath Function:\az -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpAccessCalls -Scope Global -ErrorAction SilentlyContinue

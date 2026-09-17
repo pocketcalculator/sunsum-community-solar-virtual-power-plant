@@ -41,18 +41,36 @@ Use an ignored `.azure\artifacts\` output directory. Compilation makes no cloud
 changes and does not validate quotas, cost, directory membership or Azure
 policy. The web module has no implicit paid-tier fallback.
 
+Both `resources.bicep` and `web.bicep` allow only `sunsum_runtime` for
+`runtimeRoleName`, including direct-template deployments. The provisioning
+wrapper rejects other names before Azure calls. This is a configuration guard,
+not SQL privilege enforcement; the separate bootstrap must verify that the role
+maps to the runtime identity and is non-admin. Custom runtime names need a
+reviewed contract change rather than a parameter override.
+
 Use the validating firewall script rather than passing raw IP input to the
 network template. Incremental deployment does not remove old allowances.
-The firewall template does not classify public/reserved IP ranges, and the core
-template does not enforce first-time creation. Those checks belong to the
-supported `Set-PostgresFirewall.ps1` and `Provision-Infrastructure.ps1` entry
-points. A caller with direct Azure write permissions can bypass local checks;
+The firewall template also validates the entire address list before generating
+rules: canonical decimal IPv4 only, no duplicate entries, maximum 128, and the
+same excluded address ranges as the wrapper (including the `0.0.0.0` bypass).
+An invalid list fails evaluation rather than deploying just its valid entries.
+These exclusions implement this repository's policy, not an assertion that every
+accepted address is routable or approved. The wrapper still binds input to the
+reviewed target and approval record.
+
+The core template does not enforce first-time creation; that guard remains in
+the supported `Provision-Infrastructure.ps1` entry point, together with provider
+name-availability checks and exact existing-web target validation. Preflights
+do not reserve names or make an ARM deployment transactional. A caller with direct
+Azure write permissions can submit a different template or direct resource write;
 enforcing restrictions against that caller requires separately managed Azure
 Policy/RBAC controls. No such policy enforcement is provisioned here.
 
-The Blob-role template takes `webAppName` and derives its system-assigned
-principal from that resource in the target group. `webPrincipalId` remains an
-approval check in the wrapper's input, not a template parameter. Assignment
+The Blob-role template takes `webAppName` and `approvedWebPrincipalId`, which
+the wrapper supplies from its reviewed `webPrincipalId` input. It compares that
+approval with the named web app's current system-assigned identity and fails
+on drift or an absent identity. Assignments consume only the approved principal;
+the template cannot silently grant to a newly recreated identity. Assignment
 names now derive from the web resource ID rather than the principal ID. Review
 existing assignments before upgrading from older templates or recreating an
 identity; do not automatically delete or retarget conflicting assignments.

@@ -63,6 +63,21 @@ jobs:
               --outfile "$RUNNER_TEMP/compiled-bicep/$(basename "$template" .bicep).json"
           done
 
+      - name: Evaluate firewall template input guards without Azure
+        shell: pwsh
+        run: |
+          & ./infrastructure/scripts/tests/firewall-template.test.ps1 -BicepPath "$env:RUNNER_TEMP/bicep"
+
+      - name: Validate deployment and runtime role guards without Azure
+        shell: pwsh
+        run: |
+          & ./infrastructure/scripts/tests/deployment-safety.test.ps1 -BicepPath "$env:RUNNER_TEMP/bicep"
+
+      - name: Validate access and Blob identity guards without Azure
+        shell: pwsh
+        run: |
+          & ./infrastructure/scripts/tests/mvp-access.test.ps1 -BicepPath "$env:RUNNER_TEMP/bicep"
+
   node-project:
     name: Node project
     runs-on: ubuntu-latest
