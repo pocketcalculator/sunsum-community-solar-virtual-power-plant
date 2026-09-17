@@ -228,8 +228,21 @@ and that both implementations of the client necessarily agree on the path.
 ### Blob path layout
 
 ```text
-{container}/{sites|projects}/{parentId}/{docType}/{documentId}/{filename}
+{container}/owners/{ownerId}/{sites|projects}/{parentId}/{docType}/{documentId}/{filename}
 ```
+
+The owner id leads the blob name so every document belonging to one site owner
+sits under a single prefix, across all of their sites and projects. That is what
+makes "everything this owner has" a prefix listing rather than a scan, and it is
+the unit a future per-owner SAS or lifecycle rule would be scoped to.
+
+The parent scope is the **site** id for anything uploaded during intake, and the
+project id only for documents created against a project. A project is created
+*from* a site at acceptance, so the site id is the one identifier that exists for
+the whole life of the record — documents arrive during intake, before any project
+does, and `blob_path` is immutable once written. Anchoring intake documents on a
+project id would either strand them under a prefix the project never uses or
+force copying every blob at acceptance.
 
 The document id is its own segment rather than a filename prefix, so two
 uploads of the same filename cannot collide and a blob can be located from its
@@ -251,6 +264,12 @@ electricity bill. This is only safe because a document's class is fixed at
 upload: `addSiteDocument` is the only writer and there is no re-classification
 path.
 
+The disclosure split stays at the *container* level rather than becoming another
+folder under the owner prefix. Azure containers cannot nest — a "folder" is only
+a prefix in the blob name — so demoting it would turn a boundary a credential
+cannot cross into a naming convention, and the owner grouping above is delivered
+inside each container instead.
+
 ### Untrusted input in a path
 
 `original_filename` and `doc_type` are caller-supplied and both become path
@@ -264,39 +283,88 @@ them. `tests/unit/backend/document-storage.test.ts` asserts a crafted
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SUNSUM_BLOB` | `memory` | `memory` keeps blobs in-process; `azure` uses the account below. |
+| `SUNSUM_BLOB` | `memory` | `memory` keeps blobs in-process; `azurite` uses the local emulator; `azure` uses the account below. |
+| `AZURE_STORAGE_CONNECTION_STRING` | the published Azurite credential | Only read when `SUNSUM_BLOB=azurite`. |
 | `AZURE_STORAGE_ACCOUNT_NAME` | — | Required when `SUNSUM_BLOB=azure`. |
 
-There is no connection string and no account key, because the account has
-shared-key access disabled: the credential is `az login` locally and the app's
-managed identity when deployed. `azure` mode with no account name throws at
-startup rather than falling back to memory — a silent fallback would make
-uploads appear to succeed and then vanish.
+An unrecognised `SUNSUM_BLOB` throws rather than falling back to `memory`. A
+typo would otherwise look exactly like a working deployment whose uploads vanish
+on restart, which is the failure this seam exists to make impossible.
+
+In `azure` mode there is no connection string and no account key, because the
+account has shared-key access disabled: the credential is `az login` locally and
+the app's managed identity when deployed.
 
 The account, its containers and the access it still needs are described in
 [`infrastructure/docs/blob-storage.md`](../../infrastructure/docs/blob-storage.md).
-**It is not reachable yet** — see the blockers recorded there.
+**The deployed account is not reachable yet** — see the blockers recorded there.
+That is why `azurite` exists: it is what makes the Azure SDK path runnable and
+verifiable today.
 
-### What this does not do yet
+### Running the emulator locally
 
-`blob/index.ts` has **no caller in any request path**, and that is deliberate
-rather than an oversight: `POST /sites/{id}/documents` is contracted to carry
-document *metadata* only, with no file content in the body, so no endpoint
-currently has bytes to write. Transferring the file itself is the §7.6
-short-lived-SAS design, which needs data-plane access the subscription has not
-granted — so it could not be written and verified here.
+Two ways, same emulator pinned to the same version:
 
-What that means in practice:
+```bash
+npm run blob:up                      # the npm dev dependency, no Docker; state in ./.azurite
+docker compose up -d --wait azurite  # the same pinned image, if the database is already up that way
+```
 
-- `documents.blob_path` is now a real, parseable location for every record,
-  including the seeded ones, so the metadata is correct ahead of the bytes.
-- The seam is covered by `tests/unit/backend/blob-client.test.ts` and
-  `document-storage.test.ts` (32 tests), including the container split and
-  path-traversal attempts.
-- Nothing proves the Azure implementation against a live account. The first
-  code that moves bytes must route through `documentBlobClient()` rather than
-  constructing an SDK client of its own, and should be landed together with a
-  check against the real account once the blockers clear.
+Then point the app at it:
+
+```bash
+SUNSUM_BLOB=azurite npm run dev
+```
+
+The first start takes up to a minute to begin listening while Azurite
+initialises its metadata store; a port check straight after the command will be
+refused until it finishes. Never delete the state directory or volume while
+Azurite is running — that corrupts the LokiJS store underneath and produces
+failures that look like code defects. Stop it first.
+
+In `azurite` mode the client creates the two containers on first use. That
+bootstrap is emulator-only on purpose: in Azure the containers are Bicep's to
+create, and an application that can create containers is an application holding
+more rights than it needs.
+
+`tests/integration/blob-azurite.test.ts` exercises the real Blob REST API
+against it — upload, download, overwrite, missing-blob and the container split.
+It probes the port first and skips cleanly when the emulator is not running, so
+a clean checkout with no Docker still passes.
+
+### Transferring the bytes
+
+`PUT` and `GET /sites/{id}/documents/{documentId}/content` are the only callers
+of `documentBlobClient()`. They are deliberately separate from registration:
+`POST /sites/{id}/documents` is contracted to carry document *metadata* only,
+and that contract is frozen, so content was added alongside it rather than
+folded into it.
+
+- The blob location comes from the stored `blob_path`, never from the request,
+  so an uploader cannot choose where its bytes land or overwrite another
+  document's blob.
+- The request's `Content-Type` is **ignored**. The record already carries a type
+  validated against the allow-list at registration; honouring the upload's own
+  header would let a caller register `application/pdf` and then serve back
+  something the browser will execute.
+- The uploaded length must equal the registered `size_bytes`. Storing different
+  bytes would leave the record describing something that is not there, and every
+  consumer reads the record.
+- Reads set `Content-Disposition: attachment` with an RFC 5987 encoded filename
+  and `X-Content-Type-Options: nosniff`, so a document is never rendered in the
+  origin.
+- A registered document with nothing uploaded returns `not_found` rather than an
+  error. It is a normal state — registration and upload are two steps — and it
+  is what an owner's outstanding-items list is reading.
+
+Investor access to document *content* is not wired: `core` admits only the site
+owner and operators. Investors see tier-1 document *metadata* through the deal
+room, which is the §7.6 short-lived-SAS design and needs data-plane access the
+subscription has not granted.
+
+`tests/unit/backend/document-content.test.ts` covers the round trip, the size
+and empty-body rejections, cross-owner and cross-site refusal, the ignored
+request content type and the response headers.
 
 ### Reconciling with the database schema
 

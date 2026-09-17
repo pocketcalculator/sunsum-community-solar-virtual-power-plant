@@ -13,7 +13,10 @@ import {
   safeFilename,
   siteDocumentParent,
 } from "@/backend/core";
+import { demoBackendStore } from "@/backend/core/store";
+import { DEMO_SITE_OWNER_USER_ID } from "@/backend/demo-principals";
 
+const OWNER_ID = "00000000-0000-4000-8000-0000000000aa";
 const SITE_ID = "11111111-1111-4111-8111-111111111111";
 const DOCUMENT_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -27,6 +30,7 @@ describe("document blob layout", () => {
 
   it("routes an owner-private document away from the investor container", () => {
     const location = buildDocumentBlobLocation({
+      ownerUserId: OWNER_ID,
       parent: siteDocumentParent(SITE_ID),
       documentId: DOCUMENT_ID,
       docType: "electricity_bill",
@@ -35,24 +39,54 @@ describe("document blob layout", () => {
     });
     expect(location.container).toBe("owner-private");
     expect(location.blobName).toBe(
-      `sites/${SITE_ID}/electricity_bill/${DOCUMENT_ID}/march-bill.pdf`,
+      `owners/${OWNER_ID}/sites/${SITE_ID}/electricity_bill/${DOCUMENT_ID}/march-bill.pdf`,
     );
+  });
+
+  /**
+   * The point of the owner segment: one prefix lists everything belonging to
+   * one owner, and a second narrows it to a single project.
+   */
+  it("groups every document for one owner under a single prefix", () => {
+    const other = buildDocumentBlobLocation({
+      ownerUserId: OWNER_ID,
+      parent: siteDocumentParent("99999999-9999-4999-8999-999999999999"),
+      documentId: DOCUMENT_ID,
+      docType: "site_photo",
+      originalFilename: "roof.jpg",
+      disclosureClass: "owner_private",
+    });
+    const mine = buildDocumentBlobLocation({
+      ownerUserId: OWNER_ID,
+      parent: siteDocumentParent(SITE_ID),
+      documentId: DOCUMENT_ID,
+      docType: "electricity_bill",
+      originalFilename: "bill.pdf",
+      disclosureClass: "owner_private",
+    });
+
+    expect(mine.blobName.startsWith(`owners/${OWNER_ID}/`)).toBe(true);
+    expect(other.blobName.startsWith(`owners/${OWNER_ID}/`)).toBe(true);
+    expect(mine.blobName.startsWith(`owners/${OWNER_ID}/sites/${SITE_ID}/`)).toBe(true);
+    expect(other.blobName.startsWith(`owners/${OWNER_ID}/sites/${SITE_ID}/`)).toBe(false);
   });
 
   it("prefixes project documents separately from site documents", () => {
     const location = buildDocumentBlobLocation({
+      ownerUserId: OWNER_ID,
       parent: projectDocumentParent(SITE_ID),
       documentId: DOCUMENT_ID,
       docType: "land_report",
       originalFilename: "survey.pdf",
       disclosureClass: "investor_tier_1",
     });
-    expect(location.blobName.startsWith("projects/")).toBe(true);
+    expect(location.blobName.startsWith(`owners/${OWNER_ID}/projects/`)).toBe(true);
     expect(location.container).toBe("investor-tier-1");
   });
 
   it("separates two uploads of the same filename", () => {
     const base = {
+      ownerUserId: OWNER_ID,
       parent: siteDocumentParent(SITE_ID),
       docType: "site_photo",
       originalFilename: "photo.jpg",
@@ -70,18 +104,22 @@ describe("document blob layout", () => {
    */
   it("refuses to let a crafted filename escape its prefix", () => {
     const location = buildDocumentBlobLocation({
+      ownerUserId: OWNER_ID,
       parent: siteDocumentParent(SITE_ID),
       documentId: DOCUMENT_ID,
       docType: "site_photo",
       originalFilename: "../../../etc/passwd",
       disclosureClass: "owner_private",
     });
-    expect(location.blobName).toBe(`sites/${SITE_ID}/site_photo/${DOCUMENT_ID}/passwd`);
+    expect(location.blobName).toBe(
+      `owners/${OWNER_ID}/sites/${SITE_ID}/site_photo/${DOCUMENT_ID}/passwd`,
+    );
     expect(location.blobName).not.toContain("..");
   });
 
   it("refuses to let a crafted doc type escape its prefix", () => {
     const location = buildDocumentBlobLocation({
+      ownerUserId: OWNER_ID,
       parent: siteDocumentParent(SITE_ID),
       documentId: DOCUMENT_ID,
       docType: "../../owner-private",
@@ -89,7 +127,7 @@ describe("document blob layout", () => {
       disclosureClass: "investor_tier_1",
     });
     expect(location.blobName).not.toContain("..");
-    expect(location.blobName.split("/")).toHaveLength(5);
+    expect(location.blobName.split("/")).toHaveLength(7);
   });
 
   it.each([
@@ -128,6 +166,7 @@ describe("document blob layout", () => {
 
   it("round-trips a stored path back to a container and blob name", () => {
     const location = buildDocumentBlobLocation({
+      ownerUserId: OWNER_ID,
       parent: siteDocumentParent(SITE_ID),
       documentId: DOCUMENT_ID,
       docType: "screening_report",
@@ -145,4 +184,36 @@ describe("document blob layout", () => {
       expect(parseBlobPath(input)).toBe(expected);
     },
   );
+});
+
+/**
+ * `core/store` builds its demo document's `blobPath` by hand, because importing
+ * `core/documents` for the builder would close a cycle. That duplication is the
+ * kind that rots silently, so it is pinned here instead: if the layout changes
+ * and the demo store is not updated, this fails.
+ */
+describe("the demo store's blob path matches the layout builder", () => {
+  it("parses, and is exactly what the builder would produce", async () => {
+    const projects = await demoBackendStore.listProjects();
+    expect(projects.length).toBeGreaterThan(0);
+
+    const documents = await demoBackendStore.listDocuments("", projects[0]!.id);
+    const document = documents[0];
+    expect(document).toBeDefined();
+    expect(document!.projectId).not.toBeNull();
+
+    const parsed = parseBlobPath(document!.blobPath);
+    expect(parsed).not.toBeNull();
+
+    const rebuilt = buildDocumentBlobLocation({
+      ownerUserId: DEMO_SITE_OWNER_USER_ID,
+      parent: projectDocumentParent(document!.projectId!),
+      documentId: document!.id,
+      docType: document!.docType,
+      originalFilename: document!.originalFilename,
+      disclosureClass: document!.disclosureClass,
+    });
+
+    expect(document!.blobPath).toBe(formatBlobPath(rebuilt));
+  });
 });

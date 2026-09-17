@@ -133,6 +133,7 @@ export interface DocumentBlobLocation {
 }
 
 export interface BuildBlobPathInput {
+  readonly ownerUserId: string;
   readonly parent: DocumentParent;
   readonly documentId: string;
   readonly docType: string;
@@ -141,7 +142,26 @@ export interface BuildBlobPathInput {
 }
 
 /**
- * `sites/{siteId}/{docType}/{documentId}/{filename}`
+ * `owners/{ownerId}/sites/{siteId}/{docType}/{documentId}/{filename}`
+ *
+ * Grouped owner first, then the thing the documents belong to, so listing one
+ * prefix returns everything for one owner and a second segment narrows it to a
+ * single project. Browsing by hand goes owner → project → document type, which
+ * is how anyone looking for "the electricity bill for that Atlanta rooftop"
+ * actually searches.
+ *
+ * The project scope is keyed by the *site* id, not the project id, and that is
+ * deliberate. A project is created from a site at acceptance and the two are
+ * one-to-one (`project.siteId`), but documents arrive during intake — before a
+ * project exists at all. A blob path is immutable once written into
+ * `documents.blob_path`, so anchoring on the project id would leave every
+ * intake document stranded under a prefix the project never uses, and the
+ * alternative is copying every blob at acceptance. Keying on the site id gives
+ * one stable prefix from first upload through operations.
+ *
+ * `projects/{projectId}` remains for documents whose parent genuinely is a
+ * project — an underwriting summary produced after acceptance has no
+ * site-stage equivalent.
  *
  * The document id is its own segment rather than a filename prefix so two
  * uploads of the same filename cannot collide, and so a blob can be located
@@ -150,6 +170,8 @@ export interface BuildBlobPathInput {
 export function buildDocumentBlobLocation(input: BuildBlobPathInput): DocumentBlobLocation {
   const prefix = input.parent.kind === "site" ? "sites" : "projects";
   const blobName = [
+    "owners",
+    input.ownerUserId,
     prefix,
     input.parent.id,
     normalizeDocType(input.docType),
@@ -185,4 +207,18 @@ export function parseBlobPath(blobPath: string): DocumentBlobLocation | null {
 
 export function isDocumentContainer(value: string): value is DocumentContainer {
   return Object.values(DOCUMENT_CONTAINERS).some((container) => container === value);
+}
+
+/**
+ * The bytes side of a document, as `core` needs it.
+ *
+ * Declared here rather than imported from `src/backend/blob` because the
+ * dependency runs the other way — `blob` imports this module for the layout,
+ * so `core` importing `blob` back would be a cycle. `core` owns the port and
+ * `blob` supplies the adapter, which is the same shape `ViabilityClient` uses
+ * in `core/sites`: the workflow stays testable with no Azure anywhere near it.
+ */
+export interface DocumentBlobPort {
+  upload(location: DocumentBlobLocation, body: Uint8Array, contentType: string): Promise<void>;
+  download(location: DocumentBlobLocation): Promise<Uint8Array | null>;
 }

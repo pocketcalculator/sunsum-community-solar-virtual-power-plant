@@ -1,19 +1,23 @@
-# Local PostgreSQL for development and the demo.
+# Local PostgreSQL and Azure Blob Storage for development and the demo.
 #
 # The ADR's decision is PostgreSQL on Azure Database for PostgreSQL Flexible
 # Server. This runs the same engine and the same major version on a laptop, so
 # what passes here is what runs there — that is the whole reason for pinning the
 # major version rather than tracking `postgres:latest`.
 #
-#   docker compose up -d      start it
+#   docker compose up -d      start both
 #   npm run db:migrate        create the schema
 #   npm run db:seed           load the demo data
-#   docker compose down -v    throw it away, volume and all
+#   docker compose down -v    throw it away, volumes and all
 #
 # Port 55432, not 5432, so it does not collide with a PostgreSQL someone already
 # has installed. The credentials are development-only and are deliberately in
 # the repository: there is nothing here worth protecting, and a password nobody
 # can find is a password that stops the demo.
+#
+# Azurite is optional here. It is also an npm dev dependency pinned to the same
+# version, so `npm run blob:up` runs the identical build without Docker — see
+# `src/backend/README.md` for which to pick.
 
 services:
   postgres:
@@ -36,5 +40,26 @@ services:
       timeout: 3s
       retries: 20
 
+  # Blob only: the platform stores documents and nothing else, so the queue and
+  # table endpoints would be two more ports to collide with for no gain.
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+    container_name: sunsum-azurite
+    command: azurite-blob --blobHost 0.0.0.0 --location /data
+    ports:
+      - "10000:10000"
+    volumes:
+      - sunsum-azurite:/data
+    # The image is built on `node:22-alpine`, so `node` is the one interpreter
+    # guaranteed to be present — `curl` and `wget` are not installed.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'node -e "require(''net'').connect(10000, ''127.0.0.1'').on(''connect'', () => process.exit(0)).on(''error'', () => process.exit(1))"'
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
 volumes:
   sunsum-pgdata:
+  sunsum-azurite:

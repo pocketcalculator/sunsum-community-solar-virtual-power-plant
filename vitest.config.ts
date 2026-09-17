@@ -13,6 +13,7 @@ export default defineConfig({
     setupFiles: ["./tests/setup.ts"],
     include: [
       "tests/unit/**/*.test.{ts,tsx}",
+      "tests/integration/**/*.test.{ts,tsx}",
       "src/features/**/*.test.{ts,tsx}",
       "src/backend/**/*.test.{ts,tsx}",
     ],

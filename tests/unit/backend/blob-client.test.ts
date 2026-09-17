@@ -2,8 +2,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   AzureDocumentBlobClient,
+  BLOB_MODES,
   documentBlobClient,
   InMemoryDocumentBlobClient,
+  isBlobMode,
   resetDocumentBlobClient,
 } from "@/backend/blob";
 import {
@@ -19,6 +21,8 @@ const owner: Viewer = {
   role: "site_owner",
   userId: "cd865e91-942b-48d3-a6f1-7b2053e4c890",
 };
+
+const OWNER_ID = owner.userId;
 
 const completeSite: SiteCreateInput = {
   addressRaw: "1 Test Street, Atlanta, GA",
@@ -58,6 +62,7 @@ afterEach(() => {
   resetDocumentBlobClient();
   delete process.env.SUNSUM_BLOB;
   delete process.env.AZURE_STORAGE_ACCOUNT_NAME;
+  delete process.env.AZURE_STORAGE_CONNECTION_STRING;
 });
 
 describe("document blob client seam", () => {
@@ -69,6 +74,31 @@ describe("document blob client seam", () => {
     process.env.SUNSUM_BLOB = "azure";
     process.env.AZURE_STORAGE_ACCOUNT_NAME = "stsunsumsolardevcus";
     expect(documentBlobClient()).toBeInstanceOf(AzureDocumentBlobClient);
+  });
+
+  /**
+   * The emulator runs the same client class as the deployed account, so a local
+   * round trip exercises the production code path rather than a parallel one.
+   */
+  it("uses the same Azure client for the emulator, with no account name needed", () => {
+    process.env.SUNSUM_BLOB = "azurite";
+    expect(documentBlobClient()).toBeInstanceOf(AzureDocumentBlobClient);
+  });
+
+  /**
+   * A typo used to select the in-memory client, which looks identical to a
+   * working deployment until a restart loses every upload.
+   */
+  it("refuses to start on a misspelled mode instead of falling back to memory", () => {
+    process.env.SUNSUM_BLOB = "azurre";
+    expect(() => documentBlobClient()).toThrow(/memory, azurite, azure/);
+  });
+
+  it("names every supported mode in the error so the fix is obvious", () => {
+    for (const mode of BLOB_MODES) {
+      expect(isBlobMode(mode)).toBe(true);
+    }
+    expect(isBlobMode("azure-blob")).toBe(false);
   });
 
   /**
@@ -84,6 +114,7 @@ describe("document blob client seam", () => {
   it("round-trips bytes through the in-memory client", async () => {
     const client = new InMemoryDocumentBlobClient();
     const location = buildDocumentBlobLocation({
+      ownerUserId: OWNER_ID,
       parent: { kind: "site", id: "site-1" },
       documentId: "doc-1",
       docType: "electricity_bill",
@@ -100,6 +131,7 @@ describe("document blob client seam", () => {
   it("returns null rather than throwing for a blob that was never uploaded", async () => {
     const client = new InMemoryDocumentBlobClient();
     const location = buildDocumentBlobLocation({
+      ownerUserId: OWNER_ID,
       parent: { kind: "site", id: "site-1" },
       documentId: "missing",
       docType: "other",
@@ -113,7 +145,8 @@ describe("document blob client seam", () => {
     const client = new InMemoryDocumentBlobClient();
     await client.upload(
       buildDocumentBlobLocation({
-        parent: { kind: "site", id: "site-1" },
+        ownerUserId: OWNER_ID,
+      parent: { kind: "site", id: "site-1" },
         documentId: "doc-1",
         docType: "electricity_bill",
         originalFilename: "bill.pdf",
@@ -157,7 +190,9 @@ describe("uploaded documents carry a real blob path", () => {
     const location = parseBlobPath(stored!.blobPath);
     expect(location).not.toBeNull();
     expect(location!.container).toBe("owner-private");
-    expect(location!.blobName).toContain(`sites/${siteId}/electricity_bill/`);
+    expect(location!.blobName).toContain(
+      `owners/${owner.userId}/sites/${siteId}/electricity_bill/`,
+    );
   });
 
   /**

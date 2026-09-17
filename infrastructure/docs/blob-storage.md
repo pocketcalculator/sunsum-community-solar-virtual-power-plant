@@ -43,11 +43,52 @@ boundary underneath that check, so a credential scoped to `investor-tier-1`
 cannot name an owner-private blob at all. The rationale and the path layout are
 in [`src/backend/README.md`](../../src/backend/README.md#document-blob-storage).
 
+Within each container, blobs are grouped by owner and then by site or project:
+
+```text
+owners/{ownerId}/{sites|projects}/{parentId}/{docType}/{documentId}/{filename}
+```
+
+Azure containers cannot nest — a "folder" is only a prefix in the blob name — so
+the owner and project grouping lives inside the two containers rather than
+above them.
+
+A third container, `$logs`, appears in the portal. It is **not** ours: `$`-prefixed
+containers are Storage Analytics artifacts the platform creates, invisible to
+ARM. `az storage container-rm list` returns only `owner-private` and
+`investor-tier-1`, and `storage.bicep` configures no logging at all.
+
+## Running the same code locally
+
+The deployed account is not reachable (see below), so the Azure SDK path is
+exercised against **Azurite**, the official emulator, rather than left unproven:
+
+```powershell
+npm run blob:up          # the npm dev dependency; no Docker needed
+$env:SUNSUM_BLOB = "azurite"; npm run dev
+```
+
+`docker compose up -d --wait azurite` runs the same emulator as a container, for
+anyone already running the database that way. The compose service pins
+`mcr.microsoft.com/azure-storage/azurite:3.37.0` to the same version as the
+`azurite` devDependency, so the two should behave identically — but only the npm
+path above has actually been run here, because this machine has no Docker.
+`tests/integration/blob-azurite.test.ts` runs the real Blob REST API against
+whichever is listening on 10000 — upload, download, overwrite, missing blob and
+the container split — and skips cleanly when neither is.
+
+This is the same `AzureDocumentBlobClient` the deployed app uses; only the
+credential differs (a connection string against the emulator, Entra against
+Azure). In `azurite` mode the client creates the two containers on first use;
+in `azure` mode it never does, because there the containers are Bicep's to
+create and an application that can create containers holds more rights than it
+needs.
+
 ## The account is not reachable yet
 
 Two blockers, both needing permissions this workstream does not have. Until
-both are cleared, `SUNSUM_BLOB` must stay `memory` — which is the default, so
-nothing breaks by leaving it alone.
+both are cleared, `SUNSUM_BLOB` must stay `memory` or `azurite` — `memory` is
+the default, so nothing breaks by leaving it alone.
 
 **Order matters: fix the network first.** Granting the role on its own changes
 nothing, because the network rejection happens before RBAC is evaluated. The

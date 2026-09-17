@@ -11,7 +11,7 @@ the proposed internal S-VIA contract.
 | Role | Operation |
 | --- | --- |
 | Site owner | `POST /sites`, `PATCH /sites/{id}`, `POST /sites/{id}/submit`, `GET /me/sites`, `GET /me/outstanding` |
-| Site owner / Operator | `POST /sites/{id}/documents` |
+| Site owner / Operator | `POST /sites/{id}/documents`, `PUT` / `GET /sites/{id}/documents/{documentId}/content` |
 | Operator | `GET /submissions`, `GET /submissions/{id}`, `POST /submissions/{id}/decision` |
 | Operator | `GET /pipeline`, `PATCH /projects/{id}`, `POST /projects/{id}/stage`, `PATCH /projects/{id}/visibility` |
 | Operator | `GET /projects/{id}/engagements` |
@@ -56,6 +56,17 @@ documents, raw blob paths, raw assessment inputs, and override notes remain
 omitted. Its timeline contains shared
 project stage/status events plus the current investor's own interest event,
 without other investors' activity or internal free-text notes.
+
+Document registration and document content are separate operations:
+`POST /sites/{id}/documents` records metadata, and
+`PUT`/`GET /sites/{id}/documents/{documentId}/content` moves the bytes. The blob
+location comes from the stored record rather than the request, the upload's
+`Content-Type` is ignored in favour of the type validated at registration, and
+the uploaded length must match the registered `size_bytes`. A registered
+document with nothing uploaded reads as `404`, which is a normal state. Content
+access is limited to the site owner and operators — investor content delivery is
+the §7.6 short-lived-SAS design and is not implemented, so tier 1 exposes
+document *metadata* only.
 
 `request_info` transitions a submission to `info_requested`, records the owner's outstanding item, and the owner can resubmit through `POST /sites/{id}/submit`.
 

@@ -167,7 +167,21 @@ function demoState(seedDemoProjects: boolean): StoreState {
       id: DEMO_DOCUMENT_ID,
       siteId: null,
       projectId: project.id,
-      blobPath: "investor-tier-1/projects/" + project.id + "/site_summary/" + DEMO_DOCUMENT_ID + "/site-summary.pdf",
+      /**
+       * Built by hand rather than through `buildDocumentBlobLocation` because
+       * `core/documents` imports this module for `demoBackendStore`, so
+       * importing it back would be a cycle. A conformance test asserts this
+       * string still matches what the builder produces, so the layout cannot
+       * drift here unnoticed.
+       */
+      blobPath:
+        "investor-tier-1/owners/" +
+        DEMO_SITE_OWNER_USER_ID +
+        "/projects/" +
+        project.id +
+        "/site_summary/" +
+        DEMO_DOCUMENT_ID +
+        "/site-summary.pdf",
       originalFilename: "site-summary.pdf",
       contentType: "application/pdf",
       sizeBytes: 1024,

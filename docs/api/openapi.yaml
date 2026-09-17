@@ -140,6 +140,91 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /sites/{id}/documents/{documentId}/content:
+    put:
+      tags: [Sites]
+      operationId: putSiteDocumentContent
+      summary: Upload the bytes for a document that was already registered
+      description: |
+        Registration and upload are two steps: `POST /sites/{id}/documents`
+        records the metadata, this stores the file.
+
+        The blob location comes from the stored record, never from the request,
+        so an uploader cannot choose where its bytes land. The request's
+        `Content-Type` is **ignored** in favour of the type validated at
+        registration — honouring it would separate what a document claims to be
+        from what is served back. The body length must equal the registered
+        `size_bytes`, otherwise the record would describe something that is not
+        there.
+
+        Site owners may upload to their own sites; operators to any site.
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - $ref: "#/components/parameters/DocumentId"
+      requestBody:
+        required: true
+        description: The raw file bytes. Not base64, and not wrapped in JSON.
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Stored. Returns the unchanged metadata; raw blob_path is never returned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400":
+          description: |
+            Empty body, a body larger than the 10 MB cap, or a length that
+            disagrees with the registered `size_bytes`. A size mismatch carries
+            `expected_size_bytes` and `received_size_bytes` in `details`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    get:
+      tags: [Sites]
+      operationId: getSiteDocumentContent
+      summary: Download the bytes for a document
+      description: |
+        Serves the file with the content type held on the record.
+
+        Restricted to the site owner and operators. Investors see tier-1
+        document *metadata* through the deal room; content delivery for them is
+        the §7.6 short-lived-SAS design and is not implemented.
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: |
+            The file. Always `Content-Disposition: attachment` with an RFC 5987
+            encoded filename and `X-Content-Type-Options: nosniff`, so an
+            uploaded file is never rendered in the origin.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: "`attachment; filename*=UTF-8''<encoded original filename>`"
+            X-Content-Type-Options:
+              schema: { type: string, enum: [nosniff] }
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: |
+            No such document, or the record exists but nothing has been uploaded
+            against it yet. The second is a normal state rather than an error —
+            it is what an owner's outstanding-items list reads.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /me/sites:
     get:
       tags: [Sites]
@@ -517,6 +602,16 @@ components:
       in: path
       required: true
       description: Project identifier (§10 `{id}`).
+      schema:
+        type: string
+        format: uuid
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      description: |
+        Document identifier. Scoped by the site in the path — an id belonging to
+        another site resolves as `404` rather than leaking that it exists.
       schema:
         type: string
         format: uuid

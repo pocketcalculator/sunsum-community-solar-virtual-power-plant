@@ -85,4 +85,12 @@ export {
   validatePathId,
 } from "./shared";
 
-export { handlePostSiteDocument, parseDocumentCreate, postSiteDocumentRoute } from "./documents";
+export {
+  getSiteDocumentContentRoute,
+  handleGetSiteDocumentContent,
+  handlePostSiteDocument,
+  handlePutSiteDocumentContent,
+  parseDocumentCreate,
+  postSiteDocumentRoute,
+  putSiteDocumentContentRoute,
+} from "./documents";
