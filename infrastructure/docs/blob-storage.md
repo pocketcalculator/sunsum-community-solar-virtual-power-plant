@@ -84,6 +84,14 @@ in `azure` mode it never does, because there the containers are Bicep's to
 create and an application that can create containers holds more rights than it
 needs.
 
+`npm run blob:seed` fills the emulator with placeholder PDFs for the documents
+in `src/backend/db/seed.sql`, so the seeded rows have bytes behind them instead
+of answering every download with a 404; `npm run blob:list` shows what is there.
+The script reads the paths out of the seed rather than restating them, sizes
+each file to the byte because the upload endpoint enforces `size_bytes`, and
+refuses any endpoint that is not local — so it cannot write placeholder data
+into a real account. `src/backend/README.md` has the detail.
+
 ## The account is not reachable yet
 
 Two blockers, both needing permissions this workstream does not have. Until

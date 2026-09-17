@@ -332,6 +332,34 @@ against it — upload, download, overwrite, missing-blob and the container split
 It probes the port first and skips cleanly when the emulator is not running, so
 a clean checkout with no Docker still passes.
 
+### Putting bytes behind the seeded documents
+
+`npm run db:seed` writes document *rows*. Without something writing the blobs
+those rows point at, every seeded document answers `GET .../content` with a 404
+— the schema looks populated and the demo's download button is broken.
+
+```bash
+npm run blob:up                       # in one terminal
+npm run blob:seed                     # writes the placeholder blobs
+npm run blob:list                     # what is actually in the emulator
+```
+
+`scripts/blob.mjs` reads the `documents` rows out of `src/backend/db/seed.sql`
+rather than restating their paths, so moving a document in the seed moves its
+placeholder too and the two cannot drift. It writes a real one-page PDF sized to
+the byte — `size_bytes` is enforced on upload, so filler of a convenient length
+would make the seeded rows the one case the API refuses. `seed` is idempotent;
+re-running overwrites.
+
+It refuses any endpoint that is not on `127.0.0.1`/`localhost`, so pointing it
+at a real account by leaving a connection string in the environment fails rather
+than writing placeholder PDFs into Azure.
+
+Two limits worth knowing: it covers the SQL seed only, so the default
+`SUNSUM_STORE=mock` demo document still has no bytes behind it, and the size
+arithmetic is what `tests/unit/backend/blob-seed.test.ts` pins — including the
+padding boundaries, which is where it was wrong first time.
+
 ### Transferring the bytes
 
 `PUT` and `GET /sites/{id}/documents/{documentId}/content` are the only callers
