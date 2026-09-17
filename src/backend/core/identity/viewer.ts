@@ -17,9 +17,11 @@ export interface InvestorProfile {
   readonly organizationName: string;
   readonly investorType?: string;
   readonly capitalType?: string;
+  /** Stages this investor funds. An empty list means "no stage preference". */
   readonly fundingStageFocus: readonly FundingStage[];
   readonly ticketSizeMin?: number | null;
   readonly ticketSizeMax?: number | null;
+  /** Regions this investor funds. An empty list means "no geographic limit". */
   readonly geographies: readonly string[];
   readonly investmentObjectives?: readonly string[];
   readonly impactPriorities?: readonly string[];

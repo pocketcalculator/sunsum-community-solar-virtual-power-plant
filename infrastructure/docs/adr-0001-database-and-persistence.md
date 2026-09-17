@@ -285,12 +285,13 @@ implemented, and the claims that could be tested were tested. What exists:
 | Schema, 11 tables        | `src/backend/db/schema.ts`                 |
 | Migrations               | `src/backend/db/migrations/`               |
 | Pooled driver            | `src/backend/db/client.ts`                 |
-| `ProjectStore` over SQL  | `src/backend/db/project-store.ts`          |
+| Entra token auth         | `src/backend/db/entra.ts`                  |
+| `BackendStore` over SQL  | `src/backend/db/backend-store.ts`          |
 | Store selection          | `src/backend/composition.ts`               |
 | Local database           | `docker-compose.yml`, `npm run db:*`       |
 | Parity proof             | `tests/integration/store-parity.test.ts`   |
 
-Three decisions were made during implementation that this record did not
+Four decisions were made during implementation that this record did not
 anticipate:
 
 1. **Append-only tables need a trigger, not a constraint.** `assessments` and
@@ -308,6 +309,16 @@ anticipate:
 3. **`pg` returns `numeric` as a string.** Money stays `numeric` in the
    database and is converted once, at the store boundary, rather than being read
    as a float anywhere.
+4. **The cloud server has no password to configure.** `postgres.bicep`
+   provisions the flexible server with `passwordAuth: 'Disabled'` and
+   `activeDirectoryAuth: 'Enabled'`, so a connection string with a password in
+   it cannot connect to it at all. The server accepts a Microsoft Entra access
+   token in the password field instead. `client.ts` therefore has two credential
+   paths, chosen by hostname, and passes `pg` a token *function* rather than a
+   token — a token fetched once at startup would take the process down about an
+   hour later, when it expired. This removes the database password from the
+   deployment rather than moving it into a vault, which is the stronger
+   outcome and was not a possibility this record considered.
 
 ## Reversibility
 

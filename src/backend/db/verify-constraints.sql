@@ -74,7 +74,12 @@ INSERT INTO users (id, name, email, role) VALUES
   ('00000000-0000-0000-0000-0000000000a2', 'Investor User', 'inv@example.org', 'investor');
 INSERT INTO sites (id, owner_user_id, address_raw, site_type, ownership_status, submission_status) VALUES
   ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1', '1 Test St', 'rooftop', 'confirmed', 'accepted'),
-  ('00000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-0000000000a1', '2 Test St', 'land', 'confirmed', 'accepted');
+  ('00000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-0000000000a1', '2 Test St', 'land', 'confirmed', 'accepted'),
+  -- No project hangs off this one, so its lifecycle is free to move. The enum
+  -- probes below use it for exactly that reason: `projects_site_accepted`
+  -- pins a site that carries a project to `accepted`, which would make an
+  -- enum probe fail for a reason that has nothing to do with the enum.
+  ('00000000-0000-0000-0000-0000000000b3', '00000000-0000-0000-0000-0000000000a1', '3 Test St', 'land', 'confirmed', 'accepted');
 INSERT INTO projects (id, site_id, name) VALUES
   ('00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000b1', 'Test Project'),
   ('00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000b2', 'Other Project');
@@ -94,10 +99,10 @@ SELECT expect_accept(
      VALUES ('00000000-0000-0000-0000-0000000000c1','feasibility_study','permanent','d',1000)$q$,
   'funding_needs.stage = permanent (IS a funding stage)');
 SELECT expect_accept(
-  $q$UPDATE sites SET submission_status = 'screening' WHERE id = '00000000-0000-0000-0000-0000000000b2'$q$,
+  $q$UPDATE sites SET submission_status = 'screening' WHERE id = '00000000-0000-0000-0000-0000000000b3'$q$,
   'sites.submission_status = screening (the value the rest of the codebase uses)');
 SELECT expect_reject(
-  $q$UPDATE sites SET submission_status = 'in_review' WHERE id = '00000000-0000-0000-0000-0000000000b2'$q$,
+  $q$UPDATE sites SET submission_status = 'in_review' WHERE id = '00000000-0000-0000-0000-0000000000b3'$q$,
   'sites.submission_status = in_review (the value this schema used to have, and nothing else does)');
 
 \echo ''
@@ -176,6 +181,33 @@ SELECT expect_reject(
 SELECT expect_reject(
   $q$DELETE FROM activity WHERE id = '00000000-0000-0000-0000-0000000000f2'$q$,
   'ERASING an audit entry');
+
+\echo ''
+\echo '--- every project sits on an accepted site, and the database says so ---'
+SELECT expect_accept(
+  $q$INSERT INTO sites (id, owner_user_id, address_raw, site_type, ownership_status, submission_status)
+     VALUES ('00000000-0000-0000-0000-0000000000b4','00000000-0000-0000-0000-0000000000a1','4 Test St','rooftop','confirmed','submitted')$q$,
+  'a submitted site that has not been decided yet');
+SELECT expect_reject(
+  $q$INSERT INTO projects (id, site_id, name)
+     VALUES ('00000000-0000-0000-0000-0000000000c4','00000000-0000-0000-0000-0000000000b4','Premature Project')$q$,
+  'creating a project on a site that is still awaiting a decision');
+SELECT expect_accept(
+  $q$UPDATE sites SET submission_status = 'accepted' WHERE id = '00000000-0000-0000-0000-0000000000b4'$q$,
+  'accepting that submission first');
+SELECT expect_accept(
+  $q$INSERT INTO projects (id, site_id, name)
+     VALUES ('00000000-0000-0000-0000-0000000000c4','00000000-0000-0000-0000-0000000000b4','Proper Project')$q$,
+  'creating the project once the site is accepted');
+SELECT expect_reject(
+  $q$UPDATE sites SET submission_status = 'rejected' WHERE id = '00000000-0000-0000-0000-0000000000b4'$q$,
+  'un-accepting a site that already carries a project');
+SELECT expect_reject(
+  $q$UPDATE projects SET site_id = '00000000-0000-0000-0000-0000000000b9' WHERE id = '00000000-0000-0000-0000-0000000000c4'$q$,
+  'repointing a project at a site that is not accepted');
+SELECT expect_reject(
+  $q$DELETE FROM sites WHERE id = '00000000-0000-0000-0000-0000000000b4'$q$,
+  'deleting a site out from under its project (ON DELETE restrict refuses it)');
 
 \echo ''
 \echo '--- investor_engagements: one LIVE engagement, and re-engagement after a decline ---'

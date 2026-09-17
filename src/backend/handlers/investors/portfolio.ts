@@ -35,6 +35,15 @@ const PROFILE_KEYS = [
   "decision_criteria",
 ] as const;
 
+/**
+ * Exported with the viewer and the store as parameters so the authorization
+ * paths can be tested directly. The route wrappers below supply the real ones.
+ *
+ * The store is an interface from `core`, never a concrete one: a handler must
+ * not be able to tell whether it is talking to fixtures or to PostgreSQL, which
+ * is what makes the two substitutable. Choosing between them happens once, in
+ * the composition root.
+ */
 export async function handleGetPortfolio(
   request: Request,
   viewer: Viewer,
