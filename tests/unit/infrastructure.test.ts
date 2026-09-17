@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (path: string) => readFileSync(join(root, path), "utf8");
+const runnerCommand = (suite: string, argumentsText = "") =>
+  `$ErrorActionPreference = 'Stop'; $global:LASTEXITCODE = 1; & './infrastructure/scripts/tests/${suite}.test.ps1' ${argumentsText}; if (Test-Path -LiteralPath variable:\\LASTEXITCODE) { exit $LASTEXITCODE }`;
 
 describe("the bounded Azure preparation contract", () => {
   it("reuses the canonical schema and migrations with a separate explicit Azure operator command", () => {
@@ -65,8 +67,8 @@ describe("the bounded Azure preparation contract", () => {
 
   it("runs real access configuration guards without Azure calls", () => {
     const result = execFileSync("pwsh", [
-      "-NoProfile", "-NonInteractive", "-File",
-      join(root, "infrastructure/scripts/tests/mvp-access.test.ps1"),
+      "-NoProfile", "-NonInteractive", "-Command",
+      runnerCommand("mvp-access"),
     ], { cwd: root, encoding: "utf8", timeout: 45_000 });
     expect(result).toContain("MVP access safety checks passed");
   }, 50_000);
@@ -123,10 +125,23 @@ describe("the bounded Azure preparation contract", () => {
 
   it("runs the actual network and archive guard tests without Azure calls", () => {
     const result = execFileSync("pwsh", [
-      "-NoProfile", "-NonInteractive", "-File",
-      join(root, "infrastructure/scripts/tests/deployment-safety.test.ps1"),
+      "-NoProfile", "-NonInteractive", "-Command",
+      runnerCommand("deployment-safety"),
     ], { cwd: root, encoding: "utf8", timeout: 45_000 });
     expect(result).toContain("checks passed");
+  }, 50_000);
+
+  it.each(["firewall-template", "deployment-safety", "mvp-access"])("propagates real %s failures through the CI shell wrapper", (suite) => {
+    const missingCompiler = "./.validation/nonexistent-bicep-executable";
+    expect(existsSync(join(root, missingCompiler))).toBe(false);
+    const result = spawnSync("pwsh", [
+      "-NoProfile", "-NonInteractive", "-Command",
+      runnerCommand(suite, `-BicepPath '${missingCompiler}'`),
+    ], { cwd: root, encoding: "utf8", timeout: 45_000 });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("nonexistent-bicep-executable");
+    expect(result.stdout).not.toContain("checks passed");
   }, 50_000);
 
   it("runs the actual bootstrap safety tests without database or identity calls", () => {

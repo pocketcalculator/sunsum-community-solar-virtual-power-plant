@@ -99,3 +99,4 @@ try {
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }
 Write-Output "Firewall template evaluation checks passed: $script:caseCount cases, wrapper parity, and compiled resource wiring."
+exit 0

@@ -366,3 +366,4 @@ param approvedWebPrincipalId = bindApprovedPrincipal('$actual', '$approved')
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }
 Write-Output 'MVP access safety checks passed: explicit identities, directory approval, scoped roles, storage policy approval and no-cloud dry-runs.'
+exit 0
