@@ -360,6 +360,24 @@ Two limits worth knowing: it covers the SQL seed only, so the default
 arithmetic is what `tests/unit/backend/blob-seed.test.ts` pins — including the
 padding boundaries, which is where it was wrong first time.
 
+### When the Azure account will not answer
+
+`npm run blob:doctor` reports why. The deployed `stsunsumsolardevcus` account is
+currently unreachable for two separate reasons, and the failure modes look
+alike: a network rejection is evaluated before RBAC, so while the firewall is
+closed a correct role assignment and a missing one produce the same 403. The
+tell is the error code — `AuthorizationFailure` is the network, and
+`AuthorizationPermissionMismatch` is the role.
+
+The script is read-only, pinned to the target subscription rather than to
+whichever one the Azure CLI is pointed at, and orders the blockers so that
+fixing them top-down works. It is the shortcut past
+[`infrastructure/docs/blob-storage.md`](../../infrastructure/docs/blob-storage.md),
+which explains the same two blockers and what it takes to clear them.
+
+Local development is unaffected — Azurite has neither a firewall nor RBAC, which
+is why `blob:up` plus `blob:seed` is the supported path until the account opens.
+
 ### Transferring the bytes
 
 `PUT` and `GET /sites/{id}/documents/{documentId}/content` are the only callers

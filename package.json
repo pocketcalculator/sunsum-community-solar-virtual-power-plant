@@ -26,7 +26,8 @@
     "db:verify": "node scripts/db.mjs verify",
     "blob:up": "azurite-blob --location .azurite --blobHost 127.0.0.1 --blobPort 10000",
     "blob:seed": "node scripts/blob.mjs seed",
-    "blob:list": "node scripts/blob.mjs list"
+    "blob:list": "node scripts/blob.mjs list",
+    "blob:doctor": "node scripts/azure-blob-doctor.mjs"
   },
   "dependencies": {
     "@azure/identity": "4.13.3",

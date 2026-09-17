@@ -7,7 +7,9 @@ are files. The row in `documents` is metadata; this is where the bytes go.
 - **Account** `stsunsumsolardevcus`
 - **Resource group** `rg-sunsum-solar-dev-centralus` (centralus)
 - **Subscription** `f941228c-d6df-4b2f-93e0-2221773d2ba1`
-- **Template** [`../templates/storage.bicep`](../templates/storage.bicep)
+- **Template** [`../templates/main.bicep`](../templates/main.bicep), which
+  composes [`storage.bicep`](../templates/storage.bicep) and
+  [`network.bicep`](../templates/network.bicep)
 
 The template is the source of truth. It was checked against the live account
 with `az deployment group what-if`, which reports every resource as `Modify`
@@ -16,8 +18,19 @@ rather than `Create` and no property drift beyond server-populated defaults.
 ```powershell
 az deployment group what-if `
   --resource-group rg-sunsum-solar-dev-centralus `
-  --template-file infrastructure/templates/storage.bicep
+  --template-file infrastructure/templates/main.bicep
 ```
+
+To see the current state of every blocker below without reading any of this:
+
+```powershell
+npm run blob:doctor
+```
+
+That runs the same read-only checks this document describes and prints which
+blockers are active, in the order they have to be fixed. It is pinned to the
+subscription above, so it is unaffected by whichever subscription the Azure CLI
+happens to be pointed at.
 
 ## Configuration
 
@@ -127,9 +140,33 @@ This request is not authorized to perform this operation.
 The only route in is a **private endpoint**, which needs a VNet and, for the
 deployed app, an App Service plan that supports VNet integration. The current
 plan is `asp-sunsum-smoke-free` on **Free F1**, which does not — moving to Basic
-or higher is a prerequisite. `storage.bicep` takes
-`privateEndpointSubnetId` and `privateDnsZoneId` and creates the endpoint when
-they are supplied.
+or higher is a prerequisite.
+
+All of that is now in code rather than described:
+
+```powershell
+az deployment group create `
+  --resource-group rg-sunsum-solar-dev-centralus `
+  --template-file infrastructure/templates/main.bicep `
+  --parameters enablePrivateBlobAccess=true
+```
+
+That builds the VNet, the delegated `snet-app` subnet, the `snet-privatelink`
+subnet, the `privatelink.blob` DNS zone and its VNet link, the private endpoint,
+and App Service VNet integration — and raises the plan to B1, roughly **USD 13
+per month**, which is the only charge the path introduces and the reason it is
+opt-in rather than the default.
+
+The App Service itself is deliberately never declared in the template. It was
+created outside Bicep and carries app settings this workstream does not own, and
+declaring a site replaces its settings list wholesale; VNet integration is
+attached as a child resource on an `existing` reference instead. `what-if`
+confirms the site is reported as ignored.
+
+The alternative, which costs nothing, is a policy exemption — see
+[policy exemption request](./policy-exemption-request.md). It needs a permission
+this workstream does not hold, which is why the private path exists as a
+fallback rather than a preference.
 
 The template declares `publicNetworkAccess: 'Disabled'` deliberately. Declaring
 `Enabled` would produce a template that never converges and a what-if that
@@ -166,9 +203,14 @@ Or supply the ids to the template, which does the same thing re-runnably:
 ```powershell
 az deployment group create `
   --resource-group rg-sunsum-solar-dev-centralus `
-  --template-file infrastructure/templates/storage.bicep `
+  --template-file infrastructure/templates/main.bicep `
   --parameters blobDataContributorPrincipalIds="['<objectId>']"
 ```
+
+Note that a control-plane role is not a substitute: `Owner` and `Contributor`
+carry no `dataActions`, so a subscription Owner can create and delete this
+account and still not read a blob inside it. `npm run blob:doctor` checks for
+the three `Storage Blob Data *` roles specifically for that reason.
 
 ## Cost
 

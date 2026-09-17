@@ -14,6 +14,9 @@ procedures, and decision records in this directory.
 - [Blob storage for site documents](./blob-storage.md) — the provisioned
   `stsunsumsolardevcus` account, and the two access blockers that currently
   keep it unreachable.
+- [Policy exemption request](./policy-exemption-request.md) — the decision
+  needed from a subscription Owner to make the deployed account usable, with
+  the evidence behind it and the costed alternative.
 
 ## Selected database and hosting
 
