@@ -187,12 +187,61 @@ try {
     $approvalPath = Join-Path $fixture 'approval.json'
     $approval | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $approvalPath -Encoding utf8NoBOM
     $parametersPath = Join-Path $fixture 'firewall.parameters.json'
+    $approvalHash = (Get-FileHash -LiteralPath $approvalPath -Algorithm SHA256).Hash
     & (Join-Path $PSScriptRoot '..\Set-PostgresFirewall.ps1') @target `
-        -ApprovalFile $approvalPath -OutputPath $parametersPath | Out-Null
+        -ApprovalFile $approvalPath -ExpectedSha256 $approvalHash.ToLowerInvariant() -OutputPath $parametersPath | Out-Null
     $parameters = Get-Content -LiteralPath $parametersPath -Raw | ConvertFrom-Json -AsHashtable
     if ($parameters.parameters.approvedIpv4Addresses.value.Count -ne 1 -or
         $parameters.parameters.approvalReference.value -cne $approval.approvalReference) {
         throw 'Network parameter generation lost the exact address array or approval reference.'
+    }
+    $recordHash = (Get-FileHash -LiteralPath $parametersPath -Algorithm SHA256).Hash
+    Assert-Throws {
+        & (Join-Path $PSScriptRoot '..\Set-PostgresFirewall.ps1') @target -ApprovalFile $approvalPath `
+            -ExpectedSha256 $approvalHash -OutputPath $parametersPath -Apply
+    } 'An existing firewall review record was overwritten.'
+    if ((Get-FileHash -LiteralPath $parametersPath -Algorithm SHA256).Hash -cne $recordHash) {
+        throw 'An existing firewall review record changed.'
+    }
+    Assert-Throws {
+        & (Join-Path $PSScriptRoot '..\Set-PostgresFirewall.ps1') @target -ApprovalFile $approvalPath `
+            -ExpectedSha256 'not-a-sha256' -OutputPath (Join-Path $fixture 'invalid-hash.json') -Apply
+    } 'Accepted a malformed reviewed hash.'
+    $changedApproval = $approval.Clone()
+    $changedApproval.approvedIpv4Addresses = @('8.8.8.8')
+    $changedApproval | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $approvalPath -Encoding utf8NoBOM
+    foreach ($apply in @($false, $true)) {
+        $rejectedOutput = Join-Path $fixture "changed-firewall-$apply.json"
+        $message = ''
+        try {
+            & (Join-Path $PSScriptRoot '..\Set-PostgresFirewall.ps1') @target -ApprovalFile $approvalPath `
+                -ExpectedSha256 $approvalHash -OutputPath $rejectedOutput -Apply:$apply | Out-Null
+        } catch { $message = $_.Exception.Message }
+        if ($message -notlike '*no longer matches its reviewed hash*' -or
+            (Test-Path -LiteralPath $rejectedOutput) -or $global:AzureSafetyTestCalls -ne 0) {
+            throw 'A changed valid IP list with the same approval reference must fail before output or Azure calls.'
+        }
+    }
+    $approval | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $approvalPath -Encoding utf8NoBOM
+    $global:FirewallApprovalMutationPath = $approvalPath
+    $global:FirewallApprovalMutationContent = $changedApproval | ConvertTo-Json -Depth 4
+    function global:New-Item {
+        param($ItemType, $Path, [switch] $Force)
+        [System.IO.File]::WriteAllText($global:FirewallApprovalMutationPath, $global:FirewallApprovalMutationContent)
+        Microsoft.PowerShell.Management\New-Item -ItemType $ItemType -Path $Path -Force:$Force
+    }
+    try {
+        $message = ''
+        try {
+            & (Join-Path $PSScriptRoot '..\Set-PostgresFirewall.ps1') @target -ApprovalFile $approvalPath `
+                -ExpectedSha256 $approvalHash -OutputPath (Join-Path $fixture 'late-change.parameters.json') -Apply | Out-Null
+        } catch { $message = $_.Exception.Message }
+        if ($message -notlike '*changed before deployment*' -or $global:AzureSafetyTestCalls -ne 0) {
+            throw 'Approval drift after parsing must be rejected immediately before deployment.'
+        }
+    } finally {
+        Remove-Item Function:\New-Item -Force
+        Remove-Variable FirewallApprovalMutationPath, FirewallApprovalMutationContent -Scope Global
     }
     $deploy = @{
         SubscriptionId = $target.subscriptionId
@@ -209,9 +258,69 @@ try {
     $invalid | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $approvalPath -Encoding utf8NoBOM
     Assert-Throws {
         & (Join-Path $PSScriptRoot '..\Set-PostgresFirewall.ps1') @target -ApprovalFile $approvalPath `
+            -ExpectedSha256 (Get-FileHash -LiteralPath $approvalPath -Algorithm SHA256).Hash `
             -OutputPath (Join-Path $fixture 'invalid.parameters.json') -Apply
     } 'Accepted unsafe network input with -Apply.'
     if ($global:AzureSafetyTestCalls -ne 0) { throw 'A local-only or invalid-input path called Azure.' }
+    $approval | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $approvalPath -Encoding utf8BOM
+    $approvalHash = (Get-FileHash -LiteralPath $approvalPath -Algorithm SHA256).Hash
+    function global:Get-FileHash {
+        param($LiteralPath, $Algorithm)
+        if ($LiteralPath.EndsWith('mismatched-firewall.parameters.json')) { return @{ Hash = '0' * 64 } }
+        Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm
+    }
+    try {
+        $message = ''
+        try {
+            & (Join-Path $PSScriptRoot '..\Set-PostgresFirewall.ps1') @target -ApprovalFile $approvalPath `
+                -ExpectedSha256 $approvalHash -OutputPath (Join-Path $fixture 'mismatched-firewall.parameters.json') -Apply | Out-Null
+        } catch { $message = $_.Exception.Message }
+        if ($message -notlike '*Generated firewall parameters changed*' -or $global:AzureSafetyTestCalls -ne 0) {
+            throw 'A generated-parameter hash mismatch must abort before Azure calls.'
+        }
+    } finally { Remove-Item Function:\Get-FileHash -Force }
+    function global:az {
+        $global:AzureSafetyTestCalls++
+        if (($args[0..2] -join ' ') -cne 'deployment group create' -or
+            $args[[array]::IndexOf($args, '--subscription') + 1] -cne '11111111-1111-4111-8111-111111111111' -or
+            $args[[array]::IndexOf($args, '--resource-group') + 1] -cne 'sample-resource-group' -or
+            $args[[array]::IndexOf($args, '--mode') + 1] -cne 'Incremental') {
+            throw 'Firewall apply was not bound to the reviewed target and incremental operation.'
+        }
+        $parameterArgument = [string]$args[[array]::IndexOf($args, '--parameters') + 1]
+        if (-not $parameterArgument.StartsWith('@')) { throw 'Expected the generated firewall parameter file.' }
+        $filePath = $parameterArgument.Substring(1)
+        $document = Get-Content -LiteralPath $filePath -Raw | ConvertFrom-Json -AsHashtable
+        if ($document.parameters.postgresServerName.value -cne 'sample-postgres' -or
+            $document.parameters.approvalReference.value -cne 'review-123' -or
+            $document.parameters.approvedIpv4Addresses.value.Count -ne 1 -or
+            $document.parameters.approvedIpv4Addresses.value[0] -cne '20.30.40.50') {
+            throw 'Firewall apply did not consume the verified approval snapshot.'
+        }
+        if ($IsWindows) {
+            Assert-Throws {
+                $writer = [System.IO.File]::OpenWrite($filePath)
+                $writer.Dispose()
+            } 'Generated parameters must deny concurrent writes during deployment on Windows.'
+        }
+        $global:LASTEXITCODE = if ($global:AzureSafetyTestCalls -eq 1) { 0 } else { 1 }
+    }
+    foreach ($outcome in @('success', 'failure')) {
+        $applyPath = Join-Path $fixture "firewall-apply-$outcome.json"
+        $message = ''
+        try {
+            & (Join-Path $PSScriptRoot '..\Set-PostgresFirewall.ps1') @target -ApprovalFile $approvalPath `
+                -ExpectedSha256 $approvalHash -OutputPath $applyPath -Apply | Out-Null
+        } catch { $message = $_.Exception.Message }
+        if (($outcome -eq 'success' -and $message -ne '') -or
+            ($outcome -eq 'failure' -and $message -notlike '*Firewall deployment failed*')) {
+            throw "Unexpected firewall $outcome result: $message"
+        }
+        $released = [System.IO.File]::Open($applyPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+        $released.Dispose()
+    }
+    if ($global:AzureSafetyTestCalls -ne 2) { throw 'Expected exactly two mocked firewall deployments.' }
+    $global:AzureSafetyTestCalls = 0
     function global:az {
         $global:AzureSafetyTestCalls++
         if ($args[0] -cne 'webapp' -or $args[1] -cne 'show') { throw 'Discovery attempted a non-read operation.' }

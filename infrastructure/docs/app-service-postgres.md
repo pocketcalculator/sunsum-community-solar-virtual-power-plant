@@ -380,11 +380,18 @@ addresses are preapproved by this example. The validator rejects the bypass,
 ranges/CIDRs, noncanonical syntax, IPv6, private/reserved/test addresses,
 duplicates, over 128 entries, absent approval, and a different target.
 
+Record the SHA-256 of the exact UTF-8 approval file in the review. Supply that
+reviewed digest as `ExpectedSha256`; do not recompute it from an edited file at
+apply time and treat the result as approval. Changing even one address or the
+file's formatting requires a new reviewed digest.
+
 ```powershell
 # LOCAL ONLY by default: validates all input before any Azure command.
+$reviewedHash = '<sha256-recorded-in-the-approved-review>'
 pwsh -NoProfile -File infrastructure\scripts\Set-PostgresFirewall.ps1 `
   -SubscriptionId $env:AZURE_SUBSCRIPTION_ID -ResourceGroupName $env:AZURE_RESOURCE_GROUP `
   -PostgresServerName $env:AZURE_POSTGRES_SERVER_NAME -ApprovalFile .azure\dev\firewall-approval.json `
+  -ExpectedSha256 $reviewedHash `
   -OutputPath .azure\dev\firewall-reviewed.parameters.json
 
 # Future WRITE: after authorization, repeat with -Apply and a NEW output path.
@@ -392,7 +399,14 @@ pwsh -NoProfile -File infrastructure\scripts\Set-PostgresFirewall.ps1 `
 
 Each generated rule uses **start=end**. The deployment records the nonsecret
 approval reference as an input/output for audit. Apply only through the validating
-script to retain the target-bound approval checks. The template independently
+script to retain the target-bound approval checks. The script hashes the bytes it
+parses, creates a new parameter record without overwriting an existing file, and
+rechecks the approval and generated-parameter hashes immediately before deployment.
+It holds the parameter file open with read-only sharing until the Azure command
+finishes. Keep review/apply files in an operator-controlled directory and serialize
+changes; local file-sharing checks are not protection against a privileged local
+actor or writers that bypass the operating system's sharing rules.
+The template independently
 rejects noncanonical addresses, the wrapper's excluded address ranges,
 duplicates and lists exceeding 128 entries, including direct-template inputs.
 Validation covers the whole list before the resource loop, so a mixed list fails
