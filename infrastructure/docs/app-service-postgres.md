@@ -373,6 +373,14 @@ network access from anywhere, but it does not permit anonymous Blob access:
 required. Easy Auth protects the web app, not the Blob endpoint. A browser's web
 session is not a Blob credential.
 
+`Closed` sets `publicNetworkAccess=Disabled` and keeps `defaultAction=Deny` with
+no bypass. This disables public-network data access rather than only denying it
+through ACLs. `AuthenticatedPublic` enables that access only with a nonblank
+policy approval. The template uses the same condition for its endpoint, ACL and
+`networkAccessEnabled` output. The script rejects unapproved public mode before
+any Azure call. Disabling public-network access does not configure private
+endpoints or prove that existing private paths are inaccessible.
+
 If policy forbids this public data-plane network, leave `Closed` in place and
 mark Blob runtime access **blocked**. A paid/private-network architecture needs a
 separate decision; no IP trick, trusted-service bypass or shared key is provided.
@@ -409,8 +417,13 @@ pwsh -NoProfile -File infrastructure\scripts\Deploy-AccessConfiguration.ps1 `
 # Future WRITE: use a NEW output path and -Apply after separate authorization.
 ```
 
-`StorageNetwork` checks the existing private/LRS baseline and refuses to replace
-existing IP/VNet/resource exceptions. Its targeted Azure CLI update changes only
+`StorageNetwork` checks the existing private/LRS baseline, requires HTTPS-only
+and minimum TLS 1.2, and refuses to replace existing IP/VNet/resource exceptions.
+It checks the Azure CLI response fields `enableHttpsTrafficOnly` and
+`minimumTlsVersion` (the corresponding Bicep HTTPS property is
+`supportsHttpsTrafficOnly`). Missing or incompatible transport settings block
+both modes and require separately reviewed remediation, not automatic changes.
+Its targeted Azure CLI update changes only
 network mode/bypass/public-endpoint properties, preserving tags and containers.
 The storage Bicep parameter exposes the same approved choice for declarative
 deployment. `BlobRoles` verifies that the supplied principal matches the named

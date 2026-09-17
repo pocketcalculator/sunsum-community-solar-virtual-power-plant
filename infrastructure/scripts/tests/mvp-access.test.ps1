@@ -153,10 +153,71 @@ try {
         (Get-Content -LiteralPath "$global:MvpRaceOutput.before-auth.json" -Raw).Trim() -cne 'concurrent-review-baseline') {
         throw 'Create-only writes must preserve a concurrent audit record and stop before deployment.'
     }
+    $baseline = @{
+        location = 'centralus'; sku = @{ name = 'Standard_LRS' }; kind = 'StorageV2'
+        allowSharedKeyAccess = $false; allowBlobPublicAccess = $false
+        enableHttpsTrafficOnly = $true; minimumTlsVersion = 'TLS1_2'
+        publicNetworkAccess = 'Enabled'
+        networkRuleSet = @{ ipRules = @(); virtualNetworkRules = @(); bypass = 'None'; defaultAction = 'Deny' }
+    }
+    $global:MvpStorageState = $baseline
+    $global:MvpStorageUpdate = @()
+    function global:az {
+        $global:MvpAccessCalls++
+        $global:LASTEXITCODE = 0
+        if ($args[0] -cne 'storage' -or $args[1] -cne 'account') { throw 'Unexpected Storage command.' }
+        if ($args[2] -ceq 'show') { return ($global:MvpStorageState | ConvertTo-Json -Depth 8) }
+        if ($args[2] -ceq 'update') { $global:MvpStorageUpdate = @($args); return }
+        throw 'Unexpected Storage operation.'
+    }
+    foreach ($configuration in @($network, $public)) {
+        $path = Join-Path $fixture "storage-$($configuration.networkMode).json"
+        $configuration | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding utf8NoBOM
+        $storageArgs = @{
+            Operation = 'StorageNetwork'; SubscriptionId = $subscription; ResourceGroupName = $group
+            ConfigurationPath = $path; ExpectedSha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+            OutputPath = Join-Path $fixture "storage-$($configuration.networkMode).parameters.json"
+        }
+        foreach ($property in @('enableHttpsTrafficOnly', 'minimumTlsVersion')) {
+            $values = if ($property -ceq 'enableHttpsTrafficOnly') { @($false, $null, 'true', 1, 'missing') } else { @('TLS1_0', 'TLS1_1', $null, '', 'unknown', 'missing') }
+            foreach ($value in $values) {
+                $global:MvpStorageState = $baseline.Clone()
+                if ($value -ceq 'missing') { $global:MvpStorageState.Remove($property) } else { $global:MvpStorageState[$property] = $value }
+                $global:MvpAccessCalls = 0
+                $global:MvpStorageUpdate = @()
+                $storageArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
+                $message = ''
+                try { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @storageArgs -Apply | Out-Null } catch { $message = $_.Exception.Message }
+                if ($message -notlike '*must already require HTTPS and minimum TLS 1.2*' -or
+                    $global:MvpAccessCalls -ne 1 -or $global:MvpStorageUpdate.Count -ne 0 -or
+                    (Test-Path -LiteralPath "$($storageArgs.OutputPath).before-storage.json")) {
+                    throw "Unsafe or missing $property did not stop at the transport guard."
+                }
+            }
+        }
+        $global:MvpStorageState = $baseline
+        $global:MvpAccessCalls = 0
+        $global:MvpStorageUpdate = @()
+        $storageArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
+        & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @storageArgs -Apply | Out-Null
+        $access = if ($configuration.networkMode -ceq 'Closed') { 'Disabled' } else { 'Enabled' }
+        $action = if ($configuration.networkMode -ceq 'Closed') { 'Deny' } else { 'Allow' }
+        $expected = @('storage', 'account', 'update', '--subscription', $subscription, '--resource-group', $group,
+            '--name', 'samplestorage', '--default-action', $action, '--bypass', 'None',
+            '--public-network-access', $access, '--only-show-errors', '--output', 'none')
+        if ($global:MvpAccessCalls -ne 2 -or ($global:MvpStorageUpdate -join '|') -cne ($expected -join '|')) {
+            throw "Storage $($configuration.networkMode) did not send the exact reviewed network update."
+        }
+        $recorded = Get-Content -LiteralPath "$($storageArgs.OutputPath).before-storage.json" -Raw | ConvertFrom-Json -AsHashtable
+        if ($recorded.enableHttpsTrafficOnly -ne $true -or $recorded.minimumTlsVersion -cne 'TLS1_2') {
+            throw 'Storage transport baseline was not preserved in the audit record.'
+        }
+    }
 } finally {
     Remove-Item -LiteralPath Function:\az -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpAccessCalls -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpRaceOutput -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name MvpStorageState, MvpStorageUpdate -Scope Global -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }
 Write-Output 'MVP access safety checks passed: explicit identities, directory approval, scoped roles, storage policy approval and no-cloud dry-runs.'

@@ -72,15 +72,21 @@ if ($Operation -eq 'StorageNetwork') {
         $storage.kind -cne 'StorageV2' -or $storage.allowSharedKeyAccess -ne $false -or $storage.allowBlobPublicAccess -ne $false) {
         throw 'Storage does not match the reviewed LRS/private/passwordless baseline; no takeover is allowed.'
     }
+    if (-not $storage.Contains('enableHttpsTrafficOnly') -or $storage.enableHttpsTrafficOnly -isnot [bool] -or
+        $storage.enableHttpsTrafficOnly -ne $true -or -not $storage.Contains('minimumTlsVersion') -or
+        $storage.minimumTlsVersion -cne 'TLS1_2') {
+        throw 'Storage must already require HTTPS and minimum TLS 1.2. Missing or incompatible transport settings require separate review before network changes.'
+    }
     if ($storage.networkRuleSet.ipRules.Count -ne 0 -or $storage.networkRuleSet.virtualNetworkRules.Count -ne 0 -or
         ($storage.networkRuleSet.Contains('resourceAccessRules') -and $storage.networkRuleSet.resourceAccessRules.Count -gt 0)) {
         throw 'Existing network exceptions require separate review; this template would replace them.'
     }
     Write-NewAccessRecord "$output.before-storage.json" ($storage | ConvertTo-Json -Depth 50)
     $defaultAction = if ($config.networkMode -ceq 'AuthenticatedPublic') { 'Allow' } else { 'Deny' }
+    $publicNetworkAccess = if ($config.networkMode -ceq 'AuthenticatedPublic') { 'Enabled' } else { 'Disabled' }
     & az storage account update --subscription $SubscriptionId --resource-group $ResourceGroupName `
         --name $config.storageAccountName --default-action $defaultAction --bypass None `
-        --public-network-access Enabled --only-show-errors --output none
+        --public-network-access $publicNetworkAccess --only-show-errors --output none
     if ($LASTEXITCODE -ne 0) { throw 'Storage network update failed; no alternate network path or policy bypass was attempted.' }
     Write-Output 'Reviewed Storage network mode updated without replacing account/container configuration. Verify both authorized and denied data access.'
     return

@@ -32,9 +32,14 @@ describe("the bounded Azure preparation contract", () => {
     expect(storage).toContain("accessTier: 'Hot'");
     expect(storage).toContain("allowSharedKeyAccess: false");
     expect(storage).toContain("allowBlobPublicAccess: false");
+    expect(storage).toContain("supportsHttpsTrafficOnly: true");
+    expect(storage).toContain("minimumTlsVersion: 'TLS1_2'");
     expect(storage).toContain("bypass: 'None'");
     expect(storage).toContain("param networkMode string = 'Closed'");
-    expect(storage).toContain("!empty(publicEndpointApproval)");
+    expect(storage).toContain("var publicNetworkEnabled = networkMode == 'AuthenticatedPublic' && !empty(trim(publicEndpointApproval))");
+    expect(storage).toContain("publicNetworkAccess: publicNetworkEnabled ? 'Enabled' : 'Disabled'");
+    expect(storage).toContain("defaultAction: publicNetworkEnabled ? 'Allow' : 'Deny'");
+    expect(storage).toContain("output networkAccessEnabled bool = publicNetworkEnabled");
     expect(storage.match(/publicAccess: 'None'/g)).toHaveLength(2);
     expect(storage).toContain("ipRules: []");
   });

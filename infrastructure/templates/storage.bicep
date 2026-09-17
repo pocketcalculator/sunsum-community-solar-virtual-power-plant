@@ -12,9 +12,11 @@ param tags object = {}
   'AuthenticatedPublic'
 ])
 param networkMode string = 'Closed'
-@description('Nonsecret policy/review reference. An empty value leaves the firewall closed, even when public mode is requested.')
+@description('Nonsecret policy/review reference. A blank value leaves public network access disabled, even when public mode is requested.')
 @maxLength(200)
 param publicEndpointApproval string = ''
+
+var publicNetworkEnabled = networkMode == 'AuthenticatedPublic' && !empty(trim(publicEndpointApproval))
 
 resource storage 'Microsoft.Storage/storageAccounts@2024-01-01' = {
   name: storageAccountName
@@ -31,10 +33,10 @@ resource storage 'Microsoft.Storage/storageAccounts@2024-01-01' = {
     allowBlobPublicAccess: false
     allowSharedKeyAccess: false
     defaultToOAuthAuthentication: true
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: publicNetworkEnabled ? 'Enabled' : 'Disabled'
     networkAcls: {
       bypass: 'None'
-      defaultAction: networkMode == 'AuthenticatedPublic' && !empty(publicEndpointApproval) ? 'Allow' : 'Deny'
+      defaultAction: publicNetworkEnabled ? 'Allow' : 'Deny'
       ipRules: []
       virtualNetworkRules: []
     }
@@ -69,4 +71,4 @@ output storageAccountId string = storage.id
 output blobEndpoint string = storage.properties.primaryEndpoints.blob
 output siteDocumentsContainerId string = siteDocuments.id
 output projectDocumentsContainerId string = projectDocuments.id
-output networkAccessEnabled bool = networkMode == 'AuthenticatedPublic' && !empty(publicEndpointApproval)
+output networkAccessEnabled bool = publicNetworkEnabled
