@@ -424,7 +424,24 @@ try {
     $global:AzureProvisionInventory = '[]'
     $global:AzureProvisionExitCode = 0
     $global:AzureProvisionWrites = 0
-    $global:AzureExistingWeb = '{"id":"/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/sample-resource-group/providers/Microsoft.Web/sites/sample-web","kind":"app,linux","httpsOnly":true,"defaultHostName":"sample-web.azurewebsites.net"}'
+    $global:AzurePlanId = '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/sample-resource-group/providers/Microsoft.Web/serverfarms/sample-plan'
+    $freePlan = @{ id = $global:AzurePlanId; sku = @{ name = 'F1'; tier = 'Free' } } | ConvertTo-Json -Depth 4 -Compress
+    $global:AzurePlanResponse = $freePlan
+    $global:AzurePlanReads = 0
+    $invalidPlanLinks = @($null, '', 123, @('not-an-id'), 'missing',
+        $global:AzurePlanId.Replace('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'),
+        $global:AzurePlanId.Replace('Microsoft.Web', 'MicrosoftXWeb'), "$global:AzurePlanId/slots/extra")
+    function Get-TestAppServicePlan([object[]] $Arguments) {
+        if (($Arguments[0..2] -join ' ') -cne 'appservice plan show' -or
+            $Arguments[[array]::IndexOf($Arguments, '--ids') + 1] -cne $global:AzurePlanId -or
+            $Arguments[[array]::IndexOf($Arguments, '--subscription') + 1] -cne '11111111-1111-4111-8111-111111111111') {
+            throw 'Plan inspection must be a read of the linked resource in the explicit subscription.'
+        }
+        $global:AzurePlanReads++
+        $global:LASTEXITCODE = if ($global:AzurePlanResponse -eq 'read-failure') { 1 } else { 0 }
+        return $global:AzurePlanResponse
+    }
+    $global:AzureExistingWeb = @{ id = '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/sample-resource-group/providers/Microsoft.Web/sites/sample-web'; kind = 'app,linux'; httpsOnly = $true; defaultHostName = 'sample-web.azurewebsites.net'; serverFarmId = $global:AzurePlanId } | ConvertTo-Json -Compress
     $global:AzureWebReadFailure = $false
     $global:AzureWebReads = 0
     $global:AzureAvailabilityFailureType = ''
@@ -457,6 +474,7 @@ try {
             $global:LASTEXITCODE = $global:AzureProvisionExitCode
             return $global:AzureProvisionInventory
         }
+        if ($args[0] -ceq 'appservice') { return (Get-TestAppServicePlan $args) }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
             $global:AzureWebReads++
             $global:LASTEXITCODE = if ($global:AzureWebReadFailure) { 1 } else { 0 }
@@ -505,6 +523,7 @@ try {
     }
     $provisionParameters.parameters.webAppName.value = 'sample-web'
     foreach ($mode in @('Existing', 'Create')) {
+        $global:AzurePlanReads = 0
         $global:AzureWebReads = 0
         $global:AzureAvailabilityChecks = @()
         $provisionParameters.parameters.webAppMode = @{ value = $mode }
@@ -530,6 +549,7 @@ try {
         $global:AzureProvisionExitCode = 0
         & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply | Out-Null
         if ($global:AzureProvisionWrites -ne 1) { throw 'Available names and a valid web target should permit first-time provisioning.' }
+        if ($global:AzurePlanReads -ne $(if ($mode -eq 'Existing') { 1 } else { 0 })) { throw 'Only Existing mode should inspect the existing linked plan.' }
         if (Test-Path -LiteralPath (Split-Path -Parent $global:AzureProvisionSnapshotPath)) { throw 'Provisioning must clean up its snapshot on success.' }
         $expectedChecks = @('Microsoft.DBforPostgreSQL/flexibleServers', 'Microsoft.Storage/storageAccounts')
         if ($mode -ceq 'Create') { $expectedChecks += 'Microsoft.Web/sites' }
@@ -589,7 +609,30 @@ try {
         if ($message -notlike '*Provisioning did not report success*' -or
             (Test-Path -LiteralPath (Split-Path -Parent $global:AzureProvisionSnapshotPath))) { throw 'Failed provisioning must clean up its snapshot and report failure.' }
         if ($mode -ceq 'Existing') {
+            foreach ($response in @($freePlan.Replace('F1', 'S1').Replace('Free', 'Standard'), $freePlan.Replace('F1', 'P1v3').Replace('Free', 'PremiumV3'),
+                $freePlan.Replace('F1', 'B1'), $freePlan.Replace('Free', 'Shared'), $freePlan.Replace('sample-plan', 'wrong-plan'),
+                '{}', '{"sku":null}', '[]', 'null', 'invalid-json', 'read-failure')) {
+                $global:AzurePlanResponse = $response
+                $global:AzurePlanReads = 0
+                $global:AzureAvailabilityChecks = @()
+                $global:AzureProvisionWrites = 0
+                Assert-Throws { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply } 'A paid or unknown plan permitted provisioning.'
+                if ($global:AzurePlanReads -ne 1 -or $global:AzureProvisionWrites -ne 0 -or $global:AzureAvailabilityChecks.Count -ne 0) { throw 'Plan rejection must precede name checks and provisioning.' }
+            }
+            $global:AzurePlanResponse = $freePlan
             $validWeb = $global:AzureExistingWeb
+            foreach ($link in $invalidPlanLinks) {
+                $webWithInvalidPlan = $validWeb | ConvertFrom-Json -AsHashtable
+                if ($link -ceq 'missing') { $webWithInvalidPlan.Remove('serverFarmId') } else { $webWithInvalidPlan.serverFarmId = $link }
+                $global:AzureExistingWeb = $webWithInvalidPlan | ConvertTo-Json -Compress
+                $global:AzurePlanReads = 0
+                $global:AzureAvailabilityChecks = @()
+                $global:AzureProvisionWrites = 0
+                $message = ''
+                try { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply | Out-Null } catch { $message = $_.Exception.Message }
+                if ($message -notlike '*must identify its App Service plan*' -or $global:AzurePlanReads -ne 0 -or
+                    $global:AzureAvailabilityChecks.Count -ne 0 -or $global:AzureProvisionWrites -ne 0) { throw 'Invalid linked plan must stop before plan reads, name checks or provisioning.' }
+            }
             foreach ($response in @('{}', '[]', 'null', 'invalid-json', 'read-failure',
                 $validWeb.Replace('sample-web', 'wrong-web'),
                 $validWeb.Replace('sample-resource-group', 'wrong-group'),
@@ -617,6 +660,7 @@ try {
     $global:AzureCodeHelp = '--track-status --clean'
     $global:AzureCodeChange = $false
     $global:AzureCodeChanged = $false
+    $global:AzureCodePlanId = $global:AzurePlanId
     function global:az {
         $global:LASTEXITCODE = 0
         if ($args -contains '--help') {
@@ -637,8 +681,11 @@ try {
             return $global:AzureCodeHelp
         }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
-            return (@{ id = 'synthetic-test-resource'; host = 'sample-web.azurewebsites.net'; httpsOnly = $true; kind = $global:AzureCodeKind } | ConvertTo-Json)
+            $web = @{ id = 'synthetic-test-resource'; host = 'sample-web.azurewebsites.net'; httpsOnly = $true; kind = $global:AzureCodeKind }
+            if ($global:AzureCodePlanId -cne 'missing') { $web.serverFarmId = $global:AzureCodePlanId }
+            return ($web | ConvertTo-Json)
         }
+        if ($args[0] -ceq 'appservice') { return (Get-TestAppServicePlan $args) }
         if ($args[0] -ceq 'resource' -and $args[1] -ceq 'show') { return 'false' }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') {
             if ($global:AzureCodeReadFailure) { $global:LASTEXITCODE = 1; return '' }
@@ -722,6 +769,27 @@ try {
             if ($global:AzureCodeWrites -ne 1 -or $message -notlike 'Deployment did not report success*') { throw 'Supported site/SCM TLS should reach the mocked deployment.' }
         }
     }
+    foreach ($response in @($freePlan.Replace('F1', 'S1').Replace('Free', 'Standard'), $freePlan.Replace('F1', 'P1v3').Replace('Free', 'PremiumV3'),
+        $freePlan.Replace('F1', 'B1'), $freePlan.Replace('Free', 'Shared'), $freePlan.Replace('sample-plan', 'wrong-plan'),
+        '{}', '{"sku":null}', '[]', 'null', 'invalid-json', 'read-failure')) {
+        $global:AzurePlanResponse = $response
+        $global:AzurePlanReads = 0
+        $global:AzureCodeWrites = 0
+        Assert-Throws { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply } 'A paid or unknown plan permitted code deployment.'
+        if ($global:AzurePlanReads -ne 1 -or $global:AzureCodeWrites -ne 0) { throw 'Plan rejection must block code upload.' }
+    }
+    $global:AzurePlanResponse = $freePlan
+    foreach ($link in $invalidPlanLinks) {
+        $global:AzureCodePlanId = $link
+        $global:AzurePlanReads = 0
+        $global:AzureCodeWrites = 0
+        $message = ''
+        try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+        if ($message -notlike '*must identify its App Service plan*' -or $global:AzurePlanReads -ne 0 -or $global:AzureCodeWrites -ne 0) {
+            throw 'Invalid linked plan must stop before plan reads or ZIP upload.'
+        }
+    }
+    $global:AzureCodePlanId = $global:AzurePlanId
     $originalArchive = [System.IO.File]::ReadAllBytes($zipPath)
     $global:AzureCodeChange = $true
     $global:AzureCodeWrites = 0
@@ -786,6 +854,7 @@ try {
     Remove-Variable -Name AzureCodeKind, AzureCodeHelp -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureCodeOriginalPath, AzureCodeExpectedHash, AzureCodeSnapshotPath -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureCodeChange, AzureCodeChanged -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name AzurePlanId, AzurePlanResponse, AzurePlanReads, AzureCodePlanId -Scope Global -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }
 }
 Write-Output 'Deployment safety: IPv4, real ZIP exclusion/tamper checks and target-bound approval checks passed.'

@@ -83,6 +83,9 @@ export const validateBootstrapConfig = (input) => {
     operatorPrincipalType: input.operatorPrincipalType ?? "user",
     approvalReference: requireText(input.approvalReference, "Approval reference", 200),
   };
+  if (result.runtimeRole !== "sunsum_runtime" || result.operatorRole !== "sunsum_migrator") {
+    throw new BootstrapSafetyError("Bootstrap requires runtimeRole=sunsum_runtime and operatorRole=sunsum_migrator to match deployment and migration tooling.");
+  }
   if (!["user", "group", "service"].includes(result.operatorPrincipalType) ||
       new Set([result.administratorRole, result.runtimeRole, result.operatorRole]).size !== 3 ||
       new Set([result.administratorObjectId, result.runtimeObjectId, result.operatorObjectId]).size !== 3) {

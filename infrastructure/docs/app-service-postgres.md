@@ -18,6 +18,16 @@ The Storage account is Standard LRS, StorageV2, Hot, with private
 `site-documents` and `project-documents` containers. Shared-key access and
 anonymous Blob access are disabled.
 
+Existing-site provisioning and code deployment read the named site's
+`serverFarmId`, then inspect that linked plan by resource ID. Both require
+`sku.name=F1` and `sku.tier=Free` before deployment; missing, unreadable, malformed
+or paid plans stop the operation. The operator needs read access to the linked
+plan, including when it is in another resource group in the same subscription.
+Neither command changes the plan or offers a paid-tier bypass. This is a
+preflight, not a lock against concurrent Azure configuration changes; serialize
+plan changes during deployment. Create-mode provisioning continues to use the
+template's fixed F1 plan without querying a plan that does not exist yet.
+
 | Surface | Preparation status | Deployment/application gate |
 | --- | --- | --- |
 | F1 site/plan and system identity | Bicep ready for explicit new-site creation | Existing-site identity/settings are separate, reviewed CLI changes; no live change by this PR |
@@ -623,6 +633,13 @@ fresh PostgreSQL audience tokens in memory and certificate/hostname-verified
 TLS. It does not log server errors or credentials, write tokens, set an Azure
 `PGPASSWORD`, or create a password login. Root `pg` and `@azure/identity`
 dependencies must already have been restored.
+
+Bootstrap requires `runtimeRole=sunsum_runtime` and
+`operatorRole=sunsum_migrator`, matching the template and migration-tool contracts.
+Omitted names keep those defaults; other names are rejected before authentication
+or SQL calls. Custom names require a coordinated, separately reviewed contract
+change, not just a bootstrap override. Matching names do not prove permissions
+or identity mappings; the checks below still apply.
 
 The two bounded, transactional phases are:
 

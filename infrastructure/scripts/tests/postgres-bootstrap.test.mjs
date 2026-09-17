@@ -27,6 +27,19 @@ test("bootstrap defaults separate nonadmin runtime/operator roles", () => {
   assert.equal(validated.operatorPrincipalType, "user");
 });
 
+test("bootstrap role names match the fixed deployment and migration contracts", () => {
+  const explicit = validateBootstrapConfig({ ...config, runtimeRole: "sunsum_runtime", operatorRole: "sunsum_migrator" });
+  assert.equal(explicit.runtimeRole, "sunsum_runtime");
+  assert.equal(explicit.operatorRole, "sunsum_migrator");
+  for (const runtimeRole of ["custom_runtime", "sunsum_migrator", "SUNSUM_RUNTIME", "", 123]) {
+    assert.throws(() => validateBootstrapConfig({ ...config, runtimeRole }));
+  }
+  for (const operatorRole of ["custom_operator", "sunsum_runtime", "SUNSUM_MIGRATOR", "", 123]) {
+    assert.throws(() => validateBootstrapConfig({ ...config, operatorRole }));
+  }
+  assert.throws(() => validateBootstrapConfig({ ...config, operatorRole: "custom_operator" }), /requires runtimeRole=sunsum_runtime and operatorRole=sunsum_migrator/u);
+});
+
 test("bootstrap binds exact bytes to review and detects drift before subsequent connections", async () => {
   const directory = await mkdtemp(join(tmpdir(), "sunsum-bootstrap-review-"));
   const path = join(directory, "bootstrap.json");

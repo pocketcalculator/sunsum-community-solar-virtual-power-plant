@@ -37,14 +37,15 @@ try {
         throw 'This Azure CLI must support webapp deploy --track-status and --clean; update tooling separately.'
     }
     $raw = & az webapp show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
-        --query '{id:id,host:defaultHostName,httpsOnly:httpsOnly,kind:kind}' --output json --only-show-errors
+        --query '{id:id,host:defaultHostName,httpsOnly:httpsOnly,kind:kind,serverFarmId:serverFarmId}' --output json --only-show-errors
     if ($LASTEXITCODE -ne 0) { throw 'Could not verify the existing App Service target.' }
-    $app = ($raw -join "`n") | ConvertFrom-Json
+    $app = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
     if ($app.httpsOnly -isnot [bool] -or $app.httpsOnly -ne $true -or $app.kind -isnot [string] -or
         'app' -notin ($app.kind -split ',') -or 'linux' -notin ($app.kind -split ',') -or 'functionapp' -in ($app.kind -split ',') -or
         $app.host -cnotmatch '^[a-z0-9][a-z0-9.-]*\.azurewebsites\.net$') {
         throw 'The target must be the HTTPS-only Linux app in Azure public cloud.'
     }
+    Assert-AppServiceFreePlan -SubscriptionId $SubscriptionId -PlanResourceId $app['serverFarmId']
     foreach ($policy in @('ftp', 'scm')) {
         $raw = & az resource show --ids "$($app.id)/basicPublishingCredentialsPolicies/$policy" `
             --api-version 2024-04-01 --query properties.allow --output json --only-show-errors

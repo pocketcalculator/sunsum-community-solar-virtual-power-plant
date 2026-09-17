@@ -80,6 +80,28 @@ function New-DeploymentApproval {
     }
 }
 
+function Assert-AppServiceFreePlan {
+    param(
+        [Parameter(Mandatory)][guid] $SubscriptionId,
+        [AllowNull()][object] $PlanResourceId
+    )
+    $planPattern = '\A/subscriptions/' + [regex]::Escape([string]$SubscriptionId) + '/resourceGroups/[a-zA-Z0-9_().-]{1,90}/providers/Microsoft[.]Web/serverfarms/[a-zA-Z0-9-]{1,60}\z'
+    if ($PlanResourceId -isnot [string] -or $PlanResourceId -inotmatch $planPattern) {
+        throw 'The web app must identify its App Service plan in the explicit subscription before deployment.'
+    }
+    $raw = & az appservice plan show --ids $PlanResourceId --subscription $SubscriptionId `
+        --query '{id:id,sku:sku}' --output json --only-show-errors
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the linked App Service plan; no deployment was attempted.' }
+    $plan = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
+    if ($plan -isnot [System.Collections.IDictionary] -or -not $plan.Contains('id') -or
+        $plan.id -isnot [string] -or $plan.id -ine $PlanResourceId -or
+        -not $plan.Contains('sku') -or $plan.sku -isnot [System.Collections.IDictionary] -or
+        -not $plan.sku.Contains('name') -or $plan.sku.name -isnot [string] -or $plan.sku.name -ine 'F1' -or
+        -not $plan.sku.Contains('tier') -or $plan.sku.tier -isnot [string] -or $plan.sku.tier -ine 'Free') {
+        throw 'This deployment path requires the linked F1/Free App Service plan; paid or unknown plans require separate review. No plan change was attempted.'
+    }
+}
+
 function Assert-ExactPublicIpv4 {
     param([AllowEmptyString()][string] $Address)
     if ($Address -cnotmatch '^(0|[1-9][0-9]{0,2})(\.(0|[1-9][0-9]{0,2})){3}$') {
@@ -188,4 +210,4 @@ function Test-AppServiceResponse {
     }
 }
 
-Export-ModuleMember -Function New-DeploymentApproval, New-DeploymentSnapshot, Assert-DeploymentSnapshot, Remove-DeploymentSnapshot, Assert-ExactPublicIpv4, Test-AppServiceArchivePath, Assert-FirewallApproval, Test-AppServiceResponse
+Export-ModuleMember -Function Assert-AppServiceFreePlan, New-DeploymentApproval, New-DeploymentSnapshot, Assert-DeploymentSnapshot, Remove-DeploymentSnapshot, Assert-ExactPublicIpv4, Test-AppServiceArchivePath, Assert-FirewallApproval, Test-AppServiceResponse

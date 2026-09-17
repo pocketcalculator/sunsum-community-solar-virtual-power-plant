@@ -105,7 +105,7 @@ try {
         }
     } else {
         $raw = & az webapp show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $document.parameters.webAppName.value `
-            --query '{id:id,kind:kind,httpsOnly:httpsOnly,defaultHostName:defaultHostName}' --output json --only-show-errors
+            --query '{id:id,kind:kind,httpsOnly:httpsOnly,defaultHostName:defaultHostName,serverFarmId:serverFarmId}' --output json --only-show-errors
         if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the existing web app; no infrastructure deployment was attempted.' }
         $web = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
         $expectedWebId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$($document.parameters.webAppName.value)"
@@ -115,6 +115,7 @@ try {
             $web.defaultHostName -isnot [string] -or $web.defaultHostName -cnotmatch '^[a-z0-9][a-z0-9.-]*\.azurewebsites\.net$') {
             throw 'Existing mode requires the exact HTTPS-only Linux web app with a public-cloud hostname; no infrastructure deployment was attempted.'
         }
+        Assert-AppServiceFreePlan -SubscriptionId $SubscriptionId -PlanResourceId $web['serverFarmId']
     }
     $nameChecks = @(
         @{ name = $document.parameters.postgresServerName.value; type = 'Microsoft.DBforPostgreSQL/flexibleServers'; apiVersion = '2021-06-01' },
