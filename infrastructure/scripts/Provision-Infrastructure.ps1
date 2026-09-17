@@ -8,6 +8,8 @@ param(
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $ApprovalReference,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $DatabaseBudgetApproval,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $StorageBudgetApproval,
+    [Parameter(Mandatory)][string] $ApprovalPath,
+    [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string] $ApprovalSha256,
     [switch] $Apply
 )
 $ErrorActionPreference = 'Stop'
@@ -19,6 +21,7 @@ if ($SubscriptionId -eq [guid]::Empty -or $ResourceGroupName.EndsWith('.') -or
     throw 'An explicit target, infrastructure review, and separate PostgreSQL/Storage budget approvals are required.'
 }
 $snapshot = New-DeploymentSnapshot -Path $ParametersPath -ExpectedSha256 $ExpectedSha256
+$approvalSnapshot = $null
 try {
     $path = $snapshot.Path
     $document = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable
@@ -68,6 +71,11 @@ try {
     if ($databaseName -isnot [string] -or $databaseName -cnotmatch '\A[a-z][a-z0-9_]{0,62}\z' -or
         $databaseName -cmatch '\A(pg_|azure_)' -or $databaseName -cin @('postgres', 'public', 'template0', 'template1')) {
         throw 'databaseName must match the bootstrap contract: 1-63 lowercase ASCII letters/digits/underscores, starting with a letter; reserved database names and pg_/azure_ prefixes are forbidden.'
+    }
+    $approvalSnapshot = New-DeploymentApproval -Path $ApprovalPath -ExpectedSha256 $ApprovalSha256 -Expected @{
+        operation = 'ProvisionInfrastructure'; subscriptionId = [string]$SubscriptionId; resourceGroupName = $ResourceGroupName
+        payloadSha256 = $ExpectedSha256; approvalReference = $ApprovalReference
+        databaseBudgetApproval = $DatabaseBudgetApproval; storageBudgetApproval = $StorageBudgetApproval
     }
     if (-not $Apply) {
         Write-Output 'Reviewed parameters, explicit target and budget acknowledgement validated. No Azure calls; -Apply requires separate provisioning authorization.'
@@ -132,6 +140,7 @@ try {
     }
     $template = Join-Path $PSScriptRoot '..\templates\resources.bicep'
     Assert-DeploymentSnapshot $snapshot
+    Assert-DeploymentSnapshot $approvalSnapshot
     & az deployment group create --subscription $SubscriptionId --resource-group $ResourceGroupName `
         --name "sunsum-foundation-$([DateTime]::UtcNow.ToString('yyyyMMddHHmmss'))" --mode Incremental `
         --template-file $template --parameters "@$path" --only-show-errors --output none
@@ -139,4 +148,8 @@ try {
         throw 'Provisioning did not report success; inspect the deployment before retrying. No provider registration, permissions change, or tier fallback was attempted.'
     }
     Write-Output 'Infrastructure deployment reported success. Network approvals, SQL bootstrap and application deployment remain separate operations.'
-} finally { Remove-DeploymentSnapshot $snapshot }
+} finally {
+    try {
+        if ($null -ne $approvalSnapshot) { Remove-DeploymentSnapshot $approvalSnapshot }
+    } finally { Remove-DeploymentSnapshot $snapshot }
+}

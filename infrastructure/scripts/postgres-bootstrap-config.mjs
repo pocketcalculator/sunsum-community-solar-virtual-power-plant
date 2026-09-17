@@ -1,6 +1,25 @@
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 export class BootstrapSafetyError extends Error {}
+
+export const readReviewedBootstrapConfig = async (path, expectedSha256) => {
+  if (typeof expectedSha256 !== "string" || !/^[a-f0-9]{64}$/iu.test(expectedSha256)) {
+    throw new BootstrapSafetyError("A review-supplied bootstrap SHA-256 is required.");
+  }
+  const resolved = resolve(path);
+  const verifiedBytes = async () => {
+    const bytes = await readFile(resolved);
+    if (createHash("sha256").update(bytes).digest("hex") !== expectedSha256.toLowerCase()) {
+      throw new BootstrapSafetyError("Bootstrap configuration no longer matches its reviewed SHA-256.");
+    }
+    return bytes;
+  };
+  const config = validateBootstrapConfig(JSON.parse((await verifiedBytes()).toString("utf8").replace(/^\uFEFF/u, "")));
+  return Object.freeze({ config, verifyUnchanged: async () => { await verifiedBytes(); } });
+};
 
 export const requireBootstrapToken = (token, now = Date.now()) => {
   if (typeof token?.token !== "string" || !token.token.trim() ||

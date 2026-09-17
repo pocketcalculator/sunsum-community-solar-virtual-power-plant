@@ -111,7 +111,9 @@ try {
         }
     }
     if ($Operation -eq 'StorageNetwork') {
-        if ($storage.networkRuleSet.ipRules.Count -ne 0 -or $storage.networkRuleSet.virtualNetworkRules.Count -ne 0 -or
+        if (-not $storage.networkRuleSet.Contains('bypass') -or $storage.networkRuleSet.bypass -isnot [string] -or
+            $storage.networkRuleSet.bypass -cne 'None' -or
+            $storage.networkRuleSet.ipRules.Count -ne 0 -or $storage.networkRuleSet.virtualNetworkRules.Count -ne 0 -or
             ($storage.networkRuleSet.Contains('resourceAccessRules') -and $storage.networkRuleSet.resourceAccessRules.Count -gt 0)) {
             throw 'Existing network exceptions require separate review; this template would replace them.'
         }

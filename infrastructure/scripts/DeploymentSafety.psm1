@@ -51,6 +51,35 @@ function Remove-DeploymentSnapshot {
     [System.IO.Directory]::Delete($Snapshot.Directory, $true)
 }
 
+function New-DeploymentApproval {
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][string] $ExpectedSha256,
+        [Parameter(Mandatory)][System.Collections.IDictionary] $Expected
+    )
+    $snapshot = New-DeploymentSnapshot -Path $Path -ExpectedSha256 $ExpectedSha256
+    try {
+        $record = Get-Content -LiteralPath $snapshot.Path -Raw | ConvertFrom-Json -AsHashtable
+        if ($record -isnot [System.Collections.IDictionary] -or $record.Count -ne $Expected.Count) {
+            throw 'Deployment approval must contain exactly the documented fields.'
+        }
+        foreach ($key in $Expected.Keys) {
+            if (-not $record.Contains($key) -or $record[$key] -isnot [string] -or
+                [string]::IsNullOrWhiteSpace($record[$key]) -or $record[$key] -match '[<>\x00-\x1f]') {
+                throw "Invalid deployment approval field: $key."
+            }
+            $valueMatches = if ($key -in @('subscriptionId', 'resourceGroupName', 'webAppName', 'payloadSha256')) {
+                $record[$key] -ieq [string]$Expected[$key]
+            } else { $record[$key] -ceq [string]$Expected[$key] }
+            if (-not $valueMatches) { throw "Deployment approval does not match the explicit operation ($key)." }
+        }
+        return $snapshot
+    } catch {
+        Remove-DeploymentSnapshot $snapshot
+        throw
+    }
+}
+
 function Assert-ExactPublicIpv4 {
     param([AllowEmptyString()][string] $Address)
     if ($Address -cnotmatch '^(0|[1-9][0-9]{0,2})(\.(0|[1-9][0-9]{0,2})){3}$') {
@@ -159,4 +188,4 @@ function Test-AppServiceResponse {
     }
 }
 
-Export-ModuleMember -Function New-DeploymentSnapshot, Assert-DeploymentSnapshot, Remove-DeploymentSnapshot, Assert-ExactPublicIpv4, Test-AppServiceArchivePath, Assert-FirewallApproval, Test-AppServiceResponse
+Export-ModuleMember -Function New-DeploymentApproval, New-DeploymentSnapshot, Assert-DeploymentSnapshot, Remove-DeploymentSnapshot, Assert-ExactPublicIpv4, Test-AppServiceArchivePath, Assert-FirewallApproval, Test-AppServiceResponse

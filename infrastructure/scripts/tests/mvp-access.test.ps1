@@ -347,6 +347,21 @@ try {
         $global:MvpAccessCalls = 0
         $global:MvpStorageUpdate = @()
         $storageArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
+        foreach ($bypass in @('AzureServices', 'Logging', 'Metrics', 'AzureServices,Logging', 'none', '', $null, @('None'), 'missing')) {
+            $global:MvpStorageState = $baseline.Clone()
+            $global:MvpStorageState.networkRuleSet = $baseline.networkRuleSet.Clone()
+            if ($bypass -ceq 'missing') { $global:MvpStorageState.networkRuleSet.Remove('bypass') } else { $global:MvpStorageState.networkRuleSet.bypass = $bypass }
+            $global:MvpStorageUpdate = @()
+            $storageArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
+            $message = ''
+            try { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @storageArgs -Apply | Out-Null } catch { $message = $_.Exception.Message }
+            if ($message -notlike '*Existing network exceptions require separate review*' -or $global:MvpStorageUpdate.Count -ne 0) {
+                throw 'An existing or unknown bypass must not be removed by the network update.'
+            }
+        }
+        $global:MvpStorageState = $baseline
+        $global:MvpAccessCalls = 0
+        $storageArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
         & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @storageArgs -Apply | Out-Null
         $access = if ($configuration.networkMode -ceq 'Closed') { 'Disabled' } else { 'Enabled' }
         $action = if ($configuration.networkMode -ceq 'Closed') { 'Deny' } else { 'Allow' }

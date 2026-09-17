@@ -12,6 +12,50 @@ function Assert-Throws([scriptblock] $Action, [string] $Message) {
     if (-not $threw) { throw $Message }
 }
 
+function Update-TestDeploymentApproval([hashtable] $Arguments, [string] $Operation) {
+    $record = @{
+        operation = $Operation; subscriptionId = $Arguments.SubscriptionId; resourceGroupName = $Arguments.ResourceGroupName
+        payloadSha256 = $Arguments.ExpectedSha256; approvalReference = $Arguments.ApprovalReference
+    }
+    if ($Operation -eq 'CodeDeployment') {
+        $record.webAppName = $Arguments.WebAppName
+        $record.expectedAccessMode = 'Preview'
+    } else {
+        $record.databaseBudgetApproval = $Arguments.DatabaseBudgetApproval
+        $record.storageBudgetApproval = $Arguments.StorageBudgetApproval
+    }
+    $record | ConvertTo-Json | Set-Content -LiteralPath $Arguments.ApprovalPath -Encoding utf8NoBOM
+    $Arguments.ApprovalSha256 = (Get-FileHash -LiteralPath $Arguments.ApprovalPath -Algorithm SHA256).Hash
+}
+
+function Test-DeploymentApprovalRejections([hashtable] $Arguments, [string] $ScriptPath) {
+    $original = [System.IO.File]::ReadAllBytes($Arguments.ApprovalPath)
+    $originalHash = $Arguments.ApprovalSha256
+    $record = Get-Content -LiteralPath $Arguments.ApprovalPath -Raw | ConvertFrom-Json -AsHashtable
+    try {
+        foreach ($key in $record.Keys) {
+            $changed = $record.Clone()
+            $changed[$key] = 'unreviewed-value'
+            $changed | ConvertTo-Json | Set-Content -LiteralPath $Arguments.ApprovalPath -Encoding utf8NoBOM
+            $Arguments.ApprovalSha256 = (Get-FileHash -LiteralPath $Arguments.ApprovalPath -Algorithm SHA256).Hash
+            foreach ($apply in @($false, $true)) {
+                $message = ''
+                try { & $ScriptPath @Arguments -Apply:$apply | Out-Null } catch { $message = $_.Exception.Message }
+                if ($message -notlike '*Deployment approval does not match*' -or $global:AzureSafetyTestCalls -ne 0) {
+                    throw "Unbound deployment approval field reached Azure or bypassed the review check: $key."
+                }
+            }
+        }
+        $Arguments.ApprovalSha256 = $originalHash
+        $message = ''
+        try { & $ScriptPath @Arguments -Apply | Out-Null } catch { $message = $_.Exception.Message }
+        if ($message -notlike '*no longer matches the reviewed SHA-256*') { throw 'A changed approval file retained its old reviewed digest.' }
+    } finally {
+        [System.IO.File]::WriteAllBytes($Arguments.ApprovalPath, $original)
+        $Arguments.ApprovalSha256 = $originalHash
+    }
+}
+
 foreach ($address in @('20.30.40.50', '8.8.8.8')) {
     Assert-ExactPublicIpv4 $address
 }
@@ -97,6 +141,18 @@ try {
         throw 'The real packaging script did not enforce its source allowlist.'
     }
     $snapshot = New-DeploymentSnapshot -Path $zipPath -ExpectedSha256 $package.SHA256.ToLowerInvariant()
+    foreach ($wrongName in @('Package.json', 'package-Lock.json', 'Tsconfig.json', 'app/Layout.tsx', 'APP/layout.tsx', 'collision')) {
+        $caseZip = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).zip"
+        $archive = [System.IO.Compression.ZipFile]::Open($caseZip, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($required in @('package.json', 'package-lock.json', 'tsconfig.json', 'app/layout.tsx')) {
+                $entryName = if ($required -ieq $wrongName) { $wrongName } else { $required }
+                $null = $archive.CreateEntry($entryName)
+            }
+            if ($wrongName -eq 'collision') { $null = $archive.CreateEntry('Package.json') }
+        } finally { $archive.Dispose() }
+        Assert-Throws { & (Join-Path $PSScriptRoot '..\Test-AppServicePackage.ps1') -Path $caseZip } 'Wrong-case required files or case collisions were accepted.'
+    }
     $snapshotDirectory = $snapshot.Directory
     try {
         if ($snapshot.Path -ceq $package.Path) { throw 'A deployment snapshot must not reuse the source path.' }
@@ -156,7 +212,10 @@ try {
         ApprovalReference = 'review-123'
         DatabaseBudgetApproval = 'budget-123'
         StorageBudgetApproval = 'storage-budget-123'
+        ApprovalPath = Join-Path $fixture 'provision-approval.json'
     }
+    Update-TestDeploymentApproval $provision ProvisionInfrastructure
+    Test-DeploymentApprovalRejections $provision (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1')
     & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision | Out-Null
     $rejectedRoles = @('postgres', 'azure_pg_admin', 'pg_read_all_data', 'sunsum_migrator', 'other_existing_role', 'SUNSUM_RUNTIME')
     foreach ($mode in @('Existing', 'Create')) {
@@ -178,6 +237,7 @@ try {
             $provisionParameters.parameters.databaseName = @{ value = $databaseName }
             $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
             $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
+            Update-TestDeploymentApproval $provision ProvisionInfrastructure
             & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision | Out-Null
         }
     }
@@ -198,6 +258,7 @@ try {
     $provisionParameters.parameters.runtimeRoleName = @{ value = 'sunsum_runtime' }
     $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
     $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
+    Update-TestDeploymentApproval $provision ProvisionInfrastructure
     & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision | Out-Null
     $provision.ExpectedSha256 = '0' * 64
     Assert-Throws { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply } 'Accepted changed provisioning parameters.'
@@ -271,7 +332,10 @@ try {
         PackagePath = $package.Path
         ExpectedSha256 = $package.SHA256
         ApprovalReference = 'review-123'
+        ApprovalPath = Join-Path $fixture 'code-approval.json'
     }
+    Update-TestDeploymentApproval $deploy CodeDeployment
+    Test-DeploymentApprovalRejections $deploy (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1')
     & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy | Out-Null
     $deploy.ExpectedSha256 = '0' * 64
     Assert-Throws { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply } 'Accepted an unreviewed hash.'
@@ -447,6 +511,7 @@ try {
         $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
         $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
         $global:AzureProvisionExpectedHash = $provision.ExpectedSha256
+        Update-TestDeploymentApproval $provision ProvisionInfrastructure
         foreach ($inventory in @(
             '[{"type":"Microsoft.DBforPostgreSQL/flexibleServers","name":"SAMPLE-POSTGRES"}]',
             '[{"type":"Microsoft.Storage/storageAccounts","name":"samplestorage"}]',

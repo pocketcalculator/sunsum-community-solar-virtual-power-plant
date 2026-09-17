@@ -11,11 +11,13 @@ $archive = [System.IO.Compression.ZipFile]::OpenRead($resolved)
 try {
     if ($archive.Entries.Count -gt 10000) { throw 'Too many source archive entries.' }
     $names = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $exactNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     [long] $total = 0
     foreach ($entry in $archive.Entries) {
         if (-not (Test-AppServiceArchivePath $entry.FullName) -or -not $names.Add($entry.FullName)) {
             throw 'Archive contains an unexpected, duplicate or unsafe path.'
         }
+        $null = $exactNames.Add($entry.FullName)
         if ((($entry.ExternalAttributes -shr 16) -band 0xF000) -eq 0xA000) {
             throw 'Archive contains a symbolic link.'
         }
@@ -23,7 +25,7 @@ try {
         if ($total -gt 64MB -or $entry.Length -gt 32MB) { throw 'Uncompressed source exceeds the safety limit.' }
     }
     foreach ($required in @('package.json', 'package-lock.json', 'tsconfig.json', 'app/layout.tsx')) {
-        if (-not $names.Contains($required)) { throw "Archive is missing required file: $required" }
+        if (-not $exactNames.Contains($required)) { throw "Archive is missing required file with exact Linux casing: $required" }
     }
     [pscustomobject]@{
         Path = $resolved

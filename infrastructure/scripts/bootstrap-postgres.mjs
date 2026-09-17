@@ -1,18 +1,18 @@
 import console from "node:console";
-import { readFile } from "node:fs/promises";
 import process from "node:process";
-import { BootstrapSafetyError, requireBootstrapToken, validateBootstrapConfig, withBootstrapClient } from "./postgres-bootstrap-config.mjs";
+import { BootstrapSafetyError, readReviewedBootstrapConfig, requireBootstrapToken, withBootstrapClient } from "./postgres-bootstrap-config.mjs";
 import { bootstrapPrincipals } from "./postgres-principal-bootstrap.mjs";
 import { bootstrapSchemas } from "./postgres-schema-bootstrap.mjs";
 
 const main = async () => {
   const args = process.argv.slice(2);
-  if (args[0] !== "--config" || !args[1] ||
-      (args.length !== 2 && !(args.length === 3 && args[2] === "--apply"))) {
-    throw new BootstrapSafetyError("Usage: node infrastructure/scripts/bootstrap-postgres.mjs --config <local-json> [--apply]");
+  if (args[0] !== "--config" || !args[1] || args[2] !== "--expected-sha256" || !args[3] ||
+      (args.length !== 4 && !(args.length === 5 && args[4] === "--apply"))) {
+    throw new BootstrapSafetyError("Usage: node infrastructure/scripts/bootstrap-postgres.mjs --config <local-json> --expected-sha256 <reviewed-hash> [--apply]");
   }
-  const config = validateBootstrapConfig(JSON.parse(await readFile(args[1], "utf8")));
-  if (args[2] !== "--apply") {
+  const reviewed = await readReviewedBootstrapConfig(args[1], args[3]);
+  const { config } = reviewed;
+  if (args[4] !== "--apply") {
     console.log("Configuration validated; no network/authentication/SQL calls. With separately approved --apply:");
     console.log("1. Verify the Entra administrator; create or verify distinct nonadmin runtime/operator mappings in postgres.");
     console.log("2. Require separately reviewed PUBLIC ACLs; preserve existing grants and canonical public schema; create operator-owned drizzle schema and grant CONNECT only.");
@@ -28,6 +28,7 @@ const main = async () => {
   ]);
   const credential = new AzureCliCredential({ tenantId: config.tenantId, processTimeoutInMs: 15000 });
   const connect = async (database, action) => {
+    await reviewed.verifyUnchanged();
     const client = new pg.Client({
       host: config.host,
       port: 5432,

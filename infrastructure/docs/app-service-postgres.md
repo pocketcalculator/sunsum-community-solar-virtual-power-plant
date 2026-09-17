@@ -283,6 +283,26 @@ resources. Inspect deployment state before retrying; do not automatically delete
 billable resources. Directly reapplying the core template bypasses these guards
 and restores Storage's **closed** default; it is not a code-only deployment.
 
+Prepare a separate ignored `.azure\dev\provision-approval.json` and record its
+SHA-256 in the review. It must contain exactly these fields, with reviewed values:
+
+```json
+{
+  "operation": "ProvisionInfrastructure",
+  "subscriptionId": "<subscription-id>",
+  "resourceGroupName": "<approved-resource-group>",
+  "payloadSha256": "<reviewed-parameters-sha256>",
+  "approvalReference": "<infrastructure-review>",
+  "databaseBudgetApproval": "<approved-db-budget>",
+  "storageBudgetApproval": "<approved-storage-budget>"
+}
+```
+
+The approval file is not an ARM parameter file. Both dry-run and apply require
+its reviewed digest and exact agreement with the explicit target, payload hash,
+and approval arguments before any Azure call. Keep the original approval file
+and digest with the deployment record; temporary snapshots are not audit storage.
+
 ```powershell
 # LOCAL validation: no Azure calls without -Apply.
 $parameters = '.azure\dev\resources.parameters.json'
@@ -290,6 +310,7 @@ $hash = '<sha256-recorded-in-the-approved-review>'
 pwsh -NoProfile -File infrastructure\scripts\Provision-Infrastructure.ps1 `
   -SubscriptionId $env:AZURE_SUBSCRIPTION_ID -ResourceGroupName $env:AZURE_RESOURCE_GROUP `
   -ParametersPath $parameters -ExpectedSha256 $hash `
+  -ApprovalPath .azure\dev\provision-approval.json -ApprovalSha256 '<reviewed-approval-sha256>' `
   -ApprovalReference '<infrastructure-review>' -DatabaseBudgetApproval '<approved-db-budget>' `
   -StorageBudgetApproval '<approved-storage-budget>'
 # Future WRITE: repeat with -Apply only after authorization.
@@ -312,6 +333,9 @@ operator's control and serialize deployment changes. File sharing is enforced
 by Windows but may be advisory on other operating systems; these guards do not
 defend against a compromised operator account or a writer bypassing OS sharing.
 They also do not serialize remote Azure configuration changes.
+An expected digest must come from the authorized review, not be generated from
+the current input at apply time. These local records are integrity and target
+checks, not digital signatures, Azure permissions, or proof of budget approval.
 
 Review the Bicep revision alongside the parameters and retain both with the
 approval record. Literal process variables such as `AZURE_SUBSCRIPTION_ID` and
@@ -543,6 +567,12 @@ require an administrator only for this setup/change, not every code deployment.
 Switching Reader/Contributor is additive in incremental deployments: inspect and
 explicitly remove the obsolete, precisely identified assignment after review.
 
+StorageNetwork also requires the existing `networkRuleSet.bypass` to be exactly
+`None`. Missing, unknown, `AzureServices`, `Logging`, or `Metrics` bypass settings
+block the update, just like existing IP/VNet/resource-access exceptions. Removing
+such exceptions requires a separate reviewed operation; this script does not
+silently remove them by sending `--bypass None`.
+
 ### PostgreSQL administrator procedure
 
 Directory owners first verify the three object IDs and their group memberships.
@@ -568,10 +598,16 @@ migrations. Prepare an ignored `.azure\dev\bootstrap.json`:
 
 ```powershell
 # LOCAL validation; no token or SQL request without --apply.
-node infrastructure\scripts\bootstrap-postgres.mjs --config .azure\dev\bootstrap.json
+$bootstrapHash = '<sha256-recorded-in-the-approved-review>'
+node infrastructure\scripts\bootstrap-postgres.mjs --config .azure\dev\bootstrap.json --expected-sha256 $bootstrapHash
 # Future privileged SQL WRITE, after administrator login and separate approval:
-node infrastructure\scripts\bootstrap-postgres.mjs --config .azure\dev\bootstrap.json --apply
+node infrastructure\scripts\bootstrap-postgres.mjs --config .azure\dev\bootstrap.json --expected-sha256 $bootstrapHash --apply
 ```
+
+The hash covers the exact UTF-8 bootstrap file, including target, principal IDs
+and approval reference. Only verified bytes are parsed. The file is rechecked
+before each connection and changed values are never adopted. A change between
+the two phases stops phase two but cannot undo completed phase-one changes.
 
 This tool uses only `AzureCliCredential` for the explicitly selected tenant,
 fresh PostgreSQL audience tokens in memory and certificate/hostname-verified
@@ -631,10 +667,32 @@ Use the same role in bootstrap. Custom names require a reviewed contract change,
 and the name restriction does not substitute for bootstrap's non-admin identity
 mapping and permission checks.
 
+Prepare an ignored `.azure\dev\migration-approval.json`, binding the captured
+`PG*` environment to the reviewed operation, and record its SHA-256:
+
+```json
+{
+  "operation": "DatabaseMigration",
+  "host": "<server-name>.postgres.database.azure.com",
+  "port": 5432,
+  "database": "sunsum",
+  "user": "sunsum_migrator",
+  "authentication": "azure-cli",
+  "sslMode": "verify-full",
+  "statementTimeoutMs": 5000,
+  "approvalReference": "<migration-review>"
+}
+```
+
+All fields are required; extra fields or mismatches fail before client creation.
+The command rechecks the digest before constructing the client and uses the
+captured environment, not later changes. Review and retain the generated SQL
+and code revision separately; this target record does not hash the SQL files.
+
 ```powershell
 npm run db:check
 # Future explicit SQL WRITE only after migration SQL and permissions review:
-npm run db:migrate:azure -- --apply
+npm run db:migrate:azure -- --apply --approval .azure\dev\migration-approval.json --expected-sha256 '<reviewed-approval-sha256>'
 ```
 
 Longer migrations can explicitly set `SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS`
@@ -827,6 +885,9 @@ config, `app`, `src` and optional `public`. It excludes local env files, raw
 `.next`, caches, Windows `node_modules`, credential/certificate paths and
 symbolic links. The source root itself must also be a real directory, not a
 symbolic link or junction; a linked root is rejected before archive creation.
+Required ZIP paths use exact Linux casing; `Package.json` and `app/Layout.tsx`
+do not satisfy `package.json` and `app/layout.tsx`. Case-colliding entries are
+also rejected, even when both spellings would exist on Linux.
 Review source contents too: a path allowlist is not a secret
 scanner. Configuration added outside this allowlist needs an explicit packaging
 review. Each ZIP puts `package.json` at its root, not under a repository folder.
@@ -837,6 +898,25 @@ The documented `CUSTOM_BUILD_COMMAND` is
 Build-time dependencies remain available for the TypeScript Next config;
 neither local Windows dependencies nor local `.next` output is shipped.
 
+Before rollout, prepare an ignored `.azure\dev\code-approval.json` with exactly
+these fields and record its own digest in the review:
+
+```json
+{
+  "operation": "CodeDeployment",
+  "subscriptionId": "<subscription-id>",
+  "resourceGroupName": "<approved-resource-group>",
+  "webAppName": "<approved-web-app>",
+  "payloadSha256": "<reviewed-zip-sha256>",
+  "approvalReference": "<code-review-reference>",
+  "expectedAccessMode": "Preview"
+}
+```
+
+The target fields identify the exact App Service resource. Reusing the same ZIP
+on a different target or changing the expected access mode requires a new review
+record and digest. Use `ApprovedSignIn` only for an already approved sign-in site.
+
 ```powershell
 $artifact = & .\infrastructure\scripts\New-AppServicePackage.ps1 `
   -OutputPath .azure\artifacts\web-reviewed.zip
@@ -845,6 +925,7 @@ $artifact | Format-List
 pwsh -NoProfile -File infrastructure\scripts\Deploy-AppServiceCode.ps1 `
   -SubscriptionId $env:AZURE_SUBSCRIPTION_ID -ResourceGroupName $env:AZURE_RESOURCE_GROUP `
   -WebAppName $env:AZURE_WEB_APP_NAME -PackagePath $artifact.Path `
+  -ApprovalPath .azure\dev\code-approval.json -ApprovalSha256 '<reviewed-approval-sha256>' `
   -ExpectedSha256 $artifact.SHA256 -ApprovalReference '<code-review-reference>'
 # Future WRITE: add -Apply only after authorization.
 ```

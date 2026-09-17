@@ -122,7 +122,7 @@ database is required for the browser-only preview.
 
 ```sh
 npm run db:generate
-npm run db:migrate:azure -- --apply
+npm run db:migrate:azure -- --apply --approval .azure/dev/migration-approval.json --expected-sha256 '<reviewed-approval-sha256>'
 ```
 
 Generation reads main's version-controlled [schema](../../db/schema.ts) and
@@ -132,6 +132,14 @@ remains in this directory. Main's `npm run db:migrate`, `db:seed`, `db:reset`,
 `db:verify`, and `db:studio` remain local-only, using their existing `DATABASE_URL`
 contract; they must not be used for Azure. The Azure operator command uses the
 same committed SQL through the explicit `PG*` and Entra contract above.
+
+The reviewed approval JSON binds `operation=DatabaseMigration`, host, numeric
+port, database, user, authentication mode, TLS mode, numeric statement timeout,
+and a nonempty approval reference. Its exact-byte SHA-256 must come from review.
+Values must match the captured environment before any client is constructed;
+the digest is checked again before construction. See the
+[approval example](../../../../infrastructure/docs/app-service-postgres.md#5-operator-connectivity-and-migrations).
+Keep the reviewed SQL revision separately; the target approval does not hash SQL.
 
 Review generated SQL, snapshots, locks, data compatibility, and least-privilege
 grants before using `--apply`. Azure migrations require the separately granted

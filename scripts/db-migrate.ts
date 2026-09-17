@@ -5,14 +5,17 @@ import {
   databaseFailureMessage,
 } from "../src/backend/infrastructure/database/errors";
 import { readDatabaseConfig } from "../src/backend/infrastructure/database/config";
+import { readMigrationApproval } from "./migration-approval";
 
 const migrationsFolder = fileURLToPath(
   new URL("../src/backend/db/migrations", import.meta.url),
 );
 
 try {
-  if (process.argv.slice(2).join(" ") !== "--apply") {
-    throw new DatabaseConfigurationError("Migration execution requires exactly --apply after reviewing the generated SQL.");
+  const args = process.argv.slice(2);
+  if (args[0] !== "--apply" || (args.length !== 1 &&
+      (args.length !== 5 || args[1] !== "--approval" || !args[2] || args[3] !== "--expected-sha256" || !args[4]))) {
+    throw new DatabaseConfigurationError("Migration execution requires exactly --apply --approval <local-json> --expected-sha256 <reviewed-hash> after reviewing the target and generated SQL.");
   }
   const environment = { ...process.env };
   const config = readDatabaseConfig(environment, { allowOperatorIdentity: true });
@@ -31,6 +34,12 @@ try {
       migrationStatementTimeoutMs < 5_000 || migrationStatementTimeoutMs > 600_000) {
     throw new DatabaseConfigurationError("SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS must be an integer from 5000 to 600000.");
   }
+  const approvalPath = args[2];
+  const approvalSha256 = args[4];
+  if (args.length !== 5 || !approvalPath || !approvalSha256) {
+    throw new DatabaseConfigurationError("Migration execution requires a reviewed --approval file and --expected-sha256 before connecting.");
+  }
+  const approval = readMigrationApproval(approvalPath, approvalSha256, config, migrationStatementTimeoutMs);
   const migrations = readMigrationFiles({ migrationsFolder });
   if (migrations.length === 0) {
     console.log("No versioned SQL migrations are present; nothing was applied.");
@@ -39,6 +48,7 @@ try {
       import("../src/backend/infrastructure/database"),
       import("drizzle-orm/node-postgres/migrator"),
     ]);
+    approval.verifyUnchanged();
     const database = createDatabase(environment, { allowOperatorIdentity: true, migrationStatementTimeoutMs });
     try {
       await assertMigrationPermission(database);

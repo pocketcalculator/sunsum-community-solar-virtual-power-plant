@@ -7,6 +7,8 @@ param(
     [Parameter(Mandatory)][string] $PackagePath,
     [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string] $ExpectedSha256,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $ApprovalReference,
+    [Parameter(Mandatory)][string] $ApprovalPath,
+    [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string] $ApprovalSha256,
     [ValidateSet('Preview', 'ApprovedSignIn')][string] $ExpectedAccessMode = 'Preview',
     [switch] $Apply
 )
@@ -17,9 +19,15 @@ if ($SubscriptionId -eq [guid]::Empty -or [string]::IsNullOrWhiteSpace($Approval
     throw 'An explicit subscription and code-deployment review reference are required.'
 }
 $snapshot = New-DeploymentSnapshot -Path $PackagePath -ExpectedSha256 $ExpectedSha256
+$approvalSnapshot = $null
 try {
     $artifact = & (Join-Path $PSScriptRoot 'Test-AppServicePackage.ps1') -Path $snapshot.Path
     if ($artifact.SHA256 -ine $ExpectedSha256) { throw 'The source ZIP no longer matches the reviewed SHA-256.' }
+    $approvalSnapshot = New-DeploymentApproval -Path $ApprovalPath -ExpectedSha256 $ApprovalSha256 -Expected @{
+        operation = 'CodeDeployment'; subscriptionId = [string]$SubscriptionId; resourceGroupName = $ResourceGroupName
+        webAppName = $WebAppName; payloadSha256 = $ExpectedSha256; approvalReference = $ApprovalReference
+        expectedAccessMode = $ExpectedAccessMode
+    }
     if (-not $Apply) {
         Write-Output 'Artifact and explicit target validated. No Azure calls; -Apply requires separate deployment authorization.'
         return
@@ -75,6 +83,7 @@ try {
         throw 'Run-from-package is incompatible with this source ZIP remote-build path.'
     }
     Assert-DeploymentSnapshot $snapshot
+    Assert-DeploymentSnapshot $approvalSnapshot
     & az webapp deploy --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
         --src-path $artifact.Path --type zip --clean true --async false --track-status false --timeout 600000 `
         --only-show-errors --output none
@@ -97,4 +106,8 @@ try {
     }
     if (-not $online) { throw 'The expected preview/sign-in response was not observed within bounded checks. Inspect deployment logs; no automatic retry, rollback or tier change was attempted.' }
     Write-Output "Code deployment succeeded and the expected $ExpectedAccessMode response was observed. This is not a readiness, participant-authorization, database, or Blob integration check."
-} finally { Remove-DeploymentSnapshot $snapshot }
+} finally {
+    try {
+        if ($null -ne $approvalSnapshot) { Remove-DeploymentSnapshot $approvalSnapshot }
+    } finally { Remove-DeploymentSnapshot $snapshot }
+}
