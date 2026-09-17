@@ -2,6 +2,55 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function New-DeploymentSnapshot {
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string] $ExpectedSha256
+    )
+    $sourcePath = (Resolve-Path -LiteralPath $Path).Path
+    $source = [System.IO.File]::Open($sourcePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+    $directory = Join-Path ([System.IO.Path]::GetTempPath()) "sunsum-deployment-$([guid]::NewGuid().ToString('N'))"
+    $snapshotPath = Join-Path $directory "input$([System.IO.Path]::GetExtension($sourcePath))"
+    $stream = $null
+    try {
+        $null = [System.IO.Directory]::CreateDirectory($directory)
+        $writer = [System.IO.File]::Open($snapshotPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try { $source.CopyTo($writer) } finally { $writer.Dispose() }
+        $stream = [System.IO.File]::Open($snapshotPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+        $snapshot = [pscustomobject]@{
+            Path = $snapshotPath
+            SourcePath = $sourcePath
+            SHA256 = $ExpectedSha256
+            Stream = $stream
+            SourceStream = $source
+            Directory = $directory
+        }
+        Assert-DeploymentSnapshot $snapshot
+        return $snapshot
+    } catch {
+        if ($null -ne $stream) { $stream.Dispose() }
+        $source.Dispose()
+        if ([System.IO.Directory]::Exists($directory)) { [System.IO.Directory]::Delete($directory, $true) }
+        throw
+    }
+}
+
+function Assert-DeploymentSnapshot {
+    param([Parameter(Mandatory)] $Snapshot)
+    foreach ($path in @($Snapshot.SourcePath, $Snapshot.Path)) {
+        if ((Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash -ine $Snapshot.SHA256) {
+            throw 'Deployment input or snapshot no longer matches the reviewed SHA-256.'
+        }
+    }
+}
+
+function Remove-DeploymentSnapshot {
+    param([Parameter(Mandatory)] $Snapshot)
+    $Snapshot.Stream.Dispose()
+    $Snapshot.SourceStream.Dispose()
+    [System.IO.Directory]::Delete($Snapshot.Directory, $true)
+}
+
 function Assert-ExactPublicIpv4 {
     param([AllowEmptyString()][string] $Address)
     if ($Address -cnotmatch '^(0|[1-9][0-9]{0,2})(\.(0|[1-9][0-9]{0,2})){3}$') {
@@ -110,4 +159,4 @@ function Test-AppServiceResponse {
     }
 }
 
-Export-ModuleMember -Function Assert-ExactPublicIpv4, Test-AppServiceArchivePath, Assert-FirewallApproval, Test-AppServiceResponse
+Export-ModuleMember -Function New-DeploymentSnapshot, Assert-DeploymentSnapshot, Remove-DeploymentSnapshot, Assert-ExactPublicIpv4, Test-AppServiceArchivePath, Assert-FirewallApproval, Test-AppServiceResponse

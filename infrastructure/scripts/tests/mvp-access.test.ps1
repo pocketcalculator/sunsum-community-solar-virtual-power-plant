@@ -10,6 +10,28 @@ function Assert-Throws([scriptblock] $Action) {
     try { & $Action | Out-Null } catch { $threw = $true }
     if (-not $threw) { throw 'Expected rejection of unsafe access configuration.' }
 }
+function Assert-AccessSnapshot([object[]] $Arguments, [string] $Operation) {
+    $argument = [string]$Arguments[[array]::IndexOf($Arguments, '--parameters') + 1]
+    if (-not $argument.StartsWith('@')) { throw 'Expected an access parameter snapshot.' }
+    $snapshotPath = $argument.Substring(1)
+    if ((Split-Path -Leaf (Split-Path -Parent $snapshotPath)) -notlike 'sunsum-deployment-*') { throw 'Access deployment still uses the mutable audit output.' }
+    $record = Get-Content -LiteralPath $snapshotPath -Raw | ConvertFrom-Json -AsHashtable
+    if ($record.parameters.approvalReference.value -cne 'review-123') { throw 'Access snapshot lost approval binding.' }
+    if ($Operation -eq 'SignIn' -and
+        ($record.parameters.approvedParticipantObjectIds.value.Count -ne 1 -or
+        $record.parameters.approvedParticipantObjectIds.value[0] -cne '44444444-4444-4444-8444-444444444444')) {
+        throw 'Sign-in snapshot changed the approved participant list.'
+    }
+    if ($Operation -eq 'BlobRoles' -and
+        ($record.parameters.blobDataAccess.value -cne 'Reader' -or
+        $record.parameters.approvedWebPrincipalId.value -cne '44444444-4444-4444-8444-444444444444')) {
+        throw 'Blob snapshot changed the approved role or identity.'
+    }
+    if ($IsWindows) {
+        Assert-Throws { $writer = [System.IO.File]::OpenWrite($snapshotPath); $writer.Dispose() }
+    }
+    $global:MvpSnapshotPath = $snapshotPath
+}
 $subscription = '11111111-1111-4111-8111-111111111111'
 $tenant = '22222222-2222-4222-8222-222222222222'
 $client = '33333333-3333-4333-8333-333333333333'
@@ -216,7 +238,7 @@ try {
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') {
             return '[{"name":"MICROSOFT_PROVIDER_AUTHENTICATION_SECRET","value":"synthetic-test-only","slotSetting":true}]'
         }
-        if ($args[0] -ceq 'deployment') { $global:MvpAuthWrites++; return }
+        if ($args[0] -ceq 'deployment') { Assert-AccessSnapshot $args SignIn; $global:MvpAuthWrites++; return }
         throw 'Unexpected sign-in command.'
     }
     foreach ($allowReplace in @($false, $true)) {
@@ -241,6 +263,7 @@ try {
             if ($latest -ceq '{"properties":{"platform":{"enabled":false}}}') {
                 & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @signInArgs -Apply | Out-Null
                 if ($global:MvpAuthWrites -ne 1) { throw 'Unchanged sign-in configuration should allow deployment.' }
+                if (Test-Path -LiteralPath (Split-Path -Parent $global:MvpSnapshotPath)) { throw 'Sign-in snapshot was not cleaned up.' }
             } else {
                 Assert-Throws { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @signInArgs -Apply }
                 if ($global:MvpAuthWrites -ne 0) { throw 'Changed or unreadable sign-in configuration must block deployment.' }
@@ -359,7 +382,7 @@ try {
             if ($privacy -ceq 'failed-read') { $global:LASTEXITCODE = 1; return '' }
             return (@{ properties = @{ publicAccess = $privacy } } | ConvertTo-Json -Depth 4)
         }
-        if ($args[0] -ceq 'deployment') { $global:MvpBlobWrites++; return }
+        if ($args[0] -ceq 'deployment') { Assert-AccessSnapshot $args BlobRoles; $global:MvpBlobWrites++; return }
         throw 'Unexpected Blob role command.'
     }
     $path = Join-Path $fixture 'BlobRoles.json'
@@ -393,6 +416,89 @@ try {
     $blobArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
     & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @blobArgs -Apply | Out-Null
     if ($global:MvpBlobWrites -ne 1 -or $global:MvpContainerReads -ne 2) { throw 'Private containers should permit the scoped grant.' }
+    if (Test-Path -LiteralPath (Split-Path -Parent $global:MvpSnapshotPath)) { throw 'Blob snapshot was not cleaned up.' }
+    Remove-Variable MvpSnapshotPath -Scope Global
+    $global:MvpHashMismatchPath = ''
+    function global:Get-FileHash {
+        param($LiteralPath, $Algorithm, $ErrorAction)
+        if ($LiteralPath -ceq $global:MvpHashMismatchPath) { return @{ Hash = '0' * 64 } }
+        Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm -ErrorAction Stop
+    }
+    function global:az {
+        $global:LASTEXITCODE = 0
+        if ($global:MvpMutationPending) {
+            $global:MvpMutationPending = $false
+            if ($global:MvpMutationKind -eq 'digest') {
+                $global:MvpHashMismatchPath = $global:MvpMutationPath
+            } else {
+                $replacement = "$global:MvpMutationPath.replacement"
+                $changed = Get-Content -LiteralPath $global:MvpMutationPath -Raw | ConvertFrom-Json -AsHashtable
+                $values = if ($changed.Contains('parameters')) { $changed.parameters } else { $changed }
+                $name = switch ($global:MvpMutationOperation) { 'SignIn' { 'approvedParticipantObjectIds' } 'BlobRoles' { 'blobDataAccess' } 'StorageNetwork' { 'networkMode' } }
+                $value = switch ($global:MvpMutationOperation) { 'SignIn' { ,@('55555555-5555-4555-8555-555555555555') } 'BlobRoles' { 'Contributor' } 'StorageNetwork' { 'Closed' } }
+                if ($changed.Contains('parameters')) { $values[$name].value = $value } else { $values[$name] = $value }
+                [System.IO.File]::WriteAllText($replacement, ($changed | ConvertTo-Json -Depth 8))
+                try {
+                    [System.IO.File]::Move($replacement, $global:MvpMutationPath, $true)
+                    $global:MvpMutationSucceeded = $true
+                } catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+                    if (-not $IsWindows) { throw }
+                } finally {
+                    if (Test-Path -LiteralPath $replacement) { Remove-Item -LiteralPath $replacement }
+                }
+            }
+        }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
+            return '{"id":"synthetic-test-resource","httpsOnly":true,"kind":"app,linux","identity":{"principalId":"44444444-4444-4444-8444-444444444444"}}'
+        }
+        if ($args[0] -ceq 'webapp' -and $args[2] -ceq 'show') { return '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2"}' }
+        if ($args[0] -ceq 'webapp') { return '[{"name":"MICROSOFT_PROVIDER_AUTHENTICATION_SECRET","value":"synthetic-test-only","slotSetting":true}]' }
+        if ($args[0] -ceq 'rest') {
+            if (($args -join ' ') -like '*/containers/*') { return '{"properties":{"publicAccess":"None"}}' }
+            return '{"properties":{"platform":{"enabled":false}}}'
+        }
+        if ($args[0] -ceq 'storage' -and $args[2] -ceq 'show') { return ($global:MvpStorageState | ConvertTo-Json -Depth 8) }
+        if ($args[0] -ceq 'deployment') { Assert-AccessSnapshot $args $global:MvpMutationOperation }
+        elseif ($args[0] -cne 'storage' -or $args[2] -cne 'update') { throw 'Unexpected access mutation-test command.' }
+        $global:MvpMutationWrites++
+        if ($global:MvpMutationKind -eq 'failure') { $global:LASTEXITCODE = 1 }
+    }
+    try {
+        foreach ($operation in @('SignIn', 'BlobRoles', 'StorageNetwork')) {
+            foreach ($scenario in @('input', 'output', 'digest', 'failure')) {
+                $config = switch ($operation) { 'SignIn' { $signIn } 'BlobRoles' { $roles } 'StorageNetwork' { $public } }
+                $path = Join-Path $fixture "mutation-$operation.json"
+                $config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding utf8NoBOM
+                $accessArgs = @{
+                    Operation = $operation; SubscriptionId = $subscription; ResourceGroupName = $group
+                    ConfigurationPath = $path; ExpectedSha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+                    OutputPath = Join-Path $fixture "$operation-$scenario.parameters.json"
+                }
+                $global:MvpMutationPath = [System.IO.Path]::GetFullPath($(if ($scenario -eq 'input') { $path } else { $accessArgs.OutputPath }))
+                $global:MvpMutationKind = $scenario
+                $global:MvpMutationOperation = $operation
+                $global:MvpMutationPending = $scenario -ne 'failure'
+                $global:MvpMutationSucceeded = $false
+                $global:MvpMutationWrites = 0
+                $message = ''
+                try { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @accessArgs -Apply | Out-Null } catch { $message = $_.Exception.Message }
+                $global:MvpHashMismatchPath = ''
+                if ($global:MvpMutationPending) { throw 'Access mutation test never reached preflight.' }
+                if ($scenario -eq 'digest' -or $global:MvpMutationSucceeded) {
+                    if ($global:MvpMutationWrites -ne 0 -or $message -notlike '*no longer matches the reviewed SHA-256*') { throw 'Changed access inputs or generated records reached a write.' }
+                } elseif ($scenario -eq 'failure') {
+                    if ($global:MvpMutationWrites -ne 1 -or $message -notmatch 'Access deployment did not report success|Storage network update failed') { throw 'Access deployment failure was not propagated.' }
+                } elseif ($global:MvpMutationWrites -ne 1 -or $message -ne '') { throw "Access replacement denial did not preserve the reviewed operation: $message" }
+                $released = [System.IO.File]::Open($accessArgs.OutputPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+                $released.Dispose()
+                if ($global:MvpMutationWrites -eq 1 -and $operation -ne 'StorageNetwork' -and
+                    (Test-Path -LiteralPath (Split-Path -Parent $global:MvpSnapshotPath))) { throw 'Access snapshot leaked after deployment.' }
+            }
+        }
+    } finally {
+        Remove-Item Function:\Get-FileHash -Force
+        Remove-Variable MvpHashMismatchPath, MvpMutationPath, MvpMutationKind, MvpMutationOperation, MvpMutationPending, MvpMutationSucceeded, MvpMutationWrites, MvpSnapshotPath -Scope Global -ErrorAction SilentlyContinue
+    }
     if ($BicepPath) {
         $templatePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\templates\storage-role-grants.bicep'))
         $compiledJson = & $BicepPath build $templatePath --no-restore --stdout

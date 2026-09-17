@@ -286,7 +286,7 @@ and restores Storage's **closed** default; it is not a code-only deployment.
 ```powershell
 # LOCAL validation: no Azure calls without -Apply.
 $parameters = '.azure\dev\resources.parameters.json'
-$hash = (Get-FileHash -LiteralPath $parameters -Algorithm SHA256).Hash
+$hash = '<sha256-recorded-in-the-approved-review>'
 pwsh -NoProfile -File infrastructure\scripts\Provision-Infrastructure.ps1 `
   -SubscriptionId $env:AZURE_SUBSCRIPTION_ID -ResourceGroupName $env:AZURE_RESOURCE_GROUP `
   -ParametersPath $parameters -ExpectedSha256 $hash `
@@ -298,6 +298,21 @@ pwsh -NoProfile -File infrastructure\scripts\Provision-Infrastructure.ps1 `
 The script validates explicit inputs and the reviewed parameter hash, then uses
 `az deployment group create --mode Incremental` only with `-Apply`. It never
 registers a provider, switches the active subscription, or grants Azure roles.
+Provisioning, access configuration and ZIP deployment use create-only temporary
+copies verified against the reviewed SHA-256. Validation and CLI consumption use
+the same copies; the original inputs and copies are held open with read-only
+sharing until the operation finishes, and their hashes are rechecked before the
+write. Temporary copies are removed on ordinary success, dry-run and failure;
+an abruptly terminated process may leave copies in the operator's temporary
+directory. Preserve originals and audit records separately.
+
+Record hashes during review, not by recomputing them from edited inputs at apply
+time. Keep inputs, templates, audit files and the temporary directory under the
+operator's control and serialize deployment changes. File sharing is enforced
+by Windows but may be advisory on other operating systems; these guards do not
+defend against a compromised operator account or a writer bypassing OS sharing.
+They also do not serialize remote Azure configuration changes.
+
 Review the Bicep revision alongside the parameters and retain both with the
 approval record. Literal process variables such as `AZURE_SUBSCRIPTION_ID` and
 `AZURE_RESOURCE_GROUP` are supplied by the operator, not a deployment framework.
@@ -492,7 +507,7 @@ and exposes it as `APPROVAL_REFERENCE`; adding it does not activate public acces
 
 ```powershell
 $inputFile = '.azure\dev\storage-network.json'
-$hash = (Get-FileHash -LiteralPath $inputFile -Algorithm SHA256).Hash
+$hash = '<sha256-recorded-in-the-approved-review>'
 # LOCAL ONLY by default. For roles use -Operation BlobRoles and blob-roles.json.
 pwsh -NoProfile -File infrastructure\scripts\Deploy-AccessConfiguration.ps1 `
   -Operation StorageNetwork -SubscriptionId $env:AZURE_SUBSCRIPTION_ID `
@@ -750,7 +765,7 @@ own managed identity for PostgreSQL/Blob, never a participant's subscription rol
 
 ```powershell
 $inputFile = '.azure\dev\sign-in.json'
-$hash = (Get-FileHash -LiteralPath $inputFile -Algorithm SHA256).Hash
+$hash = '<sha256-recorded-in-the-approved-review>'
 # LOCAL validation only; no directory/secret/network calls.
 pwsh -NoProfile -File infrastructure\scripts\Deploy-AccessConfiguration.ps1 `
   -Operation SignIn -SubscriptionId $env:AZURE_SUBSCRIPTION_ID `
@@ -837,6 +852,13 @@ pwsh -NoProfile -File infrastructure\scripts\Deploy-AppServiceCode.ps1 `
 Both access-configuration and code-deployment operations require the `app` and
 `linux` kind tokens and reject `functionapp`, including mixed-kind responses.
 These operations are for the web application, not the separate viability service.
+The ZIP allowlist and reviewed hash are checked against the temporary copy that
+is passed to `az webapp deploy`, not against a source path later reopened for
+upload. Access operations hash generated parameter bytes before writing their
+create-only audit record, then deploy a protected copy of those same bytes.
+The original audit record remains after temporary-copy cleanup. StorageNetwork
+continues to use validated in-memory values, with record integrity checked before
+its direct update; it does not read network settings back from the audit file.
 
 The explicit Azure CLI path checks the existing Linux/HTTPS target and disabled
 FTP/SCM policies. It also requires `NODE|22-lts`, the exact documented npm startup

@@ -96,6 +96,27 @@ try {
     if ($package.Files -ne 6 -or $package.SHA256 -notmatch '^[A-F0-9]{64}$') {
         throw 'The real packaging script did not enforce its source allowlist.'
     }
+    $snapshot = New-DeploymentSnapshot -Path $zipPath -ExpectedSha256 $package.SHA256.ToLowerInvariant()
+    $snapshotDirectory = $snapshot.Directory
+    try {
+        if ($snapshot.Path -ceq $package.Path) { throw 'A deployment snapshot must not reuse the source path.' }
+        Assert-DeploymentSnapshot $snapshot
+        $global:SnapshotHashFailurePath = $snapshot.Path
+        function global:Get-FileHash {
+            param($LiteralPath, $Algorithm, $ErrorAction)
+            if ($LiteralPath -ceq $global:SnapshotHashFailurePath) { return @{ Hash = '0' * 64 } }
+            Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm -ErrorAction Stop
+        }
+        try {
+            Assert-Throws { Assert-DeploymentSnapshot $snapshot } 'A changed snapshot digest must fail.'
+            $global:SnapshotHashFailurePath = $snapshot.SourcePath
+            Assert-Throws { Assert-DeploymentSnapshot $snapshot } 'A changed source digest must fail.'
+        } finally {
+            Remove-Item Function:\Get-FileHash -Force
+            Remove-Variable SnapshotHashFailurePath -Scope Global
+        }
+    } finally { Remove-DeploymentSnapshot $snapshot }
+    if (Test-Path -LiteralPath $snapshotDirectory) { throw 'Snapshot cleanup must remove the temporary directory.' }
     $linkedRoot = Join-Path $fixture 'linked-source'
     $linkType = if ($IsWindows) { 'Junction' } else { 'SymbolicLink' }
     $null = New-Item -ItemType $linkType -Path $linkedRoot -Target ([System.IO.Path]::GetFullPath($source))
@@ -346,9 +367,29 @@ try {
     $global:AzureAvailabilityResponse = '{"nameAvailable":true}'
     $global:AzureAvailabilityExitCode = 0
     $global:AzureAvailabilityChecks = @()
+    $global:AzureProvisionSnapshotPath = ''
+    $global:AzureProvisionOriginalPath = [System.IO.Path]::GetFullPath($provisionPath)
+    $global:AzureProvisionExpectedHash = ''
+    $global:AzureProvisionChange = $false
+    $global:AzureProvisionChanged = $false
+    $global:AzureProvisionFailure = $false
     function global:az {
         $global:AzureSafetyTestCalls++
         if ($args[0] -ceq 'resource' -and $args[1] -ceq 'list') {
+            if ($global:AzureProvisionChange) {
+                $replacement = "$global:AzureProvisionOriginalPath.replacement"
+                $changed = Get-Content -LiteralPath $global:AzureProvisionOriginalPath -Raw | ConvertFrom-Json -AsHashtable
+                $changed.parameters.postgresServerName.value = 'unreviewed-postgres'
+                [System.IO.File]::WriteAllText($replacement, ($changed | ConvertTo-Json -Depth 5))
+                try {
+                    [System.IO.File]::Move($replacement, $global:AzureProvisionOriginalPath, $true)
+                    $global:AzureProvisionChanged = $true
+                } catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+                    if (-not $IsWindows) { throw }
+                } finally {
+                    if (Test-Path -LiteralPath $replacement) { Remove-Item -LiteralPath $replacement }
+                }
+            }
             $global:LASTEXITCODE = $global:AzureProvisionExitCode
             return $global:AzureProvisionInventory
         }
@@ -380,8 +421,20 @@ try {
             return '{"nameAvailable":true}'
         }
         if ($args[0] -ceq 'deployment' -and $args[1] -ceq 'group' -and $args[2] -ceq 'create') {
+            $parameterArgument = [string]$args[[array]::IndexOf($args, '--parameters') + 1]
+            if (-not $parameterArgument.StartsWith('@')) { throw 'Expected snapshotted provisioning parameters.' }
+            $global:AzureProvisionSnapshotPath = $parameterArgument.Substring(1)
+            if ($global:AzureProvisionSnapshotPath -ceq $global:AzureProvisionOriginalPath -or
+                (Get-FileHash -LiteralPath $global:AzureProvisionSnapshotPath -Algorithm SHA256).Hash -ine $global:AzureProvisionExpectedHash) {
+                throw 'Provisioning must deploy the reviewed snapshot, not the mutable input path.'
+            }
+            if ($IsWindows) {
+                foreach ($protectedPath in @($global:AzureProvisionOriginalPath, $global:AzureProvisionSnapshotPath)) {
+                    Assert-Throws { $writer = [System.IO.File]::OpenWrite($protectedPath); $writer.Dispose() } 'Provisioning inputs must remain protected during deployment.'
+                }
+            }
             $global:AzureProvisionWrites++
-            $global:LASTEXITCODE = 0
+            $global:LASTEXITCODE = if ($global:AzureProvisionFailure) { 1 } else { 0 }
             return
         }
         throw 'Unexpected provisioning command.'
@@ -393,6 +446,7 @@ try {
         $provisionParameters.parameters.webAppMode = @{ value = $mode }
         $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
         $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
+        $global:AzureProvisionExpectedHash = $provision.ExpectedSha256
         foreach ($inventory in @(
             '[{"type":"Microsoft.DBforPostgreSQL/flexibleServers","name":"SAMPLE-POSTGRES"}]',
             '[{"type":"Microsoft.Storage/storageAccounts","name":"samplestorage"}]',
@@ -411,6 +465,7 @@ try {
         $global:AzureProvisionExitCode = 0
         & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply | Out-Null
         if ($global:AzureProvisionWrites -ne 1) { throw 'Available names and a valid web target should permit first-time provisioning.' }
+        if (Test-Path -LiteralPath (Split-Path -Parent $global:AzureProvisionSnapshotPath)) { throw 'Provisioning must clean up its snapshot on success.' }
         $expectedChecks = @('Microsoft.DBforPostgreSQL/flexibleServers', 'Microsoft.Storage/storageAccounts')
         if ($mode -ceq 'Create') { $expectedChecks += 'Microsoft.Web/sites' }
         if (($global:AzureAvailabilityChecks -join '|') -cne ($expectedChecks -join '|') -or
@@ -447,6 +502,27 @@ try {
         }
         $global:AzureAvailabilityFailureType = ''
         $global:AzureAvailabilityExitCode = 0
+        $originalParameters = [System.IO.File]::ReadAllBytes($provisionPath)
+        $global:AzureProvisionChange = $true
+        $global:AzureProvisionChanged = $false
+        $global:AzureProvisionWrites = 0
+        $message = ''
+        try {
+            & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply | Out-Null
+        } catch { $message = $_.Exception.Message }
+        finally {
+            $global:AzureProvisionChange = $false
+            [System.IO.File]::WriteAllBytes($provisionPath, $originalParameters)
+        }
+        if ($global:AzureProvisionChanged) {
+            if ($global:AzureProvisionWrites -ne 0 -or $message -notlike '*no longer matches the reviewed SHA-256*') { throw 'Changed provisioning parameters reached ARM.' }
+        } elseif ($global:AzureProvisionWrites -ne 1 -or $message -ne '') { throw "A denied replacement should leave only the approved deployment: $message (writes=$global:AzureProvisionWrites)." }
+        $global:AzureProvisionFailure = $true
+        $message = ''
+        try { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply | Out-Null } catch { $message = $_.Exception.Message }
+        $global:AzureProvisionFailure = $false
+        if ($message -notlike '*Provisioning did not report success*' -or
+            (Test-Path -LiteralPath (Split-Path -Parent $global:AzureProvisionSnapshotPath))) { throw 'Failed provisioning must clean up its snapshot and report failure.' }
         if ($mode -ceq 'Existing') {
             $validWeb = $global:AzureExistingWeb
             foreach ($response in @('{}', '[]', 'null', 'invalid-json', 'read-failure',
@@ -474,9 +550,27 @@ try {
     $global:AzureCodeBuildSettings = @()
     $global:AzureCodeKind = 'app,linux'
     $global:AzureCodeHelp = '--track-status --clean'
+    $global:AzureCodeChange = $false
+    $global:AzureCodeChanged = $false
     function global:az {
         $global:LASTEXITCODE = 0
-        if ($args -contains '--help') { return $global:AzureCodeHelp }
+        if ($args -contains '--help') {
+            if ($global:AzureCodeChange) {
+                $replacement = "$global:AzureCodeOriginalPath.replacement"
+                [System.IO.File]::Copy($global:AzureCodeOriginalPath, $replacement)
+                $archive = [System.IO.Compression.ZipFile]::Open($replacement, [System.IO.Compression.ZipArchiveMode]::Update)
+                try { $null = $archive.CreateEntry('app/unreviewed.ts') } finally { $archive.Dispose() }
+                try {
+                    [System.IO.File]::Move($replacement, $global:AzureCodeOriginalPath, $true)
+                    $global:AzureCodeChanged = $true
+                } catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+                    if (-not $IsWindows) { throw }
+                } finally {
+                    if (Test-Path -LiteralPath $replacement) { Remove-Item -LiteralPath $replacement }
+                }
+            }
+            return $global:AzureCodeHelp
+        }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
             return (@{ id = 'synthetic-test-resource'; host = 'sample-web.azurewebsites.net'; httpsOnly = $true; kind = $global:AzureCodeKind } | ConvertTo-Json)
         }
@@ -490,6 +584,16 @@ try {
             if ($args -notcontains '--clean' -or $args[[array]::IndexOf($args, '--clean') + 1] -cne 'true') {
                 throw 'Source ZIP upload must explicitly request target cleanup.'
             }
+            $global:AzureCodeSnapshotPath = [string]$args[[array]::IndexOf($args, '--src-path') + 1]
+            if ($global:AzureCodeSnapshotPath -ceq $global:AzureCodeOriginalPath -or
+                (Get-FileHash -LiteralPath $global:AzureCodeSnapshotPath -Algorithm SHA256).Hash -ine $global:AzureCodeExpectedHash) {
+                throw 'Source ZIP upload must consume a separate hash-verified snapshot.'
+            }
+            if ($IsWindows) {
+                foreach ($protectedPath in @($global:AzureCodeOriginalPath, $global:AzureCodeSnapshotPath)) {
+                    Assert-Throws { $writer = [System.IO.File]::OpenWrite($protectedPath); $writer.Dispose() } 'ZIP inputs must remain protected during upload.'
+                }
+            }
             $global:AzureCodeWrites++
             $global:LASTEXITCODE = 1
             return
@@ -497,6 +601,9 @@ try {
         throw 'Unexpected code deployment command.'
     }
     $deploy.ExpectedSha256 = $package.SHA256
+    $global:AzureCodeOriginalPath = $package.Path
+    $global:AzureCodeExpectedHash = $package.SHA256
+    $global:AzureCodeSnapshotPath = ''
     foreach ($scenario in @('function-app', 'wrong-kind', 'mixed-function-kind', 'no-clean-support', 'no-track-support', 'missing-runtime', 'wrong-node', 'wrong-startup', 'missing-build', 'build-disabled', 'wrong-build', 'duplicate-build', 'run-from-package', 'read-failure', 'valid')) {
         $global:AzureCodeWrites = 0
         $global:AzureCodeKind = 'app,linux'
@@ -526,6 +633,7 @@ try {
         try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
         if ($scenario -ceq 'valid') {
             if ($global:AzureCodeWrites -ne 1 -or $message -notlike 'Deployment did not report success*') { throw 'Valid source-build configuration must reach the mocked deployment.' }
+            if (Test-Path -LiteralPath (Split-Path -Parent $global:AzureCodeSnapshotPath)) { throw 'The ZIP snapshot must be removed after deployment failure.' }
         } elseif ($global:AzureCodeWrites -ne 0 -or $message -eq '') {
             throw "Unsafe source-build scenario $scenario reached deployment."
         }
@@ -549,6 +657,18 @@ try {
             if ($global:AzureCodeWrites -ne 1 -or $message -notlike 'Deployment did not report success*') { throw 'Supported site/SCM TLS should reach the mocked deployment.' }
         }
     }
+    $originalArchive = [System.IO.File]::ReadAllBytes($zipPath)
+    $global:AzureCodeChange = $true
+    $global:AzureCodeWrites = 0
+    $message = ''
+    try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+    finally {
+        $global:AzureCodeChange = $false
+        [System.IO.File]::WriteAllBytes($zipPath, $originalArchive)
+    }
+    if ($global:AzureCodeChanged) {
+        if ($global:AzureCodeWrites -ne 0 -or $message -notlike '*no longer matches the reviewed SHA-256*') { throw 'An unreviewed replacement ZIP reached upload.' }
+    } elseif ($global:AzureCodeWrites -ne 1 -or $message -notlike 'Deployment did not report success*') { throw 'A denied ZIP replacement must leave only the verified snapshot for upload.' }
     if ($BicepPath) {
         foreach ($templateName in @('resources', 'web')) {
             $templatePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\templates\$templateName.bicep"))
@@ -594,9 +714,13 @@ try {
     Remove-Item -LiteralPath Function:\az -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureSafetyTestCalls -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureProvisionInventory, AzureProvisionExitCode, AzureProvisionWrites -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name AzureProvisionSnapshotPath, AzureProvisionOriginalPath, AzureProvisionExpectedHash -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name AzureProvisionChange, AzureProvisionChanged, AzureProvisionFailure -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureExistingWeb, AzureWebReadFailure, AzureWebReads, AzureAvailabilityFailureType, AzureAvailabilityResponse, AzureAvailabilityExitCode, AzureAvailabilityChecks -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureCodeWrites, AzureCodeReadFailure, AzureCodeRuntime, AzureCodeBuildSettings -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureCodeKind, AzureCodeHelp -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name AzureCodeOriginalPath, AzureCodeExpectedHash, AzureCodeSnapshotPath -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name AzureCodeChange, AzureCodeChanged -Scope Global -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }
 }
 Write-Output 'Deployment safety: IPv4, real ZIP exclusion/tamper checks and target-bound approval checks passed.'
