@@ -60,7 +60,8 @@ export interface DocumentPayload {
   readonly original_filename: string;
   readonly content_type: string;
   readonly size_bytes: number;
-  readonly doc_type: string | null;
+  /** Never null — see `DocumentRecord.docType`. */
+  readonly doc_type: string;
   readonly disclosure_class: string;
   readonly uploaded_by_user_id: string;
   readonly created_at: string;

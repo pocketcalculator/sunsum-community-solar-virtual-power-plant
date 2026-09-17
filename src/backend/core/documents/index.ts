@@ -7,6 +7,14 @@ import {
   type DocumentRecord,
 } from "../sites";
 import { toDocumentPayload, type DocumentPayload } from "../sites";
+import {
+  buildDocumentBlobLocation,
+  formatBlobPath,
+  normalizeDocType,
+  siteDocumentParent,
+} from "./storage";
+
+export * from "./storage";
 
 export const ALLOWED_DOCUMENT_CONTENT_TYPES = [
   "application/pdf",
@@ -49,8 +57,22 @@ export async function addSiteDocument(
     });
   }
   const now = new Date().toISOString();
+  const documentId = store.nextId("document");
+  const docType = normalizeDocType(input.docType);
+  /**
+   * The blob name is derived from the document id, so it is built here rather
+   * than by the uploader: the record and the blob agree on one location, and a
+   * caller-supplied filename cannot choose its own prefix.
+   */
+  const location = buildDocumentBlobLocation({
+    parent: siteDocumentParent(site.id),
+    documentId,
+    docType,
+    originalFilename: input.originalFilename,
+    disclosureClass: input.disclosureClass,
+  });
   const document: DocumentRecord = {
-    id: store.nextId("document"),
+    id: documentId,
     /**
      * A document hangs off exactly one parent. This endpoint uploads against a
      * site, so the site is the parent even once a project exists; readers pass
@@ -58,11 +80,11 @@ export async function addSiteDocument(
      */
     siteId: site.id,
     projectId: null,
-    blobPath: `placeholder/sites/${site.id}/${now}/${input.originalFilename}`,
+    blobPath: formatBlobPath(location),
     originalFilename: input.originalFilename,
     contentType: input.contentType,
     sizeBytes: input.sizeBytes,
-    docType: input.docType,
+    docType,
     disclosureClass: input.disclosureClass,
     uploadedByUserId: viewer.userId,
     createdAt: now,

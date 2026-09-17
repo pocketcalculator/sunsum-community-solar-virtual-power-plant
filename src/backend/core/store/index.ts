@@ -167,7 +167,7 @@ function demoState(seedDemoProjects: boolean): StoreState {
       id: DEMO_DOCUMENT_ID,
       siteId: null,
       projectId: project.id,
-      blobPath: "private/demo/document.pdf",
+      blobPath: "investor-tier-1/projects/" + project.id + "/site_summary/" + DEMO_DOCUMENT_ID + "/site-summary.pdf",
       originalFilename: "site-summary.pdf",
       contentType: "application/pdf",
       sizeBytes: 1024,

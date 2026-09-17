@@ -177,13 +177,13 @@ of the separate boundary.
 [The technical design](../../docs/sunsum_technical_design_doc.md) selects
 **Azure Database for PostgreSQL Flexible Server with Drizzle ORM** for
 persistence and private Blob Storage for document files. Drizzle Kit is the
-selected schema/migration tooling. None of the database packages, schema,
-migrations, provisioning, or authentication is implemented yet; the PostgreSQL
-driver and connection configuration remain to be selected. The proposed Entra
-integration and the broader WS2 deployment topology also remain separate from
-this scaffold.
+selected schema/migration tooling. The database schema has since landed (see
+below) and the storage account is provisioned, but neither is wired to the
+running endpoints: the API is still served entirely from the in-memory store.
+The proposed Entra integration and the broader WS2 deployment topology also
+remain separate from this scaffold.
 
-Two seams allow those integrations without changing the workflow rules:
+Three seams allow those integrations without changing the workflow rules:
 
 - **Persistence.** `core/store/index.ts` provides the shared in-memory demo
   implementation behind `BackendStore`; `createMemoryBackendStore` gives tests
@@ -202,9 +202,101 @@ Two seams allow those integrations without changing the workflow rules:
   from the request, so a caller cannot choose a role. Before production, replace
   them with authenticated request-to-viewer resolution and add CSRF protection
   for cookie sessions or suitable bearer-token protection.
+- **Document storage.** `core/documents/storage.ts` decides where a document
+  lives; `blob/index.ts` is the only module that talks to Azure, selected by
+  `SUNSUM_BLOB` exactly as `SUNSUM_STORE` selects persistence. See
+  [Document blob storage](#document-blob-storage).
 
-Neither is production ready. The App Service smoke test exercises the
-in-memory-backed API, not a real database, data set, or identity provider.
+Neither the persistence nor the identity seam is production ready. The App
+Service smoke test exercises the in-memory-backed API, not a real database,
+data set, or identity provider.
+
+## Document blob storage
+
+Document *metadata* is a row; the file itself is a blob. The split follows the
+same shape as the persistence seam, so the demo runs with no Azure account and
+no credentials.
+
+| Layer | Module | Knows about Azure |
+| --- | --- | --- |
+| Where a blob lives | `core/documents/storage.ts` | no |
+| Moving bytes | `blob/index.ts` | yes, lazily |
+
+Keeping the layout in `core` means it is unit-testable without mocking an SDK,
+and that both implementations of the client necessarily agree on the path.
+
+### Blob path layout
+
+```text
+{container}/{sites|projects}/{parentId}/{docType}/{documentId}/{filename}
+```
+
+The document id is its own segment rather than a filename prefix, so two
+uploads of the same filename cannot collide and a blob can be located from its
+record without re-deriving a timestamp.
+
+`documents.blob_path` stores this **fully qualified**, including the container.
+Deriving the container from `disclosure_class` at read time would instead make
+the record wrong the moment a document is re-disclosed and copied.
+
+### One container per disclosure class
+
+`owner-private` and `investor-tier-1`, mapped by `DOCUMENT_CONTAINERS`.
+
+`core` already enforces disclosure on every read, so this is not the access
+check — it is a coarser boundary underneath it. A credential scoped to
+`investor-tier-1` cannot name a blob in `owner-private` at all, so an
+authorization bug in the application cannot by itself expose an owner's
+electricity bill. This is only safe because a document's class is fixed at
+upload: `addSiteDocument` is the only writer and there is no re-classification
+path.
+
+### Untrusted input in a path
+
+`original_filename` and `doc_type` are caller-supplied and both become path
+segments. `safeFilename` drops any directory part before sanitising — only the
+leaf is meaningful, and keeping the rest would let the caller choose the
+prefix — and `safeSegment` removes `..` and separators rather than escaping
+them. `tests/unit/backend/document-storage.test.ts` asserts a crafted
+`../../../etc/passwd` cannot escape its prefix.
+
+### Configuration
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SUNSUM_BLOB` | `memory` | `memory` keeps blobs in-process; `azure` uses the account below. |
+| `AZURE_STORAGE_ACCOUNT_NAME` | — | Required when `SUNSUM_BLOB=azure`. |
+
+There is no connection string and no account key, because the account has
+shared-key access disabled: the credential is `az login` locally and the app's
+managed identity when deployed. `azure` mode with no account name throws at
+startup rather than falling back to memory — a silent fallback would make
+uploads appear to succeed and then vanish.
+
+The account, its containers and the access it still needs are described in
+[`infrastructure/docs/blob-storage.md`](../../infrastructure/docs/blob-storage.md).
+**It is not reachable yet** — see the blockers recorded there.
+
+### What this does not do yet
+
+`blob/index.ts` has **no caller in any request path**, and that is deliberate
+rather than an oversight: `POST /sites/{id}/documents` is contracted to carry
+document *metadata* only, with no file content in the body, so no endpoint
+currently has bytes to write. Transferring the file itself is the §7.6
+short-lived-SAS design, which needs data-plane access the subscription has not
+granted — so it could not be written and verified here.
+
+What that means in practice:
+
+- `documents.blob_path` is now a real, parseable location for every record,
+  including the seeded ones, so the metadata is correct ahead of the bytes.
+- The seam is covered by `tests/unit/backend/blob-client.test.ts` and
+  `document-storage.test.ts` (32 tests), including the container split and
+  path-traversal attempts.
+- Nothing proves the Azure implementation against a live account. The first
+  code that moves bytes must route through `documentBlobClient()` rather than
+  constructing an SDK client of its own, and should be landed together with a
+  check against the real account once the blockers clear.
 
 ### Reconciling with the database schema
 

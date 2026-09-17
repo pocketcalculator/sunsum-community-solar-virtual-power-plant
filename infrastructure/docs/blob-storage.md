@@ -1,0 +1,117 @@
+# Blob storage for site documents
+
+Site documents — the electricity bill collected at intake today, and the
+screening reports, site summaries and land reports the charter adds later —
+are files. The row in `documents` is metadata; this is where the bytes go.
+
+- **Account** `stsunsumsolardevcus`
+- **Resource group** `rg-sunsum-solar-dev-centralus` (centralus)
+- **Subscription** `f941228c-d6df-4b2f-93e0-2221773d2ba1`
+- **Template** [`../templates/storage.bicep`](../templates/storage.bicep)
+
+The template is the source of truth. It was checked against the live account
+with `az deployment group what-if`, which reports every resource as `Modify`
+rather than `Create` and no property drift beyond server-populated defaults.
+
+```powershell
+az deployment group what-if `
+  --resource-group rg-sunsum-solar-dev-centralus `
+  --template-file infrastructure/templates/storage.bicep
+```
+
+## Configuration
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| SKU | `Standard_LRS` | Dev. Documents are re-uploadable, and geo-redundancy triples the cost of a hackathon environment. |
+| Kind / tier | `StorageV2`, Hot | Uploads are read back immediately during a demo. |
+| `allowSharedKeyAccess` | `false` | No account key exists to leak, embed or rotate. Access is Entra plus RBAC. |
+| `allowBlobPublicAccess` | `false` | No document is public; anonymous access is refused at the account level so a mis-set container cannot open one up. |
+| `minimumTlsVersion` | `TLS1_2` | — |
+| Blob + container soft delete | 7 days | A wrong delete during the hackathon is recoverable. |
+
+## Containers
+
+| Container | Holds |
+| --- | --- |
+| `owner-private` | Everything by default, including the electricity bill. |
+| `investor-tier-1` | Only documents an operator explicitly disclosed to investors. |
+
+One container per disclosure class, rather than the class encoded in a path.
+The application already enforces disclosure on every read; this puts a coarser
+boundary underneath that check, so a credential scoped to `investor-tier-1`
+cannot name an owner-private blob at all. The rationale and the path layout are
+in [`src/backend/README.md`](../../src/backend/README.md#document-blob-storage).
+
+## The account is not reachable yet
+
+Two blockers, both needing permissions this workstream does not have. Until
+both are cleared, `SUNSUM_BLOB` must stay `memory` — which is the default, so
+nothing breaks by leaving it alone.
+
+### 1. Public network access is disabled by tenant policy
+
+An Azure Policy with a **modify** effect, `StorageAccount_PublicNetwork_Modify`,
+rewrites `publicNetworkAccess` to `Disabled` on every create and every update in
+this subscription. A `PATCH` setting it to `Enabled` returns HTTP 200 and the
+value stays `Disabled` — nothing errors, which is what makes this easy to miss.
+Two sibling policies enforce `allowSharedKeyAccess` and `allowBlobPublicAccess`
+the same way.
+
+The effect is that an unauthenticated request to the blob endpoint is rejected
+with `AuthorizationFailure` at the network layer, before any token is looked at:
+
+```text
+403 AuthorizationFailure
+This request is not authorized to perform this operation.
+```
+
+The only route in is a **private endpoint**, which needs a VNet and, for the
+deployed app, an App Service plan that supports VNet integration. The current
+plan is `asp-sunsum-smoke-free` on **Free F1**, which does not — moving to Basic
+or higher is a prerequisite. `storage.bicep` takes
+`privateEndpointSubnetId` and `privateDnsZoneId` and creates the endpoint when
+they are supplied.
+
+The template declares `publicNetworkAccess: 'Disabled'` deliberately. Declaring
+`Enabled` would produce a template that never converges and a what-if that
+always shows drift, because the policy wins.
+
+### 2. No data-plane role assignment
+
+Creating the containers worked because `az storage container-rm create` is a
+control-plane call. Reading or writing a *blob* is a data-plane call and needs
+an RBAC role, which this workstream cannot grant: it holds Contributor, not
+`Microsoft.Authorization/roleAssignments/write`.
+
+A subscription Owner or User Access Administrator needs to run:
+
+```powershell
+az role assignment create `
+  --assignee <objectId> `
+  --role "Storage Blob Data Contributor" `
+  --scope "/subscriptions/f941228c-d6df-4b2f-93e0-2221773d2ba1/resourceGroups/rg-sunsum-solar-dev-centralus/providers/Microsoft.Storage/storageAccounts/stsunsumsolardevcus"
+```
+
+for each principal that needs access:
+
+- each developer running locally against `SUNSUM_BLOB=azure`;
+- the App Service's managed identity, which **does not exist yet** —
+  `app-sunsum-smoke-928e5e28` has no identity assigned. Assign a system-assigned
+  identity first, then grant it the role.
+
+Or supply the ids to the template, which does the same thing re-runnably:
+
+```powershell
+az deployment group create `
+  --resource-group rg-sunsum-solar-dev-centralus `
+  --template-file infrastructure/templates/storage.bicep `
+  --parameters blobDataContributorPrincipalIds="['<objectId>']"
+```
+
+## Cost
+
+Standard_LRS hot storage is roughly $0.02 per GB per month with no minimum.
+Demo-scale document volume is well under a gigabyte, so the account is
+effectively free; soft delete retains deleted blobs for 7 days and is billed the
+same way. There is no charge for an idle account beyond stored bytes.

@@ -26,6 +26,8 @@
     "db:verify": "node scripts/db.mjs verify"
   },
   "dependencies": {
+    "@azure/identity": "4.13.3",
+    "@azure/storage-blob": "12.33.0",
     "drizzle-orm": "0.45.2",
     "next": "16.3.4",
     "pg": "8.23.0",

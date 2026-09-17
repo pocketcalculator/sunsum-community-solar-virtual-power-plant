@@ -187,10 +187,16 @@ ON CONFLICT (id) DO UPDATE
 -- investor cannot see. The assertions below check that it did.
 -- ---------------------------------------------------------------------------
 
+-- `blob_path` is stored fully qualified as `{container}/{blob name}`, matching
+-- formatBlobPath() in src/backend/core/documents/storage.ts. The container is
+-- the one for the row's disclosure class, so a seeded row locates its own blob
+-- the same way an uploaded one does.
+
 INSERT INTO documents (id, site_id, blob_path, original_filename, content_type, size_bytes,
                        doc_type, uploaded_by_user_id) VALUES
   ('d0c00000-0000-4000-8000-000000000001', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01',
-   'seed/sites/c01/electricity-bill.pdf', 'electricity-bill.pdf', 'application/pdf', 184320,
+   'owner-private/sites/8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01/electricity_bill/d0c00000-0000-4000-8000-000000000001/electricity-bill.pdf',
+   'electricity-bill.pdf', 'application/pdf', 184320,
    'electricity_bill', '7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40')
 ON CONFLICT (id) DO UPDATE
   SET blob_path = EXCLUDED.blob_path, original_filename = EXCLUDED.original_filename;
@@ -198,7 +204,8 @@ ON CONFLICT (id) DO UPDATE
 INSERT INTO documents (id, site_id, blob_path, original_filename, content_type, size_bytes,
                        doc_type, disclosure_class, uploaded_by_user_id) VALUES
   ('d0c00000-0000-4000-8000-000000000002', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01',
-   'seed/sites/c01/site-summary.pdf', 'site-summary.pdf', 'application/pdf', 96256,
+   'investor-tier-1/sites/8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01/site_summary/d0c00000-0000-4000-8000-000000000002/site-summary.pdf',
+   'site-summary.pdf', 'application/pdf', 96256,
    'site_summary', 'investor_tier_1', '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71')
 ON CONFLICT (id) DO UPDATE
   SET blob_path = EXCLUDED.blob_path, original_filename = EXCLUDED.original_filename,

@@ -827,6 +827,7 @@ components:
         - original_filename
         - content_type
         - size_bytes
+        - doc_type
         - created_at
       properties:
         id:
@@ -841,7 +842,9 @@ components:
           format: int64
         doc_type:
           type: string
-          nullable: true
+          description: |
+            Always present. `documents.doc_type` is `NOT NULL`, and an upload that
+            omits one is resolved to `other` before the record is written.
         created_at:
           type: string
           format: date-time
@@ -856,6 +859,7 @@ components:
         - original_filename
         - content_type
         - size_bytes
+        - doc_type
         - uploaded_by_user_id
         - created_at
       properties:
@@ -879,8 +883,11 @@ components:
           format: int64
         doc_type:
           type: string
-          nullable: true
-          description: "**OQ-8** — the required-document checklist is config-driven (§7.6)."
+          description: |
+            Always present. **OQ-8** — the required-document checklist is
+            config-driven (§7.6). `documents.doc_type` is `NOT NULL`, and an
+            upload that omits one is resolved to `other` before the record is
+            written, so this is never null on a stored document.
         uploaded_by_user_id:
           type: string
           format: uuid
@@ -912,7 +919,17 @@ components:
           format: int64
           minimum: 1
           maximum: 10485760
-        doc_type: { type: string, nullable: true }
+        doc_type:
+          type: string
+          nullable: true
+          default: other
+          description: |
+            Optional on the request. Omitted or null is stored as `other`; the
+            stored document always carries a value. Free text — the list in
+            `src/backend/core/documents/storage.ts` keeps the common ones
+            (`electricity_bill`, `site_photo`, `site_summary`,
+            `screening_report`, `land_report`) spelled the same way across
+            workstreams without constraining new ones.
         disclosure_class:
           type: string
           default: owner_private

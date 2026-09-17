@@ -119,11 +119,17 @@ export interface DocumentRecord {
   id: string;
   siteId: string | null;
   projectId: string | null;
+  /** `{container}/{blobName}` — see `core/documents/storage.ts`. */
   blobPath: string;
   originalFilename: string;
   contentType: string;
   sizeBytes: number;
-  docType: string | null;
+  /**
+   * Never null: `documents.doc_type` is `text NOT NULL` with no column default,
+   * so an upload that omits it is resolved to `other` rather than carried as
+   * null into a record the database would reject.
+   */
+  docType: string;
   disclosureClass: DocumentDisclosureClass;
   uploadedByUserId: string;
   createdAt: string;
