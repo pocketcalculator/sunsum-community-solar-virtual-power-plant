@@ -27,6 +27,7 @@
     "test:db": "node scripts/db.mjs verify && vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@azure/identity": "4.13.3",
     "drizzle-orm": "0.45.2",
     "next": "16.3.4",
     "pg": "8.23.0",

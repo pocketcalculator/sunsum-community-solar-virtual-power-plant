@@ -1,0 +1,1 @@
+ALTER TABLE "documents" ALTER COLUMN "doc_type" DROP NOT NULL;

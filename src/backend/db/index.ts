@@ -15,5 +15,5 @@
 
 export * from "./client";
 export * from "./enums";
-export * from "./project-store";
+export * from "./backend-store";
 export * from "./schema";

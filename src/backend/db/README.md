@@ -64,12 +64,35 @@ PostgreSQL 15 or later is required.
 
 ## Which store is running
 
-`SUNSUM_STORE` decides: `db` reads PostgreSQL, anything else uses
-`core/projects/mock-store.ts`. The default is the mock, so `npm run dev`,
+`SUNSUM_STORE` decides: `db` reads PostgreSQL, anything else uses the in-memory
+fixtures in `core/store/index.ts`. The default is the mock, so `npm run dev`,
 `npm test` and CI all work with no database and no `DATABASE_URL`.
 
-The choice is made in exactly one place — `src/backend/index.ts`, the
+The choice is made in exactly one place — `src/backend/composition.ts`, the
 composition root. It is the only module that can see both sides.
+
+## Which credential is used
+
+`client.ts` authenticates two ways, and picks from the host rather than from a
+setting you have to remember:
+
+| Host                              | Credential                                    |
+| --------------------------------- | --------------------------------------------- |
+| anything local                    | the password in `DATABASE_URL`                |
+| `*.postgres.database.azure.com`   | a Microsoft Entra access token                |
+
+The Azure flexible server is provisioned with `passwordAuth: 'Disabled'`, so
+there is no password to put in the connection string and nothing to rotate. The
+server takes an Entra token in the password field instead; `entra.ts` fetches
+it, and `pg` is given a *function* rather than a string so that every new
+connection gets a live token and the pool keeps working past the first
+expiry — roughly an hour in.
+
+`SUNSUM_DB_AUTH=entra|password` overrides the inference for the cases a
+hostname cannot describe: a private endpoint reached through an alias, or a
+developer pointing at the cloud server from a workstation. On a workstation the
+token comes from `az login`; in Azure it comes from the container's managed
+identity, and `AZURE_CLIENT_ID` selects which one when there is more than one.
 
 ## Why this sits beside `core` and `handlers`
 
@@ -82,7 +105,7 @@ can express — the table becomes the model, and every rule ends up phrased in
 terms of columns. It is enforced in the root `eslint.config.mjs` and asserted in
 `tests/unit/architecture.test.ts`, alongside the existing service boundaries.
 
-`PostgresProjectStore` lives here rather than in `core` for the same reason: it
+`PostgresBackendStore` lives here rather than in `core` for the same reason: it
 implements an interface `core` owns, imports the tables from `./schema`, and is
 handed to core as an argument. Core stays callable with a fixture.
 
@@ -93,7 +116,8 @@ handed to core as an argument. Core stays callable with a fixture.
 | `schema.ts`              | The eleven tables, their constraints and their indexes                  |
 | `enums.ts`               | The section 5.3 enumerations that no service directory owns yet         |
 | `client.ts`              | The connection pool, created lazily and cached across dev reloads       |
-| `project-store.ts`       | `ProjectStore` over PostgreSQL — one statement, no N+1                  |
+| `entra.ts`               | Microsoft Entra tokens, used as the password against Azure              |
+| `backend-store.ts`       | `BackendStore` over PostgreSQL — one statement per read, no N+1         |
 | `migrations/`            | Generated SQL, plus one hand-written migration. The artifact that runs  |
 | `seed.sql`               | Demo data, with the charter's criteria asserted at the end              |
 | `reset.sql`              | Empties every table so the seed can rebuild from nothing                |
@@ -186,8 +210,8 @@ that dirties the database it verifies can only be run once.
 
 ## The two stores must be indistinguishable
 
-`tests/integration/store-parity.test.ts` compares `PostgresProjectStore` with
-`mockProjectStore` record by record, and compares the serialised
+`tests/integration/store-parity.test.ts` compares `PostgresBackendStore` with
+`memoryBackendStore` record by record, and compares the serialised
 `GET /portfolio` payload built from each. If they differ, then switching stores
 changed behaviour, and every test written against the mock has stopped being
 evidence about the real system.

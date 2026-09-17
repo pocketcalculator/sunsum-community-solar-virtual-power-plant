@@ -16,12 +16,35 @@
  * a change to one line and an environment variable, not a change to a rule.
  */
 
-import { selectProjectStore } from "./composition";
-import { createPortfolioRoute } from "./handlers";
+export {
+  selectBackendStore,
+  selectedStoreName,
+  selectProjectStore,
+  type StoreName,
+} from "./composition";
 
-export { selectedStoreName, selectProjectStore, type StoreName } from "./composition";
-
-/** Chosen once, in the only module allowed to see both sides. */
-const projectStore = selectProjectStore();
-
-export const getPortfolioRoute = createPortfolioRoute(projectStore);
+export {
+  getInvestorProfileRoute,
+  getPipelineRoute,
+  getMyEngagementsRoute,
+  getOwnerOutstandingRoute,
+  getProjectFundingNeedsRoute,
+  getSubmissionDetailRoute,
+  patchProjectRoute,
+  patchSiteRoute,
+  postInvestorProfileRoute,
+  postSiteDocumentRoute,
+  postSiteSubmitRoute,
+  getDealRoomRoute,
+  getOwnerSitesRoute,
+  getPortfolioRoute,
+  getProjectEngagementsRoute,
+  getSubmissionsRoute,
+  patchProjectVisibilityRoute,
+  postEngagementRoute,
+  postProjectStageRoute,
+  postSiteRoute,
+  postSubmissionDecisionRoute,
+  toDomainRole,
+  toWireRole,
+} from "./handlers";

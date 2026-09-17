@@ -23,13 +23,14 @@
  * says so out loud rather than reporting a silent pass.
  */
 
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { Viewer } from "@/backend/core/identity";
 import { getPortfolio, type PortfolioQuery } from "@/backend/core/investors";
-import { mockProjectStore, type ProjectRecord } from "@/backend/core/projects";
+import type { ProjectRecord } from "@/backend/core/projects";
+import { createMemoryBackendStore } from "@/backend/core/store";
 import { closeDb } from "@/backend/db/client";
-import { PostgresProjectStore } from "@/backend/db/project-store";
+import { PostgresBackendStore } from "@/backend/db/backend-store";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -53,13 +54,37 @@ const unfiltered: PortfolioQuery = {
   projectType: null,
 };
 
+/**
+ * The mock side of the comparison.
+ *
+ * The in-memory store rather than `mockProjectStore`: the two hold the same
+ * fixtures, but `getPortfolio` now needs open funding needs as well as
+ * projects, and only this one answers for both. It is also the store the
+ * running app falls back to, so it is the thing PostgreSQL actually has to be
+ * indistinguishable from.
+ */
+const memoryStore = createMemoryBackendStore({ seedDemoProjects: true });
+
 /** Ordering is not part of the store contract; content is. */
 function byId(records: readonly ProjectRecord[]): readonly ProjectRecord[] {
   return [...records].sort((left, right) => left.id.localeCompare(right.id));
 }
 
 describe.skipIf(!databaseUrl)("the PostgreSQL store matches the mock", () => {
-  const store = new PostgresProjectStore();
+  /**
+   * Built in `beforeAll`, not in the suite body.
+   *
+   * A skipped `describe` still runs its callback — that is how the runner
+   * discovers the tests it is about to skip — so constructing the store here
+   * would open a pool on a `DATABASE_URL` that by definition is not set, and
+   * the suite would fail during collection instead of skipping. Hooks do not
+   * run for a skipped suite, so this is the one place it is safe.
+   */
+  let store: PostgresBackendStore;
+
+  beforeAll(() => {
+    store = new PostgresBackendStore();
+  });
 
   afterAll(async () => {
     await closeDb();
@@ -68,7 +93,7 @@ describe.skipIf(!databaseUrl)("the PostgreSQL store matches the mock", () => {
   it("returns the same projects, field for field", async () => {
     const [fromDb, fromMock] = await Promise.all([
       store.listProjects(),
-      mockProjectStore.listProjects(),
+      memoryStore.listProjects(),
     ]);
 
     expect(
@@ -82,7 +107,7 @@ describe.skipIf(!databaseUrl)("the PostgreSQL store matches the mock", () => {
   it("builds an identical GET /portfolio payload", async () => {
     const [fromDb, fromMock] = await Promise.all([
       getPortfolio(investor, unfiltered, store),
-      getPortfolio(investor, unfiltered, mockProjectStore),
+      getPortfolio(investor, unfiltered, memoryStore),
     ]);
 
     expect(fromDb.ok).toBe(true);

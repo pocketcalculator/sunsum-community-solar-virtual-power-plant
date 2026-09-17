@@ -109,7 +109,7 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/handlers/investors/probe.ts", "../../db"],
     ["src/backend/handlers/investors/probe.ts", "../../db/schema"],
     /** A store implementation is persistence wherever it lives. */
-    ["src/backend/core/probe.ts", "@/backend/db/project-store"],
+    ["src/backend/core/probe.ts", "@/backend/db/backend-store"],
     ["src/backend/handlers/probe.ts", "@/backend/db/client"],
     /**
      * A driver is persistence too. Blocking `@/backend/db` alone stopped being
@@ -185,7 +185,7 @@ describe("the actual module-boundary configuration", () => {
      * it may see both sides and choose a store.
      */
     ["src/backend/probe.ts", "@/backend/db"],
-    ["src/backend/probe.ts", "./db/project-store"],
+    ["src/backend/probe.ts", "./db/backend-store"],
     ["src/backend/probe.ts", "./core/projects"],
   ])(
     "permits %s importing %s",

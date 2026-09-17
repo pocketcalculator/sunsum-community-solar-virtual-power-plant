@@ -1,3 +1,44 @@
+import type { InvestorProfile, Viewer } from "../../core/identity";
+import { demoBackendStore, type BackendStore } from "../../core/store";
+import {
+  DEMO_INVESTOR_ID,
+  DEMO_INVESTOR_USER_ID,
+  DEMO_OPERATOR_USER_ID,
+  DEMO_SITE_OWNER_USER_ID,
+} from "../../demo-principals";
+
+const DEMO_CREATED_AT = "2026-09-01T00:00:00.000Z";
+
+export const SEEDED_DEMO_INVESTOR_PROFILE: InvestorProfile = {
+  id: DEMO_INVESTOR_ID,
+  userId: DEMO_INVESTOR_USER_ID,
+  organizationName: "Demo Community Endowment",
+  investorType: "special_community_endowment",
+  capitalType: "grant",
+  fundingStageFocus: ["pre_development", "development", "construction"],
+  ticketSizeMin: null,
+  ticketSizeMax: null,
+  geographies: ["GA"],
+  investmentObjectives: [],
+  impactPriorities: [],
+  decisionCriteria: [],
+  dealRoomProfile: "default",
+  visiblePortfolioScope: [],
+  onboardingCompletedAt: DEMO_CREATED_AT,
+  createdAt: DEMO_CREATED_AT,
+  updatedAt: DEMO_CREATED_AT,
+};
+
+const DEMO_SITE_OWNER_VIEWER = {
+  role: "site_owner",
+  userId: DEMO_SITE_OWNER_USER_ID,
+} satisfies Viewer;
+
+const DEMO_OPERATOR_VIEWER = {
+  role: "operator",
+  userId: DEMO_OPERATOR_USER_ID,
+} satisfies Viewer;
+
 /**
  * Resolving who is calling.
  *
@@ -23,28 +64,28 @@
  * owner's documents, and nothing here would announce the difference. Review
  * asked that this warning travel with whichever PR merges second.
  */
+export async function resolveDemoViewer(
+  store: BackendStore = demoBackendStore,
+): Promise<Viewer> {
+  return resolveDemoInvestor(store);
+}
 
-import type { Viewer } from "../../core/identity";
+export function resolveDemoSiteOwner(): Viewer {
+  return DEMO_SITE_OWNER_VIEWER;
+}
 
-const DEMO_INVESTOR_VIEWER: Viewer = {
-  role: "investor",
-  /** PR #12's `DEMO_INVESTOR_USER_ID` and `DEMO_INVESTOR_ID`, which the seed inserts. */
-  userId: "91e3b7c4-2d65-4a08-bf19-7c5e0a6d3b82",
-  investor: {
-    id: "4d7a2c91-8e56-43bf-9a10-5c6d2f7b8e34",
-    organizationName: "Demo Community Endowment",
-    /**
-     * `permanent` is a funding stage with no project stage of the same name.
-     * It could not be written here while this field was typed `ProjectStage[]`,
-     * which is the defect review found; it is included now because an endowment
-     * funding a built asset is exactly the case that made the mistake matter.
-     */
-    fundingStageFocus: ["pre_development", "development", "construction", "permanent"],
-    geographies: ["GA"],
-    onboardingCompletedAt: "2026-09-01T00:00:00.000Z",
-  },
-};
+export function resolveDemoOperator(): Viewer {
+  return DEMO_OPERATOR_VIEWER;
+}
 
-export function resolveDemoViewer(): Viewer {
-  return DEMO_INVESTOR_VIEWER;
+export async function resolveDemoInvestor(
+  store: BackendStore = demoBackendStore,
+): Promise<Viewer> {
+  return {
+    role: "investor",
+    userId: DEMO_INVESTOR_USER_ID,
+    investor:
+      (await store.getInvestorProfileByUserId(DEMO_INVESTOR_USER_ID)) ??
+      SEEDED_DEMO_INVESTOR_PROFILE,
+  };
 }

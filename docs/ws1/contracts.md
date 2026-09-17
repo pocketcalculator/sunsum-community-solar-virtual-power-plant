@@ -29,16 +29,54 @@ services, or make them dependencies of the current browser-only profile flow.
 
 | Gate                     | Owner                  | Required evidence                                                             | Status                     |
 | ------------------------ | ---------------------- | ----------------------------------------------------------------------------- | -------------------------- |
-| Wire contract            | WS2 with WS4           | Versioned machine-readable inputs/outputs/errors and ownership                | Pending handoff            |
+| Wire contract            | WS2 with WS4           | Versioned machine-readable inputs/outputs/errors and ownership                | Published, awaiting WS1 acceptance |
 | Screening                | WS4                    | Units, range shapes, rules/assumptions/version, and three outcome examples    | Pending handoff            |
-| Demo data                | WS2/WS4                | Approved synthetic Atlanta examples and repeatable seed mechanism             | Pending handoff            |
-| Identity and permissions | WS2/WS3                | Actor/session semantics, object ownership, investor scope and document access | Pending handoff            |
+| Demo data                | WS2/WS4                | Approved synthetic Atlanta examples and repeatable seed mechanism             | Published, awaiting WS1 acceptance |
+| Identity and permissions | WS2/WS3                | Actor/session semantics, object ownership, investor scope and document access | Published, awaiting WS1 acceptance |
 | Azure delivery           | WS3                    | Service/artifact/startup, access, configuration and budget                    | App Service F1 preview verified; backend integration pending |
 | UX                       | WS5                    | Shared design decision and review disposition                                 | Provisional local baseline |
 | Core acceptance          | WS6 and service owners | Actual persisted/deployed three-role journey and adverse cases                | Blocked on integration     |
 
 Pending means no accepted artifact is present in this contribution. It does not
 assert that another contributor has done no work.
+
+"Published, awaiting WS1 acceptance" means WS2 has produced the artifact named
+below and it is reviewable in this repository. WS2 cannot mark a gate accepted
+on WS1's behalf; flipping these rows to accepted is WS1's call.
+
+### WS2 artifacts offered against these gates
+
+| Gate                     | Artifact                                                           | Version |
+| ------------------------ | ------------------------------------------------------------------ | ------- |
+| Wire contract            | `docs/api/openapi.yaml` (21 operations) with `docs/api/README.md`   | 0.1.0   |
+| Demo data                | `src/backend/core/store` seed — five Atlanta/Chattanooga pilot sites, deterministic on process start | 0.1.0   |
+| Identity and permissions | `src/backend/README.md` role/disclosure model; `src/backend/handlers/identity` demo principals | 0.1.0   |
+
+Known limitation carried by the identity gate: the MVP resolves a fixed demo
+principal per role and performs no authentication. Roles are chosen by route,
+never by caller-supplied input, so the disclosure tiers are still enforced —
+but this is a demo-role switch, not sign-in, and WS3 owns replacing it.
+
+Vocabulary translation between the WS1 charter ids (`site-owner`, `operator`,
+`financier`, and the seven journey stage ids) and the backend wire vocabulary
+(`site_owner`, `operator`, `investor`, five project stages) is the backend's
+responsibility and lives in `src/backend/handlers/shared/vocabulary.ts` and
+`journeyStageId` in `src/backend/core/journey`. WS1 vocabulary is not renamed.
+
+The two vocabularies are translated at different points, because only one of
+them travels on the wire as a raw token:
+
+- **Journey stages are already translated for you.** Every response that places
+  something on the ribbon carries `journey_stage_id` in WS1's own kebab-case
+  ids, alongside the raw `submission_status` / `project_stage`. Render from
+  `journey_stage_id`; no adapter call is needed.
+- **Roles are not.** `Role` appears in exactly one payload field — `User.role`,
+  reached as `contact.role` on `GET /me/sites` — and it carries the wire token.
+  `isParticipantRoleId("investor")` is `false` by WS1's own test, so a consumer
+  must call `toDomainRole`, exported from `@/backend`, rather than passing that
+  value into a charter-typed slot. `tests/unit/backend/vocabulary.test.ts`
+  asserts the adapter's output satisfies `isParticipantRoleId` for every wire
+  role, so the two sides cannot drift apart silently.
 
 ## Questions the canonical contract must resolve
 
