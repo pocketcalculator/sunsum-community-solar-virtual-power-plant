@@ -188,6 +188,31 @@ describe("buildPoolConfig", () => {
 
       expect(resolved.ssl).toEqual({ rejectUnauthorized: true });
     });
+
+    /**
+     * `URL` leaves the user info and the path percent-encoded, so decoding them
+     * is what keeps this path agreeing with the password path, which resolves
+     * through `pg-connection-string`. Dropping the decode would send the
+     * literal `my%40role` to the server as the role name.
+     */
+    it("reads an escaped role and database exactly as the password path does", () => {
+      const escaped =
+        "postgresql://my%40role@psql-sunsum-dev.postgres.database.azure.com:5432/my%20db";
+      setEntraCredentialForTesting(stubCredential(Date.now() + 3_600_000));
+
+      process.env.SUNSUM_DB_AUTH = "password";
+      const viaConnectionString = new ConnectionParameters(
+        buildPoolConfig(escaped),
+      );
+
+      process.env.SUNSUM_DB_AUTH = "entra";
+      const viaFields = new ConnectionParameters(buildPoolConfig(escaped));
+
+      expect(viaFields.user).toBe("my@role");
+      expect(viaFields.database).toBe("my db");
+      expect(viaFields.user).toBe(viaConnectionString.user);
+      expect(viaFields.database).toBe(viaConnectionString.database);
+    });
   });
 });
 
