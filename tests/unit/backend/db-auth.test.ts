@@ -12,6 +12,27 @@ import {
   setEntraCredentialForTesting,
 } from "@/backend/db/entra";
 import type { AccessToken, TokenCredential } from "@azure/identity";
+import type { PoolConfig } from "pg";
+import { createRequire } from "node:module";
+
+/**
+ * The resolution step `pg` performs internally. It is reached through a CommonJS
+ * loader because the package does not export the path, so a normal import
+ * cannot see its types even though they ship with the package.
+ */
+interface ResolvedConnection {
+  readonly host: string;
+  readonly port: number;
+  readonly database: string;
+  readonly user: string;
+  readonly password: unknown;
+  readonly ssl: unknown;
+}
+
+const loadCommonJs = createRequire(import.meta.url);
+const ConnectionParameters = loadCommonJs(
+  "pg/lib/connection-parameters.js",
+) as new (config: PoolConfig) => ResolvedConnection;
 
 const LOCAL_URL = "postgresql://sunsum:devpassword@localhost:55432/sunsum";
 const AZURE_URL =
@@ -123,6 +144,50 @@ describe("buildPoolConfig", () => {
     const config = buildPoolConfig(AZURE_URL);
 
     expect(config.ssl).toEqual({ rejectUnauthorized: true });
+  });
+
+  /**
+   * The assertions above describe the object we hand to `pg`, which is not the
+   * same thing as what `pg` ends up using. `pg` merges a parsed connection
+   * string over the rest of the config, and the parser always emits a password
+   * — empty, for an Entra URL — so passing a connection string alongside the
+   * token function silently replaced it and the server refused every
+   * connection. These drive the real `pg` resolution so that regression cannot
+   * return unnoticed.
+   */
+  describe("as resolved by pg", () => {
+    it("keeps the token function after pg merges the configuration", async () => {
+      delete process.env.SUNSUM_DB_AUTH;
+      setEntraCredentialForTesting(stubCredential(Date.now() + 3_600_000));
+
+      const resolved = new ConnectionParameters(buildPoolConfig(AZURE_URL));
+
+      expect(typeof resolved.password).toBe("function");
+      await expect(
+        (resolved.password as () => Promise<string>)(),
+      ).resolves.toBe("token-1");
+    });
+
+    it("still reaches the right server as the right role", () => {
+      delete process.env.SUNSUM_DB_AUTH;
+      setEntraCredentialForTesting(stubCredential(Date.now() + 3_600_000));
+
+      const resolved = new ConnectionParameters(buildPoolConfig(AZURE_URL));
+
+      expect(resolved.host).toBe("psql-sunsum-dev.postgres.database.azure.com");
+      expect(resolved.port).toBe(5432);
+      expect(resolved.database).toBe("sunsum");
+      expect(resolved.user).toBe("app");
+    });
+
+    it("still requires a verified certificate", () => {
+      delete process.env.SUNSUM_DB_AUTH;
+      setEntraCredentialForTesting(stubCredential(Date.now() + 3_600_000));
+
+      const resolved = new ConnectionParameters(buildPoolConfig(AZURE_URL));
+
+      expect(resolved.ssl).toEqual({ rejectUnauthorized: true });
+    });
   });
 });
 
