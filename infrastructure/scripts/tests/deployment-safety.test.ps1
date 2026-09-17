@@ -138,6 +138,30 @@ try {
     }
     & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision | Out-Null
     $rejectedRoles = @('postgres', 'azure_pg_admin', 'pg_read_all_data', 'sunsum_migrator', 'other_existing_role', 'SUNSUM_RUNTIME')
+    foreach ($mode in @('Existing', 'Create')) {
+        $provisionParameters.parameters.webAppMode = @{ value = $mode }
+        foreach ($databaseName in @('sunsum-prod', 'postgres', 'public', 'template0', 'template1', 'pg_custom', 'azure_custom',
+            'SunSum', '_sunsum', '1sunsum', 'sunsum.prod', 'sunsum prod', ('a' * 64), ('db' + [char]0xe9),
+            '', ' sunsum', 'sunsum ', "sunsum`n", 'app;drop', 123, $null)) {
+            $provisionParameters.parameters.databaseName = @{ value = $databaseName }
+            $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+            $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
+            foreach ($apply in @($false, $true)) {
+                $message = ''
+                try { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply:$apply | Out-Null } catch { $message = $_.Exception.Message }
+                if ($message -eq '' -or $global:AzureSafetyTestCalls -ne 0) { throw 'Invalid database names must fail before any Azure call.' }
+                if ($databaseName -ceq 'sunsum-prod' -and $message -notlike '*databaseName must match the bootstrap contract*') { throw 'Expected the database-name preflight rejection.' }
+            }
+        }
+        foreach ($databaseName in @('a', 'sunsum', 'sunsum_prod', 'app123', ('a' * 63))) {
+            $provisionParameters.parameters.databaseName = @{ value = $databaseName }
+            $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+            $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
+            & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision | Out-Null
+        }
+    }
+    $provisionParameters.parameters.Remove('databaseName')
+    $provisionParameters.parameters.Remove('webAppMode')
     foreach ($roleName in $rejectedRoles) {
         $provisionParameters.parameters.runtimeRoleName = @{ value = $roleName }
         $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
@@ -369,7 +393,7 @@ try {
         $global:AzureCodeKind = 'app,linux'
         $global:AzureCodeHelp = '--track-status --clean'
         $global:AzureCodeReadFailure = $scenario -ceq 'read-failure'
-        $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0' }
+        $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = '1.2'; scmMinTlsVersion = '1.2' }
         $global:AzureCodeBuildSettings = @(
             @{ name = 'SCM_DO_BUILD_DURING_DEPLOYMENT'; value = 'true' },
             @{ name = 'CUSTOM_BUILD_COMMAND'; value = 'npm ci --include=dev && npm run build' }
@@ -395,6 +419,25 @@ try {
             if ($global:AzureCodeWrites -ne 1 -or $message -notlike 'Deployment did not report success*') { throw 'Valid source-build configuration must reach the mocked deployment.' }
         } elseif ($global:AzureCodeWrites -ne 0 -or $message -eq '') {
             throw "Unsafe source-build scenario $scenario reached deployment."
+        }
+    }
+    foreach ($property in @('minTlsVersion', 'scmMinTlsVersion')) {
+        foreach ($value in @('1.0', '1.1', $null, '', 'TLS1_2', 'unknown', 1.2, 'missing')) {
+            $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = '1.2'; scmMinTlsVersion = '1.2' }
+            if ($value -ceq 'missing') { $global:AzureCodeRuntime.Remove($property) } else { $global:AzureCodeRuntime[$property] = $value }
+            $global:AzureCodeWrites = 0
+            $message = ''
+            try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+            if ($global:AzureCodeWrites -ne 0 -or $message -notlike '*requires site and SCM minimum TLS*') { throw 'Unsafe site/SCM TLS reached ZIP deployment.' }
+        }
+    }
+    foreach ($siteTls in @('1.2', '1.3')) {
+        foreach ($scmTls in @('1.2', '1.3')) {
+            $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = $siteTls; scmMinTlsVersion = $scmTls }
+            $global:AzureCodeWrites = 0
+            $message = ''
+            try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+            if ($global:AzureCodeWrites -ne 1 -or $message -notlike 'Deployment did not report success*') { throw 'Supported site/SCM TLS should reach the mocked deployment.' }
         }
     }
     if ($BicepPath) {

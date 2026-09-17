@@ -16,6 +16,10 @@ param networkMode string = 'Closed'
 @maxLength(200)
 param publicEndpointApproval string = ''
 
+@description('Nonsecret change-review reference retained separately from tenant-policy approval.')
+@maxLength(200)
+param approvalReference string = ''
+
 var publicNetworkEnabled = networkMode == 'AuthenticatedPublic' && !empty(trim(publicEndpointApproval))
 
 resource storage 'Microsoft.Storage/storageAccounts@2024-01-01' = {
@@ -72,3 +76,4 @@ output blobEndpoint string = storage.properties.primaryEndpoints.blob
 output siteDocumentsContainerId string = siteDocuments.id
 output projectDocumentsContainerId string = projectDocuments.id
 output networkAccessEnabled bool = publicNetworkEnabled
+output APPROVAL_REFERENCE string = approvalReference

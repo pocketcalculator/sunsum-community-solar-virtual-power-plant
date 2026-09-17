@@ -86,7 +86,7 @@ function Assert-AccessConfiguration {
                 ($Config.networkMode -ceq 'AuthenticatedPublic' -and [string]::IsNullOrWhiteSpace($Config.publicEndpointApproval))) {
                 throw 'AuthenticatedPublic requires an explicit tenant-policy approval; never weaken a denied policy.'
             }
-            foreach ($key in @('storageAccountName', 'location', 'networkMode', 'publicEndpointApproval')) {
+            foreach ($key in @('storageAccountName', 'location', 'networkMode', 'publicEndpointApproval', 'approvalReference')) {
                 $parameters[$key] = @{ value = $Config[$key] }
             }
         }

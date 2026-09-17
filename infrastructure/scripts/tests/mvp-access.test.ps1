@@ -80,6 +80,13 @@ try {
             OutputPath = Join-Path $fixture "$operation.parameters.json"
         }
         & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @args | Out-Null
+        $record = Get-Content -LiteralPath $args.OutputPath -Raw | ConvertFrom-Json -AsHashtable
+        if (@($record.Keys | Where-Object { $_ -cnotin @('$schema', 'contentVersion', 'parameters') }).Count -ne 0) {
+            throw 'Access records must retain the ARM deployment-parameters document shape.'
+        }
+        if ($record.parameters.approvalReference.value -cne $config.approvalReference) {
+            throw 'The saved access record must retain the change-review reference.'
+        }
         foreach ($suffix in @('', '.before-auth.json', '.before-storage.json')) {
             $args.OutputPath = Join-Path $fixture "$operation-$([guid]::NewGuid().ToString('N')).json"
             $existingPath = "$($args.OutputPath)$suffix"
@@ -137,6 +144,7 @@ try {
             return '{"id":"/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/sample-resource-group/providers/Microsoft.Web/sites/sample-web","httpsOnly":true,"kind":"app,linux","identity":{"principalId":"55555555-5555-4555-8555-555555555555"}}'
         }
         if ($args[0] -ceq 'rest') { return '{"properties":{"platform":{"enabled":false}}}' }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config' -and $args[2] -ceq 'show') { return '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2"}' }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') { return '[]' }
         throw 'A failed prerequisite must never reach a deployment.'
     }
@@ -148,7 +156,7 @@ try {
             -ExpectedSha256 (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash `
             -OutputPath (Join-Path $fixture 'no-secret.parameters.json') -Apply
     }
-    if ($global:MvpAccessCalls -ne 3) { throw 'Sign-in prerequisite inspection did not reach the missing-secret guard.' }
+    if ($global:MvpAccessCalls -ne 4) { throw 'Sign-in prerequisite inspection did not reach the missing-secret guard.' }
     $path = Join-Path $fixture 'BlobRoles.json'
     Assert-Throws {
         & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') -Operation BlobRoles `
@@ -156,7 +164,7 @@ try {
             -ExpectedSha256 (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash `
             -OutputPath (Join-Path $fixture 'wrong-principal.parameters.json') -Apply
     }
-    if ($global:MvpAccessCalls -ne 4) { throw 'Blob role prerequisite did not inspect the web identity exactly once.' }
+    if ($global:MvpAccessCalls -ne 5) { throw 'Blob role prerequisite did not inspect the web identity exactly once.' }
     $global:MvpRaceOutput = Join-Path $fixture 'race.parameters.json'
     $global:MvpAccessCalls = 0
     function global:az {
@@ -166,6 +174,7 @@ try {
             return '{"id":"synthetic-test-resource","httpsOnly":true,"kind":"app,linux"}'
         }
         if ($args[0] -ceq 'rest') { return '{"properties":{"platform":{"enabled":false}}}' }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config' -and $args[2] -ceq 'show') { return '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2"}' }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') {
             Set-Content -LiteralPath "$global:MvpRaceOutput.before-auth.json" -Value 'concurrent-review-baseline' -Encoding utf8NoBOM
             return '[{"name":"MICROSOFT_PROVIDER_AUTHENTICATION_SECRET","value":"synthetic-test-only","slotSetting":true}]'
@@ -179,13 +188,15 @@ try {
             -ExpectedSha256 (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash `
             -OutputPath $global:MvpRaceOutput -Apply
     }
-    if ($global:MvpAccessCalls -ne 3 -or
+    if ($global:MvpAccessCalls -ne 4 -or
         (Get-Content -LiteralPath "$global:MvpRaceOutput.before-auth.json" -Raw).Trim() -cne 'concurrent-review-baseline') {
         throw 'Create-only writes must preserve a concurrent audit record and stop before deployment.'
     }
     $global:MvpAuthReads = 0
     $global:MvpAuthWrites = 0
     $global:MvpLatestAuth = ''
+    $global:MvpTlsResponse = '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2"}'
+    $global:MvpTlsReads = 0
     function global:az {
         $global:LASTEXITCODE = 0
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
@@ -196,6 +207,11 @@ try {
             if ($global:MvpAuthReads -eq 1) { return '{"properties":{"platform":{"enabled":false}}}' }
             if ($global:MvpLatestAuth -ceq 'failed-read') { $global:LASTEXITCODE = 1; return '' }
             return $global:MvpLatestAuth
+        }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config' -and $args[2] -ceq 'show') {
+            $global:MvpTlsReads++
+            if ($global:MvpTlsResponse -ceq 'failed-read') { $global:LASTEXITCODE = 1; return '' }
+            return $global:MvpTlsResponse
         }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') {
             return '[{"name":"MICROSOFT_PROVIDER_AUTHENTICATION_SECRET","value":"synthetic-test-only","slotSetting":true}]'
@@ -230,6 +246,36 @@ try {
                 if ($global:MvpAuthWrites -ne 0) { throw 'Changed or unreadable sign-in configuration must block deployment.' }
             }
             if ($global:MvpAuthReads -ne 2) { throw 'Expected a final authentication recheck.' }
+        }
+    }
+    $global:MvpLatestAuth = '{"properties":{"platform":{"enabled":false}}}'
+    foreach ($property in @('minTlsVersion', 'scmMinTlsVersion')) {
+        foreach ($value in @('1.0', '1.1', $null, '', 'TLS1_2', 'unknown', 1.2, 'missing')) {
+            $transport = @{ minTlsVersion = '1.2'; scmMinTlsVersion = '1.2' }
+            if ($value -ceq 'missing') { $transport.Remove($property) } else { $transport[$property] = $value }
+            $global:MvpTlsResponse = $transport | ConvertTo-Json -Compress
+            $global:MvpTlsReads = 0; $global:MvpAuthReads = 0; $global:MvpAuthWrites = 0
+            $signInArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
+            $message = ''
+            try { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @signInArgs -Apply | Out-Null } catch { $message = $_.Exception.Message }
+            if ($message -notlike '*require site and SCM minimum TLS*' -or $global:MvpTlsReads -ne 1 -or
+                $global:MvpAuthReads -ne 0 -or $global:MvpAuthWrites -ne 0) { throw 'Unsafe site/SCM TLS must stop before reading secrets/auth or deploying.' }
+        }
+    }
+    foreach ($response in @('failed-read', 'invalid-json', '[]', 'null')) {
+        $global:MvpTlsResponse = $response
+        $global:MvpTlsReads = 0; $global:MvpAuthReads = 0; $global:MvpAuthWrites = 0
+        $signInArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
+        Assert-Throws { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @signInArgs -Apply }
+        if ($global:MvpTlsReads -ne 1 -or $global:MvpAuthReads -ne 0 -or $global:MvpAuthWrites -ne 0) { throw 'Failed TLS discovery must block sign-in changes.' }
+    }
+    foreach ($siteTls in @('1.2', '1.3')) {
+        foreach ($scmTls in @('1.2', '1.3')) {
+            $global:MvpTlsResponse = @{ minTlsVersion = $siteTls; scmMinTlsVersion = $scmTls } | ConvertTo-Json -Compress
+            $global:MvpTlsReads = 0; $global:MvpAuthReads = 0; $global:MvpAuthWrites = 0
+            $signInArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
+            & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @signInArgs -Apply | Out-Null
+            if ($global:MvpTlsReads -ne 1 -or $global:MvpAuthWrites -ne 1) { throw 'Supported TLS settings should permit reviewed sign-in activation.' }
         }
     }
     $baseline = @{
@@ -288,6 +334,12 @@ try {
             throw "Storage $($configuration.networkMode) did not send the exact reviewed network update."
         }
         $recorded = Get-Content -LiteralPath "$($storageArgs.OutputPath).before-storage.json" -Raw | ConvertFrom-Json -AsHashtable
+        $appliedRecord = Get-Content -LiteralPath $storageArgs.OutputPath -Raw | ConvertFrom-Json -AsHashtable
+        if ($appliedRecord.parameters.approvalReference.value -cne $configuration.approvalReference -or
+            $appliedRecord.parameters.networkMode.value -cne $configuration.networkMode -or
+            $appliedRecord.parameters.publicEndpointApproval.value -cne $configuration.publicEndpointApproval) {
+            throw 'The applied Storage record must retain both change approval and network policy approval.'
+        }
         if ($recorded.enableHttpsTrafficOnly -ne $true -or $recorded.minimumTlsVersion -cne 'TLS1_2') {
             throw 'Storage transport baseline was not preserved in the audit record.'
         }
@@ -385,6 +437,7 @@ param approvedWebPrincipalId = bindApprovedPrincipal('$actual', '$approved')
     Remove-Variable -Name MvpTargetKind -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpRaceOutput -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpAuthReads, MvpAuthWrites, MvpLatestAuth -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name MvpTlsReads, MvpTlsResponse -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpStorageState, MvpStorageUpdate -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpBlobWrites, MvpContainerPrivacy, MvpContainerReads -Scope Global -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $fixture -Recurse -Force

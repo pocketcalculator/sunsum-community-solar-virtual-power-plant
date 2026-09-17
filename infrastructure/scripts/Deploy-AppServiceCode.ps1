@@ -44,11 +44,16 @@ foreach ($policy in @('ftp', 'scm')) {
 }
 
 $raw = & az webapp config show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
-    --query '{linuxFxVersion:linuxFxVersion,appCommandLine:appCommandLine}' --output json --only-show-errors
+    --query '{linuxFxVersion:linuxFxVersion,appCommandLine:appCommandLine,minTlsVersion:minTlsVersion,scmMinTlsVersion:scmMinTlsVersion}' --output json --only-show-errors
 if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the existing Node and startup configuration before source deployment.' }
 $runtime = ($raw -join "`n") | ConvertFrom-Json -AsHashtable
 if ($runtime.linuxFxVersion -cne 'NODE|22-lts' -or $runtime.appCommandLine -cne 'npm run start -- --hostname 0.0.0.0') {
     throw 'Source deployment requires the reviewed Node 22 and npm startup configuration; correct settings through a separate approved operation.'
+}
+if (-not $runtime.Contains('minTlsVersion') -or -not $runtime.Contains('scmMinTlsVersion') -or
+    $runtime.minTlsVersion -isnot [string] -or $runtime.minTlsVersion -cnotin @('1.2', '1.3') -or
+    $runtime.scmMinTlsVersion -isnot [string] -or $runtime.scmMinTlsVersion -cnotin @('1.2', '1.3')) {
+    throw 'Source deployment requires site and SCM minimum TLS 1.2 or 1.3; remediate transport settings through a separate approved operation.'
 }
 $raw = & az webapp config appsettings list --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
     --query "[?name=='SCM_DO_BUILD_DURING_DEPLOYMENT' || name=='CUSTOM_BUILD_COMMAND' || name=='WEBSITE_RUN_FROM_PACKAGE']" --output json --only-show-errors

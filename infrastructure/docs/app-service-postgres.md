@@ -240,6 +240,14 @@ ACL preservation and reruns, not Azure Entra principal creation or cloud access.
 Copy the parameter example to an ignored local file and replace every
 placeholder. Keep the defaults only after the separate database budget review.
 
+Before any Azure call, the provisioning wrapper validates `databaseName` against
+the mandatory bootstrap contract: 1-63 lowercase ASCII letters, digits or
+underscores, starting with a letter. It rejects `pg_` and `azure_` prefixes and
+the reserved names `postgres`, `public`, `template0` and `template1`. An omitted
+name keeps the `sunsum` default; valid custom names such as `sunsum_prod` remain
+supported. Use the same name in bootstrap. Direct template deployment still
+bypasses this wrapper check; templates alone do not inspect SQL readiness.
+
 `webAppMode=Existing` is the default: the entry point references the named
 existing app but does **not** change its code, plan, identity, settings or auth.
 If its system identity is absent, the identity output is empty and bootstrap/RBAC
@@ -461,6 +469,12 @@ For each access operation, use a reviewed input and a new output path.
 The parameters file and both possible audit sidecars must be absent. All records
 use create-only writes, so an existing baseline cannot be replaced even if a
 file appears after the initial check. Preserve these records for rollback review.
+
+Every operation's parameters record retains `approvalReference`, including
+`StorageNetwork` which uses a direct CLI update instead of an ARM deployment.
+This change-review reference is separate from `publicEndpointApproval` (the
+tenant-policy approval). The Storage template declares the optional reference
+and exposes it as `APPROVAL_REFERENCE`; adding it does not activate public access.
 
 ```powershell
 $inputFile = '.azure\dev\storage-network.json'
@@ -731,6 +745,11 @@ pwsh -NoProfile -File infrastructure\scripts\Deploy-AccessConfiguration.ps1 `
 # Future WRITE: new output path plus -Apply, only after administrator/user approval.
 ```
 
+Before sign-in activation, the script reads the site's `minTlsVersion` and
+`scmMinTlsVersion` and requires each to be the string `1.2` or `1.3`. Older,
+missing, malformed or unreadable settings block activation. It does not change
+transport configuration; remediate it through a separate approved operation.
+
 Before applying, the script inspects the existing site/auth and requires a
 nonempty slot-sticky secret setting without printing its value. Existing enabled
 auth is not replaced unless `allowReplaceExistingSignIn=true` is explicitly
@@ -808,11 +827,15 @@ These operations are for the web application, not the separate viability service
 The explicit Azure CLI path checks the existing Linux/HTTPS target and disabled
 FTP/SCM policies. It also requires `NODE|22-lts`, the exact documented npm startup
 command, `SCM_DO_BUILD_DURING_DEPLOYMENT=true`, and the documented custom build
-command. An enabled `WEBSITE_RUN_FROM_PACKAGE` is rejected. Missing or different
+command. Both site and SCM minimum TLS must be explicitly `1.2` or `1.3`, checked
+in the same configuration read before the ZIP is uploaded. An enabled
+`WEBSITE_RUN_FROM_PACKAGE` is rejected. Missing or different
 settings stop the source ZIP upload and require a separately reviewed correction,
 including when the foundation uses Existing web mode.
 It then uses `az webapp deploy --type zip --clean true --track-status false
---timeout 600000`. It never changes resource definitions, roles or app settings. It follows
+--timeout 600000`. The CLI timeout is in milliseconds, so this requests a
+10-minute deployment timeout, not 600,000 seconds. It never changes resource
+definitions, roles or app settings. It follows
 deployment with at most 12 public-preview checks (10-second request timeout,
 10-second retry delay), rather than relying on unbounded startup tracking.
 Before sign-in activation use the default `-ExpectedAccessMode Preview` (HTTP

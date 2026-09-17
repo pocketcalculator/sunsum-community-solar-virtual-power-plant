@@ -21,6 +21,17 @@ test("bootstrap defaults separate nonadmin runtime/operator roles", () => {
   assert.equal(validated.operatorPrincipalType, "user");
 });
 
+test("database naming boundaries match the provisioning preflight", () => {
+  for (const database of ["a", "sunsum", "sunsum_prod", "app123", "a".repeat(63)]) {
+    assert.equal(validateBootstrapConfig({ ...config, database }).database, database);
+  }
+  for (const database of ["sunsum-prod", "postgres", "public", "template0", "template1", "pg_custom", "azure_custom",
+    "SunSum", "_sunsum", "1sunsum", "sunsum.prod", "sunsum prod", "a".repeat(64), "db\u00e9",
+    "", " sunsum", "sunsum ", "sunsum\n", "app;drop", 123, null]) {
+    assert.throws(() => validateBootstrapConfig({ ...config, database }));
+  }
+});
+
 for (const patch of [
   { host: "localhost" },
   { host: "sample-postgres.postgres.database.azure.com.attacker.test" },

@@ -42,6 +42,8 @@ describe("the bounded Azure preparation contract", () => {
     expect(storage).toContain("publicNetworkAccess: publicNetworkEnabled ? 'Enabled' : 'Disabled'");
     expect(storage).toContain("defaultAction: publicNetworkEnabled ? 'Allow' : 'Deny'");
     expect(storage).toContain("output networkAccessEnabled bool = publicNetworkEnabled");
+    expect(storage).toContain("param approvalReference string = ''");
+    expect(storage).toContain("output APPROVAL_REFERENCE string = approvalReference");
     expect(storage.match(/publicAccess: 'None'/g)).toHaveLength(2);
     expect(storage).toContain("ipRules: []");
   });

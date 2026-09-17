@@ -64,6 +64,11 @@ foreach ($name in @('tenantId', 'postgresAdminObjectId')) {
 if ($document.parameters.Contains('runtimeRoleName') -and $document.parameters.runtimeRoleName.value -cne 'sunsum_runtime') {
     throw 'This foundation requires runtimeRoleName=sunsum_runtime; verify the distinct non-admin Entra role through SQL bootstrap before enabling database access.'
 }
+$databaseName = if ($document.parameters.Contains('databaseName')) { $document.parameters.databaseName.value } else { 'sunsum' }
+if ($databaseName -isnot [string] -or $databaseName -cnotmatch '\A[a-z][a-z0-9_]{0,62}\z' -or
+    $databaseName -cmatch '\A(pg_|azure_)' -or $databaseName -cin @('postgres', 'public', 'template0', 'template1')) {
+    throw 'databaseName must match the bootstrap contract: 1-63 lowercase ASCII letters/digits/underscores, starting with a letter; reserved database names and pg_/azure_ prefixes are forbidden.'
+}
 if (-not $Apply) {
     Write-Output 'Reviewed parameters, explicit target and budget acknowledgement validated. No Azure calls; -Apply requires separate provisioning authorization.'
     return
