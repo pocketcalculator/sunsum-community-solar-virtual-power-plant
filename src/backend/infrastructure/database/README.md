@@ -1,9 +1,11 @@
 # Server-only PostgreSQL foundation
 
 This is connection and migration **tooling**, not application persistence.
-`ProjectStore` still uses explicit synthetic fixtures; the demo investor and the
-browser-only `/join` flow are unchanged. No Azure database, principal, firewall
-rule, or business table is created by importing this module.
+The application selects fixtures or the PostgreSQL-backed `BackendStore` through
+`SUNSUM_STORE`; its [runtime database client](../../db/README.md) uses
+`DATABASE_URL` and `SUNSUM_DB_AUTH`, not this module's `PG*` contract. The fixed
+demo identities and browser-only `/join` flow remain unchanged. No Azure database,
+principal, firewall rule, or business table is created by importing this module.
 
 ## One explicit configuration contract
 

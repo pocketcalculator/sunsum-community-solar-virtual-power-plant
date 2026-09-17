@@ -56,6 +56,13 @@ $parameters = Assert-AccessConfiguration $signIn SignIn $subscription $group
 if (-not $parameters.activationApproved.value -or
     $parameters.approvedParticipantObjectIds.value.Count -ne 1 -or
     $parameters.authSettingName.value -cne $signIn.clientSecretSettingName) { throw 'Sign-in parameters lost restrictions.' }
+$largest = $signIn.Clone()
+$largest.approvedParticipantObjectIds = @(1..13 | ForEach-Object { '44444444-4444-4444-8444-{0:d12}' -f $_ })
+$largestParameters = Assert-AccessConfiguration $largest SignIn $subscription $group
+if ($largestParameters.approvedParticipantObjectIds.value.Count -ne 13 -or
+    ($largestParameters.approvedParticipantObjectIds.value -join ',').Length -gt 500) {
+    throw 'The exact supported participant bound must remain within the platform character limit.'
+}
 foreach ($patch in @(
     @{ approvedParticipantObjectIds = @() },
     @{ approvedParticipantObjectIds = @($participant, $participant.ToUpperInvariant()) },

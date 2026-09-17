@@ -24,15 +24,24 @@ anonymous Blob access are disabled.
 | PostgreSQL 17/B1ms/32 GiB | Bicep and bootstrap tooling ready | Budget, provider, network, distinct Entra SQL principals and migrations must be applied |
 | Storage/private containers | Bicep ready, network closed by default | Tenant-approved authenticated public endpoint needed for same-region F1; container RBAC needs an authorized administrator |
 | Approved internal/guest sign-in | Separate opt-in `authsettingsV2` template and guards ready | Precreated workforce Web registration, code-flow credential, enterprise-app assignments and named participants required |
-| Application user/role mapping | **NOT IMPLEMENTED** | Easy Auth gate/claims do not replace the fixed demo investor or implement business authorization |
+| Application user/role mapping | **NOT IMPLEMENTED** | Easy Auth gate/claims do not replace fixed demo owner/operator/investor identities or implement business authorization |
 | Blob upload/download service | **NOT IMPLEMENTED** | Container role grants do not implement per-site/project document access or browser upload paths |
-| Business schema | Canonical `src/backend/db` schema, two migrations, seed and constraint probes from main | Azure application-store adapter, real data and runtime table grants remain pending; no parallel schema is created |
+| Business schema and store | Canonical `src/backend/db` schema, four migrations, seed, constraint probes and PostgreSQL-backed store from main | Runtime configuration, real data and table grants require separate integration and review; no parallel schema is created |
 | Python viability service | **PENDING** | Hosting/runtime/model interface not configured by this PR |
 | Logging, Application Insights and health configuration | **PENDING** | A route or successful smoke response does not configure deployed readiness probes, monitoring, alerts or paid logging resources |
 
 These are prepared artifacts, not a deployed or production-ready MVP. Public
 registration is not implemented; an external collaborator must first be approved
 and onboarded as a guest in the chosen workforce tenant.
+
+The application now selects its PostgreSQL-backed store with `SUNSUM_STORE=db`
+and uses `DATABASE_URL` plus optional `SUNSUM_DB_AUTH`, as documented in the
+[runtime database guide](../../src/backend/db/README.md). The default remains
+the explicit fixture store. The `PG*` and `SUNSUM_DATABASE_AUTH` settings below
+configure this PR's separate connection/migration tooling; they do not configure
+that application store. This rebase does not enable database mode or reconcile
+the two connection/credential implementations. In particular, provisioning the
+listed `PG*` App Service settings alone does not activate persistent endpoints.
 
 PostgreSQL Flexible Server is **separately billable**. The initial defaults are
 PostgreSQL 17, `Burstable` / `Standard_B1ms`, `storageSizeGB=32`, seven-day local
@@ -862,10 +871,15 @@ are not an anonymous business API. Check the API separately, not only the home
 page. Do not exclude an API or a health path from authentication to pass a test.
 
 This is an **authentication/admission gate**, not business role enforcement.
-The fixed demo investor still supplies the portfolio's identity, `/join` still
-creates no account, and no persistent participant record is created from claims.
+The fixed demo principals still supply owner/operator/investor endpoint identities,
+`/join` still creates no account, and no persistent participant record is created
+from claims. All admitted demo participants can reach the same role-specific
+endpoints; this gate does not grant least-privilege business roles. Those
+endpoints use the selected fixture or PostgreSQL store, so database mode can
+persist actions performed under these fixed demo identities.
 Future code must map trusted platform claims to application users/roles and
-authorize site/project/document operations. Do not trust spoofed identity headers
+authorize site/project/document operations and implement cookie-session CSRF
+protection or an appropriate bearer-token strategy. Do not trust spoofed identity headers
 on local/ungated endpoints. Approved-participant sign-in is not full self-service
 registration or a completed authenticated three-role MVP.
 
