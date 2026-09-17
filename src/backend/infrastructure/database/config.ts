@@ -67,7 +67,7 @@ const authentication = (
   }
   if (
     sslMode !== "verify-full" ||
-    !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.postgres\.database\.azure\.com$/i.test(host)
+    !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\.postgres\.database\.azure\.com$/i.test(host)
   ) {
     throw new DatabaseConfigurationError("Entra authentication requires a public-cloud Azure PostgreSQL hostname and PGSSLMODE=verify-full.");
   }

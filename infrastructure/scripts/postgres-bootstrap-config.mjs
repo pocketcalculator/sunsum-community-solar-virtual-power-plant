@@ -2,6 +2,14 @@ import { Buffer } from "node:buffer";
 
 export class BootstrapSafetyError extends Error {}
 
+export const requireBootstrapToken = (token, now = Date.now()) => {
+  if (typeof token?.token !== "string" || !token.token.trim() ||
+      !Number.isFinite(token.expiresOnTimestamp) || token.expiresOnTimestamp <= now + 60000) {
+    throw new BootstrapSafetyError("The explicit Azure CLI credential returned no usable token.");
+  }
+  return token.token;
+};
+
 const requireText = (value, label, maxBytes = 63) => {
   if (typeof value !== "string" || !value.trim() || /[\u0000-\u001f\u007f]/u.test(value) ||
       Buffer.byteLength(value, "utf8") > maxBytes) {

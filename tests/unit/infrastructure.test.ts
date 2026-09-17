@@ -127,4 +127,11 @@ describe("the bounded Azure preparation contract", () => {
     ], { cwd: root, encoding: "utf8", timeout: 30_000 });
     expect(result).toContain("# fail 0");
   }, 35_000);
+
+  it("checks actual App Service HTTP responses without following redirects", () => {
+    const result = execFileSync(process.execPath, [
+      "--test", join(root, "infrastructure/scripts/tests/app-service-response.test.mjs"),
+    ], { cwd: root, encoding: "utf8", timeout: 40_000 });
+    expect(result).toContain("# fail 0");
+  }, 45_000);
 });

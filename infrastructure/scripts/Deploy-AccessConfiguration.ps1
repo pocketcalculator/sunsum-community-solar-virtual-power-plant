@@ -12,18 +12,27 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'MvpAccessSafety.psm1') -Force
+function Write-NewAccessRecord([string] $Path, [string] $Content) {
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    try {
+        $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($Content)
+        $stream.Write($bytes, 0, $bytes.Length)
+    } finally { $stream.Dispose() }
+}
 $path = (Resolve-Path -LiteralPath $ConfigurationPath).Path
 if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $ExpectedSha256) { throw 'Access configuration no longer matches its reviewed hash.' }
 $config = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable
 $parameters = Assert-AccessConfiguration $config $Operation $SubscriptionId $ResourceGroupName
 $output = [System.IO.Path]::GetFullPath($OutputPath)
-if (Test-Path -LiteralPath $output) { throw 'Use a new output path for each review/apply record.' }
+foreach ($recordPath in @($output, "$output.before-auth.json", "$output.before-storage.json")) {
+    if (Test-Path -LiteralPath $recordPath) { throw 'Use a new output path with no existing parameters or audit sidecars for each review/apply record.' }
+}
 $null = New-Item -ItemType Directory -Path (Split-Path -Parent $output) -Force
-@{
+Write-NewAccessRecord $output (@{
     '$schema' = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
     contentVersion = '1.0.0.0'
     parameters = $parameters
-} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $output -Encoding utf8NoBOM
+} | ConvertTo-Json -Depth 8)
 if (-not $Apply) {
     Write-Output 'Access inputs validated and parameters recorded locally. No Azure calls; -Apply requires separate authorization.'
     return
@@ -49,7 +58,7 @@ if ($Operation -eq 'SignIn') {
         throw 'A nonempty, slot-sticky code-flow secret must already exist. This foundation does not provision or resolve Key Vault references.'
     }
     $raw = $null; $settings = $null; $secret = $null
-    $auth | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath "$output.before-auth.json" -Encoding utf8NoBOM
+    Write-NewAccessRecord "$output.before-auth.json" ($auth | ConvertTo-Json -Depth 50)
 }
 if ($Operation -eq 'BlobRoles' -and
     (-not $web.Contains('identity') -or $web.identity.principalId -ine $config.webPrincipalId)) {
@@ -67,7 +76,7 @@ if ($Operation -eq 'StorageNetwork') {
         ($storage.networkRuleSet.Contains('resourceAccessRules') -and $storage.networkRuleSet.resourceAccessRules.Count -gt 0)) {
         throw 'Existing network exceptions require separate review; this template would replace them.'
     }
-    $storage | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath "$output.before-storage.json" -Encoding utf8NoBOM
+    Write-NewAccessRecord "$output.before-storage.json" ($storage | ConvertTo-Json -Depth 50)
     $defaultAction = if ($config.networkMode -ceq 'AuthenticatedPublic') { 'Allow' } else { 'Deny' }
     & az storage account update --subscription $SubscriptionId --resource-group $ResourceGroupName `
         --name $config.storageAccountName --default-action $defaultAction --bypass None `

@@ -117,6 +117,18 @@ describe("explicit server database configuration", () => {
     ).toEqual({ mode: "azure-cli" });
   });
 
+  it.each(["managed-identity", "azure-cli"])("validates server label boundaries for %s", (mode) => {
+    const environment = { ...azure, SUNSUM_DATABASE_AUTH: mode };
+    const options = { allowOperatorIdentity: true };
+    for (const label of ["abc", "a".repeat(63)]) {
+      const host = `${label}.postgres.database.azure.com`;
+      expect(readDatabaseConfig({ ...environment, PGHOST: host }, options).host).toBe(host);
+    }
+    for (const label of ["a", "ab", "a".repeat(64), "-ab", "ab-"]) {
+      expect(() => readDatabaseConfig({ ...environment, PGHOST: `${label}.postgres.database.azure.com` }, options)).toThrow("Azure PostgreSQL hostname");
+    }
+  });
+
   it("reports field names but never the supplied credential", () => {
     const password = "synthetic-secret-not-for-error-output";
     expect(() =>

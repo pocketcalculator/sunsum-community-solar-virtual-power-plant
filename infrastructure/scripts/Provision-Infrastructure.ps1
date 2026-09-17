@@ -65,10 +65,22 @@ if (-not $Apply) {
     Write-Output 'Reviewed parameters, explicit target and budget acknowledgement validated. No Azure calls; -Apply requires separate provisioning authorization.'
     return
 }
+$raw = & az resource list --subscription $SubscriptionId --resource-group $ResourceGroupName --output json --only-show-errors
+if ($LASTEXITCODE -ne 0) { throw 'Cannot check existing resources before first-time provisioning.' }
+$resources = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
+if ($resources -isnot [array] -or @($resources | Where-Object {
+    $_ -isnot [System.Collections.IDictionary] -or
+    [string]::IsNullOrWhiteSpace($_.type) -or [string]::IsNullOrWhiteSpace($_.name)
+}).Count -gt 0) {
+    throw 'Resource discovery did not return a valid inventory; provisioning is blocked.'
+}
+if (@($resources | Where-Object {
+    ($_.type -ieq 'Microsoft.DBforPostgreSQL/flexibleServers' -and $_.name -ieq $document.parameters.postgresServerName.value) -or
+    ($_.type -ieq 'Microsoft.Storage/storageAccounts' -and $_.name -ieq $document.parameters.storageAccountName.value)
+}).Count -gt 0) {
+    throw 'PostgreSQL or Storage already exists. First-time provisioning cannot update existing targets; use separately reviewed targeted operations.'
+}
 if ($webMode -ceq 'Create') {
-    $raw = & az resource list --subscription $SubscriptionId --resource-group $ResourceGroupName --output json --only-show-errors
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot check existing resources before new-web creation.' }
-    $resources = @(($raw -join "`n") | ConvertFrom-Json)
     if (@($resources | Where-Object {
         ($_.type -ieq 'Microsoft.Web/sites' -and $_.name -ieq $document.parameters.webAppName.value) -or
         ($_.type -ieq 'Microsoft.Web/serverfarms' -and $_.name -ieq $document.parameters.appServicePlanName.value)

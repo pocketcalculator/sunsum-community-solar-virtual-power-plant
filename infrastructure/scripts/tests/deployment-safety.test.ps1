@@ -172,12 +172,71 @@ try {
         $global:AzureSafetyTestCalls -ne 1) {
         throw 'Read-only egress discovery did not return an unapproved deduplicated proposal.'
     }
+    $global:AzureProvisionInventory = '[]'
+    $global:AzureProvisionExitCode = 0
+    $global:AzureProvisionWrites = 0
+    function global:az {
+        $global:AzureSafetyTestCalls++
+        if ($args[0] -ceq 'resource' -and $args[1] -ceq 'list') {
+            $global:LASTEXITCODE = $global:AzureProvisionExitCode
+            return $global:AzureProvisionInventory
+        }
+        if ($args[0] -ceq 'deployment' -and $args[1] -ceq 'group' -and $args[2] -ceq 'create') {
+            $global:AzureProvisionWrites++
+            $global:LASTEXITCODE = 0
+            return
+        }
+        throw 'Unexpected provisioning command.'
+    }
+    $provisionParameters.parameters.webAppName.value = 'sample-web'
+    foreach ($mode in @('Existing', 'Create')) {
+        $provisionParameters.parameters.webAppMode = @{ value = $mode }
+        $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+        $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
+        foreach ($inventory in @(
+            '[{"type":"Microsoft.DBforPostgreSQL/flexibleServers","name":"SAMPLE-POSTGRES"}]',
+            '[{"type":"Microsoft.Storage/storageAccounts","name":"samplestorage"}]',
+            '{}', 'null', '[{}]', 'invalid-json'
+        )) {
+            $global:AzureProvisionInventory = $inventory
+            $global:AzureSafetyTestCalls = 0
+            $global:AzureProvisionWrites = 0
+            Assert-Throws { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply } "Accepted existing targets or invalid inventory in $mode mode."
+            if ($global:AzureSafetyTestCalls -ne 1 -or $global:AzureProvisionWrites -ne 0) { throw 'Provisioning did not stop after discovery.' }
+        }
+        $global:AzureProvisionInventory = '[]'
+        $global:AzureProvisionExitCode = 1
+        Assert-Throws { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply } 'Accepted failed discovery.'
+        if ($global:AzureProvisionWrites -ne 0) { throw 'Failed discovery allowed deployment.' }
+        $global:AzureProvisionExitCode = 0
+        & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply | Out-Null
+        if ($global:AzureProvisionWrites -ne 1) { throw 'Empty inventory should permit first-time provisioning.' }
+        foreach ($inventory in @(
+            '[{"type":"Microsoft.Web/sites","name":"sample-web"}]',
+            '[{"type":"Microsoft.Web/serverfarms","name":"sample-plan"}]'
+        )) {
+            $global:AzureProvisionInventory = $inventory
+            $global:AzureProvisionWrites = 0
+            if ($mode -ceq 'Create') {
+                Assert-Throws { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply } 'Create mode accepted an existing web target.'
+                if ($global:AzureProvisionWrites -ne 0) { throw 'Existing web target was overwritten.' }
+            } else {
+                & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply | Out-Null
+                if ($global:AzureProvisionWrites -ne 1) { throw 'Existing mode should leave web targets alone.' }
+            }
+        }
+        $global:AzureProvisionInventory = '[{"type":"Microsoft.Storage/storageAccounts","name":"unrelatedstorage"}]'
+        $global:AzureProvisionWrites = 0
+        & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply | Out-Null
+        if ($global:AzureProvisionWrites -ne 1) { throw 'Unrelated resources should not block provisioning.' }
+    }
     $zip = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Update)
     try { $null = $zip.CreateEntry('.env') } finally { $zip.Dispose() }
     Assert-Throws { & (Join-Path $PSScriptRoot '..\Test-AppServicePackage.ps1') -Path $zipPath } 'Accepted a tampered archive.'
 } finally {
     Remove-Item -LiteralPath Function:\az -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureSafetyTestCalls -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name AzureProvisionInventory, AzureProvisionExitCode, AzureProvisionWrites -Scope Global -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }
 }
 Write-Output 'Deployment safety: IPv4, real ZIP exclusion/tamper checks and target-bound approval checks passed.'

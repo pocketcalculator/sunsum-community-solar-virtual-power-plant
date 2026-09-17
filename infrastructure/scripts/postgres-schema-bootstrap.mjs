@@ -17,6 +17,27 @@ export const bootstrapSchemas = async (client, config, quoteIdentifier) => inTra
   if (owners.length !== 0) {
     throw new BootstrapSafetyError("Runtime owns database objects, or runtime/operator owns the database; review privileges manually.");
   }
+  const { rows: publicGrants } = await client.query(
+    `SELECT 1 FROM pg_catalog.pg_database AS database,
+       LATERAL pg_catalog.aclexplode(COALESCE(database.datacl, pg_catalog.acldefault('d', database.datdba))) AS acl
+       WHERE database.datname = current_database() AND acl.grantee = 0
+     UNION ALL
+     SELECT 1 FROM pg_catalog.pg_namespace AS schema,
+       LATERAL pg_catalog.aclexplode(COALESCE(schema.nspacl, pg_catalog.acldefault('n', schema.nspowner))) AS acl
+       WHERE schema.nspname IN ('public', 'drizzle') AND acl.grantee = 0`,
+  );
+  if (publicGrants.length !== 0) {
+    throw new BootstrapSafetyError("PUBLIC privileges require a separately reviewed ACL transition preserving existing access. Bootstrap will not revoke them.");
+  }
+  const { rows: unsafeRuntimeAccess } = await client.query(
+    `SELECT 1 FROM pg_catalog.pg_namespace
+       WHERE (nspname = 'drizzle' AND pg_catalog.has_schema_privilege($1, oid, 'USAGE,CREATE'))
+          OR (nspname = 'public' AND pg_catalog.has_schema_privilege($1, oid, 'CREATE'))`,
+    [config.runtimeRole],
+  );
+  if (unsafeRuntimeAccess.length !== 0) {
+    throw new BootstrapSafetyError("Runtime has metadata access or application schema CREATE; review privileges manually. Bootstrap will not revoke existing grants.");
+  }
   const database = quoteIdentifier(config.database);
   const runtime = quoteIdentifier(config.runtimeRole);
   const operator = quoteIdentifier(config.operatorRole);
@@ -47,14 +68,6 @@ export const bootstrapSchemas = async (client, config, quoteIdentifier) => inTra
   for (const schema of schemasToCreate) {
     await client.query(`CREATE SCHEMA ${quoteIdentifier(schema)} AUTHORIZATION ${operator}`);
   }
-  await client.query(`REVOKE ALL ON DATABASE ${database} FROM PUBLIC`);
-  await client.query("REVOKE ALL ON SCHEMA public FROM PUBLIC");
-  await client.query(`REVOKE ALL ON SCHEMA public FROM ${runtime}`);
-  await client.query(`SET LOCAL ROLE ${operator}`);
-  await client.query("REVOKE ALL ON SCHEMA drizzle FROM PUBLIC");
-  await client.query(`REVOKE ALL ON SCHEMA drizzle FROM ${runtime}`);
-  await client.query("RESET ROLE");
-  await client.query(`REVOKE CREATE, TEMPORARY ON DATABASE ${database} FROM ${runtime}, ${operator}`);
   await client.query(`GRANT CONNECT ON DATABASE ${database} TO ${runtime}, ${operator}`);
 
   for (const role of [config.runtimeRole, config.operatorRole]) {

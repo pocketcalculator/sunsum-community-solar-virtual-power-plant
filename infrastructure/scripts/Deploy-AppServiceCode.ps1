@@ -12,6 +12,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+Import-Module (Join-Path $PSScriptRoot 'DeploymentSafety.psm1') -Force
 if ($SubscriptionId -eq [guid]::Empty -or [string]::IsNullOrWhiteSpace($ApprovalReference)) {
     throw 'An explicit subscription and code-deployment review reference are required.'
 }
@@ -50,15 +51,8 @@ if ($LASTEXITCODE -ne 0) {
 $online = $false
 for ($attempt = 0; $attempt -lt 12; $attempt++) {
     try {
-        $response = Invoke-WebRequest -Uri "https://$($app.host)/" -TimeoutSec 10 -MaximumRedirection 0 -SkipHttpErrorCheck
-        if ($ExpectedAccessMode -eq 'Preview' -and $response.StatusCode -eq 200) { $online = $true; break }
-        if ($ExpectedAccessMode -eq 'ApprovedSignIn' -and $response.StatusCode -eq 302) {
-            $redirect = [uri]::new([uri]"https://$($app.host)/", [string]$response.Headers.Location)
-            if ($redirect.Scheme -eq 'https' -and (
-                ($redirect.Host -eq $app.host -and $redirect.AbsolutePath -eq '/.auth/login/aad') -or
-                $redirect.Host -eq 'login.microsoftonline.com'
-            )) { $online = $true; break }
-        }
+        $online = Test-AppServiceResponse -Uri "https://$($app.host)/" -ExpectedAccessMode $ExpectedAccessMode
+        if ($online) { break }
     } catch [System.Net.Http.HttpRequestException] {
         Write-Warning "Preview check $($attempt + 1) encountered a network failure; retrying within the bounded window."
     } catch [System.Threading.Tasks.TaskCanceledException] {

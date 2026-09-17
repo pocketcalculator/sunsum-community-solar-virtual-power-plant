@@ -81,4 +81,33 @@ function Assert-FirewallApproval {
     return ,@($addresses | Sort-Object)
 }
 
-Export-ModuleMember -Function Assert-ExactPublicIpv4, Test-AppServiceArchivePath, Assert-FirewallApproval
+function Test-AppServiceResponse {
+    param(
+        [Parameter(Mandatory)][uri] $Uri,
+        [ValidateSet('Preview', 'ApprovedSignIn')][string] $ExpectedAccessMode
+    )
+    $handler = [System.Net.Http.HttpClientHandler]::new()
+    $handler.AllowAutoRedirect = $false
+    $handler.UseCookies = $false
+    $client = [System.Net.Http.HttpClient]::new($handler)
+    $client.Timeout = [timespan]::FromSeconds(10)
+    $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $Uri)
+    $response = $null
+    try {
+        $response = $client.Send($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead)
+        if ($ExpectedAccessMode -eq 'Preview') { return [int]$response.StatusCode -eq 200 }
+        if ([int]$response.StatusCode -ne 302 -or $null -eq $response.Headers.Location) { return $false }
+        $redirect = $null
+        if (-not [uri]::TryCreate($Uri, [string]$response.Headers.Location, [ref]$redirect)) { return $false }
+        return $redirect.Scheme -eq 'https' -and $redirect.Port -eq 443 -and $redirect.UserInfo -eq '' -and (
+            ($redirect.Host -eq $Uri.Host -and $redirect.AbsolutePath -eq '/.auth/login/aad') -or
+            $redirect.Host -eq 'login.microsoftonline.com'
+        )
+    } finally {
+        if ($null -ne $response) { $response.Dispose() }
+        $request.Dispose()
+        $client.Dispose()
+    }
+}
+
+Export-ModuleMember -Function Assert-ExactPublicIpv4, Test-AppServiceArchivePath, Assert-FirewallApproval, Test-AppServiceResponse

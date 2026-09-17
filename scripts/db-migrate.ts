@@ -19,6 +19,9 @@ try {
   if (config.auth.mode === "managed-identity") {
     throw new DatabaseConfigurationError("Runtime managed identity cannot run migrations. Use the separately granted operator identity.");
   }
+  if (config.auth.mode !== "azure-cli") {
+    throw new DatabaseConfigurationError("Azure migrations require azure-cli authentication. Use db:migrate for local password databases.");
+  }
   const migrations = readMigrationFiles({ migrationsFolder });
   if (migrations.length === 0) {
     console.log("No versioned SQL migrations are present; nothing was applied.");

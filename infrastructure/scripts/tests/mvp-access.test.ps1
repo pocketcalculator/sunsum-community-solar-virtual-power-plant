@@ -73,6 +73,19 @@ try {
             OutputPath = Join-Path $fixture "$operation.parameters.json"
         }
         & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @args | Out-Null
+        foreach ($suffix in @('', '.before-auth.json', '.before-storage.json')) {
+            $args.OutputPath = Join-Path $fixture "$operation-$([guid]::NewGuid().ToString('N')).json"
+            $existingPath = "$($args.OutputPath)$suffix"
+            Set-Content -LiteralPath $existingPath -Value 'preserved-review-baseline' -Encoding utf8NoBOM
+            $existingHash = (Get-FileHash -LiteralPath $existingPath -Algorithm SHA256).Hash
+            Assert-Throws { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @args -Apply }
+            if ((Get-FileHash -LiteralPath $existingPath -Algorithm SHA256).Hash -cne $existingHash) {
+                throw 'An existing review record was overwritten.'
+            }
+            if ($suffix -ne '' -and (Test-Path -LiteralPath $args.OutputPath)) {
+                throw 'An orphaned audit sidecar should block before creating parameters.'
+            }
+        }
         $args.ExpectedSha256 = '0' * 64
         Assert-Throws { & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @args -Apply }
     }
@@ -114,9 +127,36 @@ try {
             -OutputPath (Join-Path $fixture 'wrong-principal.parameters.json') -Apply
     }
     if ($global:MvpAccessCalls -ne 4) { throw 'Blob role prerequisite did not inspect the web identity exactly once.' }
+    $global:MvpRaceOutput = Join-Path $fixture 'race.parameters.json'
+    $global:MvpAccessCalls = 0
+    function global:az {
+        $global:MvpAccessCalls++
+        $global:LASTEXITCODE = 0
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
+            return '{"id":"synthetic-test-resource","httpsOnly":true,"kind":"app,linux"}'
+        }
+        if ($args[0] -ceq 'rest') { return '{"properties":{"platform":{"enabled":false}}}' }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') {
+            Set-Content -LiteralPath "$global:MvpRaceOutput.before-auth.json" -Value 'concurrent-review-baseline' -Encoding utf8NoBOM
+            return '[{"name":"MICROSOFT_PROVIDER_AUTHENTICATION_SECRET","value":"synthetic-test-only","slotSetting":true}]'
+        }
+        throw 'An audit collision must not reach deployment.'
+    }
+    $path = Join-Path $fixture 'SignIn.json'
+    Assert-Throws {
+        & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') -Operation SignIn `
+            -SubscriptionId $subscription -ResourceGroupName $group -ConfigurationPath $path `
+            -ExpectedSha256 (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash `
+            -OutputPath $global:MvpRaceOutput -Apply
+    }
+    if ($global:MvpAccessCalls -ne 3 -or
+        (Get-Content -LiteralPath "$global:MvpRaceOutput.before-auth.json" -Raw).Trim() -cne 'concurrent-review-baseline') {
+        throw 'Create-only writes must preserve a concurrent audit record and stop before deployment.'
+    }
 } finally {
     Remove-Item -LiteralPath Function:\az -ErrorAction SilentlyContinue
     Remove-Variable -Name MvpAccessCalls -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name MvpRaceOutput -Scope Global -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }
 Write-Output 'MVP access safety checks passed: explicit identities, directory approval, scoped roles, storage policy approval and no-cloud dry-runs.'

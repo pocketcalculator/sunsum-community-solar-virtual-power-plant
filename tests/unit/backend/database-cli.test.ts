@@ -5,8 +5,9 @@ import { describe, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const run = (args: string[], overrides: Readonly<Record<string, string>> = {}) => {
-  const env = { ...process.env, ...overrides };
+  const env = { ...process.env };
   delete env.PGPASSWORD;
+  Object.assign(env, overrides);
   return spawnSync(process.execPath, args, {
     cwd: root,
     env,
@@ -47,6 +48,27 @@ describe("database CLI safety gates", () => {
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Runtime managed identity cannot run migrations");
+  });
+
+  it("rejects local password mode in the Azure migration command before connecting", () => {
+    const result = run(
+      [...operatorArgs, "scripts/db-migrate.ts", "--apply"],
+      {
+        NODE_ENV: "development",
+        SUNSUM_DATABASE_AUTH: "password",
+        PGHOST: "127.0.0.1",
+        PGPORT: "1",
+        PGDATABASE: "sunsum",
+        PGUSER: "local_operator",
+        PGSSLMODE: "disable",
+        PGPASSWORD: "synthetic-local-password",
+      },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Azure migrations require azure-cli authentication");
+    expect(result.stderr).not.toContain("synthetic-local-password");
+    expect(result.stdout).not.toContain("applied");
   });
 
   it("keeps the real server-only import guard outside the test mock", () => {

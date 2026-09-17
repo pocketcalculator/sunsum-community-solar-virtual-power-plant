@@ -182,12 +182,25 @@ pwsh -NoProfile -File infrastructure\scripts\tests\deployment-safety.test.ps1
 pwsh -NoProfile -File infrastructure\scripts\tests\mvp-access.test.ps1
 node --test infrastructure\scripts\tests\postgres-bootstrap.test.mjs
 node --test infrastructure\scripts\tests\postgres-bootstrap-operations.test.mjs
+node --test infrastructure\scripts\tests\app-service-response.test.mjs
 npm test -- tests/unit/infrastructure.test.ts
 ```
 
 These checks do not authenticate to Azure or PostgreSQL. Type compilation
 does not verify name availability, quotas, billing, Azure policy, directory
 membership or the installed cloud server's authentication extension.
+
+Repository health also compiles every Bicep template with version 0.42.1, using
+a SHA-256-verified compiler and no Azure credentials. String-based policy tests
+remain supplemental checks, not a substitute for compilation.
+
+The bootstrap operations suite includes an opt-in real PostgreSQL test. Use a
+dedicated, disposable PostgreSQL 17 instance exposed only on loopback with user
+`postgres` and the synthetic password `synthetic-bootstrap-test-only`. Set
+`SUNSUM_BOOTSTRAP_TEST_PORT` to its mapped port for that test command, then remove
+the variable and stop the instance. The test creates and drops uniquely named
+databases and roles; never point it at a shared database. It checks catalog SQL,
+ACL preservation and reruns, not Azure Entra principal creation or cloud access.
 
 ## 2. Approved first-time provisioning
 
@@ -204,10 +217,12 @@ template, potentially replacing a later sign-in secret or other settings.
 
 Database/Storage names are globally constrained. Inspect inventory/name
 availability and the planned resource diff before a future authorized deployment.
-The entry point manages its PostgreSQL and Storage resources even in Existing
-web mode; use the separate modules/operations for subsequent access changes.
-Reapplying the core restores Storage's **closed** default and is not a code-only
-deployment. Do not accidentally take over an unrelated account or database.
+The provisioning script rejects existing PostgreSQL or Storage targets in both
+web modes, and existing web app/plan targets in Create mode. Failed or malformed
+inventory also blocks deployment. Use separately reviewed targeted operations
+for subsequent changes; the inventory preflight does not reserve names against
+concurrent provisioning. Directly reapplying the core template bypasses this guard
+and restores Storage's **closed** default; it is not a code-only deployment.
 
 ```powershell
 # LOCAL validation: no Azure calls without -Apply.
@@ -378,7 +393,10 @@ successful ARM container creation does not prove Blob access.
    unrelated containers should fail, and anonymous/key-based access must fail.
    RBAC propagation can take time; never broaden the scope as a retry strategy.
 
-For each access operation, use a reviewed input and a new output path:
+For each access operation, use a reviewed input and a new output path.
+The parameters file and both possible audit sidecars must be absent. All records
+use create-only writes, so an existing baseline cannot be replaced even if a
+file appears after the initial check. Preserve these records for rollback review.
 
 ```powershell
 $inputFile = '.azure\dev\storage-network.json'
@@ -447,14 +465,25 @@ The two bounded, transactional phases are:
    nonadmin flags match, with no privileged role attributes or memberships.
    A local password role or changed MI object ID is **not** silently relabeled.
 2. Connect to the chosen app database. Refuse runtime-owned objects,
-   runtime/operator database ownership, and incorrectly owned existing schemas.
+   runtime/operator database ownership, incorrectly owned existing schemas,
+  PUBLIC database/public/metadata schema grants, runtime metadata access, and
+  runtime application schema CREATE privileges.
    Create only the `drizzle` metadata schema, owned by the migration role.
    Preserve main's canonical `public` application schema. When needed,
    grant the administrator temporary migration-role membership for `SET ROLE`,
    then revoke it within the same transaction; preexisting membership options
-   are not overwritten. Revoke PUBLIC database/schema defaults and runtime
-   schema access, and grant **CONNECT only** to runtime/operator at database
-   scope. The operator owns metadata, not the database or public schema.
+  are not overwritten. Preserve existing application grants and grant
+  **CONNECT only** to runtime/operator at database scope. Existing effective
+  database CREATE/TEMPORARY privileges cause rollback, not automatic revocation.
+  The operator owns metadata, not the database or public schema.
+
+Before phase two, an administrator must capture the database/schema ACL baseline,
+identify roles relying on PUBLIC defaults, and approve a separate ACL transition
+that preserves their required access with explicit grants. This is required even
+for a new database with default PUBLIC grants. Bootstrap does not perform that
+transition or provide a force switch. On reruns it preserves runtime `USAGE` on
+the canonical `public` schema and existing per-table grants; it never revokes
+database or schema privileges from PUBLIC, runtime, operator, or unrelated roles.
 
 Bootstrap creates no business tables, broad runtime role grants, runtime `CREATE`,
 default privileges for future tables, or runtime database ownership.

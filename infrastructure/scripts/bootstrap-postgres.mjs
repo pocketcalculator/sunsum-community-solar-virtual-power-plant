@@ -1,7 +1,7 @@
 import console from "node:console";
 import { readFile } from "node:fs/promises";
 import process from "node:process";
-import { BootstrapSafetyError, validateBootstrapConfig, withBootstrapClient } from "./postgres-bootstrap-config.mjs";
+import { BootstrapSafetyError, requireBootstrapToken, validateBootstrapConfig, withBootstrapClient } from "./postgres-bootstrap-config.mjs";
 import { bootstrapPrincipals } from "./postgres-principal-bootstrap.mjs";
 import { bootstrapSchemas } from "./postgres-schema-bootstrap.mjs";
 
@@ -15,7 +15,7 @@ const main = async () => {
   if (args[2] !== "--apply") {
     console.log("Configuration validated; no network/authentication/SQL calls. With separately approved --apply:");
     console.log("1. Verify the Entra administrator; create or verify distinct nonadmin runtime/operator mappings in postgres.");
-    console.log("2. Create operator-owned drizzle metadata schema; preserve the canonical public schema, revoke PUBLIC defaults; grant CONNECT only.");
+    console.log("2. Require separately reviewed PUBLIC ACLs; preserve existing grants and canonical public schema; create operator-owned drizzle schema and grant CONNECT only.");
     console.log("No tables, runtime schema CREATE, database ownership or future-table grants are created.");
     return;
   }
@@ -37,10 +37,7 @@ const main = async () => {
         const token = await credential.getToken("https://ossrdbms-aad.database.windows.net/.default", {
           abortSignal: AbortSignal.timeout(15000),
         });
-        if (!token?.token || token.expiresOnTimestamp <= Date.now() + 60000) {
-          throw new BootstrapSafetyError("The explicit Azure CLI credential returned no usable token.");
-        }
-        return token.token;
+        return requireBootstrapToken(token);
       },
       ssl: { rejectUnauthorized: true, minVersion: "TLSv1.2", servername: config.host },
       connectionTimeoutMillis: 10000,
