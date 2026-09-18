@@ -7,6 +7,25 @@ on:
     paths:
       - "infrastructure/**"
   workflow_dispatch:
+    inputs:
+      approval_file:
+        description: "Path to the reviewed provisioning approval record"
+        required: true
+      parameters_sha256:
+        description: "SHA-256 of the reviewed parameter file recorded in the approval"
+        required: true
+      approval_sha256:
+        description: "SHA-256 of the reviewed approval record"
+        required: true
+      approval_reference:
+        description: "Infrastructure review reference"
+        required: true
+      database_budget_approval:
+        description: "Approved PostgreSQL budget reference"
+        required: true
+      storage_budget_approval:
+        description: "Approved Storage budget reference"
+        required: true
 
 permissions:
   id-token: write
@@ -50,10 +69,11 @@ jobs:
             --parameters @$PARAMETER_FILE
 
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch'
     needs: validate
 
     runs-on: ubuntu-latest
+    environment: azure-infrastructure
 
     steps:
       - uses: actions/checkout@v4
@@ -65,18 +85,26 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy Infrastructure
+      - name: Provision Infrastructure
+        shell: pwsh
+        env:
+          SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          RESOURCE_GROUP_NAME: ${{ secrets.RESOURCE_GROUP_NAME }}
+          APPROVAL_FILE: ${{ inputs.approval_file }}
+          PARAMETERS_SHA256: ${{ inputs.parameters_sha256 }}
+          APPROVAL_SHA256: ${{ inputs.approval_sha256 }}
+          APPROVAL_REFERENCE: ${{ inputs.approval_reference }}
+          DATABASE_BUDGET_APPROVAL: ${{ inputs.database_budget_approval }}
+          STORAGE_BUDGET_APPROVAL: ${{ inputs.storage_budget_approval }}
         run: |
-          az deployment group create \
-            --name sunsum-${{ github.run_number }} \
-            --resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
-            --template-file $TEMPLATE_FILE \
-            --parameters @$PARAMETER_FILE \
-            --mode Incremental
-
-      - name: Show Outputs
-        run: |
-          az deployment group show \
-            --name sunsum-${{ github.run_number }} \
-            --resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
-            --query properties.outputs
+          ./infrastructure/scripts/Provision-Infrastructure.ps1 `
+            -SubscriptionId $env:SUBSCRIPTION_ID `
+            -ResourceGroupName $env:RESOURCE_GROUP_NAME `
+            -ParametersPath $env:PARAMETER_FILE `
+            -ExpectedSha256 $env:PARAMETERS_SHA256 `
+            -ApprovalPath $env:APPROVAL_FILE `
+            -ApprovalSha256 $env:APPROVAL_SHA256 `
+            -ApprovalReference $env:APPROVAL_REFERENCE `
+            -DatabaseBudgetApproval $env:DATABASE_BUDGET_APPROVAL `
+            -StorageBudgetApproval $env:STORAGE_BUDGET_APPROVAL `
+            -Apply
