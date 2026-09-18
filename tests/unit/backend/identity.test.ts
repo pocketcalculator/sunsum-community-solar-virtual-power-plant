@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHmac } from "node:crypto";
 import {
   SESSION_MAX_AGE_MS,
   signSession,
@@ -96,6 +97,57 @@ describe("a session token", () => {
     ["payload that is not an object", `${Buffer.from("42").toString("base64url")}.x`],
   ])("refuses a malformed token: %s", (_name, token) => {
     expect(verifySession(token, SECRET, NOW).ok).toBe(false);
+  });
+
+  /*
+   * Everything above is refused at the shape or signature check, so none of it
+   * reaches the parser. These carry a *correctly computed* HMAC over a payload
+   * we chose, which is the only way past `timingSafeEqual` and into the
+   * branches that decide whether a signed payload is actually a session. They
+   * matter because that is the position an attacker who obtained the secret
+   * would be in, and because a parser that threw here would turn a 401 into a
+   * 500.
+   */
+  function signRawPayload(raw: string, secret: string): string {
+    const encoded = Buffer.from(raw, "utf8").toString("base64url");
+    const signature = createHmac("sha256", secret)
+      .update(encoded)
+      .digest()
+      .toString("base64url");
+    return `${encoded}.${signature}`;
+  }
+
+  it.each([
+    ["not JSON at all", "definitely not json"],
+    ["JSON that is a number", "42"],
+    ["JSON that is null", "null"],
+    ["JSON that is an array", "[]"],
+    ["an object with no userId", JSON.stringify({ issuedAt: NOW })],
+    ["an object whose userId is empty", JSON.stringify({ userId: "", issuedAt: NOW })],
+    ["an object whose userId is not a string", JSON.stringify({ userId: 7, issuedAt: NOW })],
+    ["an object with no issuedAt", JSON.stringify({ userId: "abc" })],
+    ["an object whose issuedAt is not finite", JSON.stringify({ userId: "abc", issuedAt: null })],
+  ])("refuses a correctly signed payload that is %s", (_name, raw) => {
+    expect(verifySession(signRawPayload(raw, SECRET), SECRET, NOW).ok).toBe(
+      false,
+    );
+  });
+
+  /*
+   * The control for the block above, and the reason it can be trusted: the
+   * helper is a faithful reimplementation of `signSession`, so the nine cases
+   * really do get past the signature check rather than being refused before
+   * the parser — which is exactly the mistake this block replaced.
+   */
+  it("accepts a correctly signed payload that is well formed", () => {
+    const payload = { userId: "abc", issuedAt: NOW };
+    const token = signRawPayload(JSON.stringify(payload), SECRET);
+
+    expect(token).toBe(signSession(payload, SECRET));
+
+    const result = verifySession(token, SECRET, NOW);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.userId).toBe("abc");
   });
 
   // Nothing about *why* a token failed reaches the caller: a probe must not be
@@ -409,6 +461,83 @@ describe("signing in and out", () => {
 
     const me = await handleGetMe(withCookie(signedIn), fresh);
     expect(await me.json()).toMatchObject({ onboarded: true });
+  });
+
+  /*
+   * Two first-time profile posts that overlap.
+   *
+   * The write is read-allocate-upsert-reread, and it returns the re-read. Left
+   * unserialised the two interleave: both observe no profile, both mint an id,
+   * and the second upsert replaces the first by `user_id` — so the caller who
+   * submitted "First Light Fund" is handed back a 201 describing *the other
+   * request's* organisation. Each response must describe the request that
+   * produced it, which is only true if the four steps are one transaction.
+   */
+  it("gives concurrent first-time profile writes one identity", async () => {
+    const fresh = createMemoryBackendStore({ seedDemoProjects: false });
+    const signedIn = await handlePostDemoSwitch(
+      new Request("https://sunsum.test/api/auth/demo-switch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: "investor" }),
+      }),
+      fresh,
+    );
+    const identity = await requireInvestorIdentity(withCookie(signedIn), fresh);
+    expect(identity.ok).toBe(true);
+    if (!identity.ok) return;
+
+    const post = (organizationName: string) =>
+      handlePostInvestorProfile(
+        new Request("https://sunsum.test/api/investors/me/profile", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            organization_name: organizationName,
+            investor_type: "impact_investor",
+            capital_type: "concessionary_debt",
+            funding_stage_focus: [],
+            ticket_size_min: null,
+            ticket_size_max: null,
+            geographies: [],
+            investment_objectives: [],
+            impact_priorities: [],
+            decision_criteria: [],
+          }),
+        }),
+        identity.value,
+        fresh,
+      );
+
+    const [first, second] = await Promise.all([
+      post("First Light Fund"),
+      post("Second Light Fund"),
+    ]);
+
+    expect([first.status, second.status].every((s) => s < 400)).toBe(true);
+
+    const [firstBody, secondBody] = (await Promise.all([
+      first.json(),
+      second.json(),
+    ])) as { id: string; organization_name: string }[];
+
+    expect(firstBody).toBeDefined();
+    expect(secondBody).toBeDefined();
+    if (!firstBody || !secondBody) return;
+
+    /*
+     * Each response describes its own request. This is the assertion that
+     * fails when the transaction is removed: the loser is otherwise handed the
+     * winner's organisation name.
+     */
+    expect(firstBody.organization_name).toBe("First Light Fund");
+    expect(secondBody.organization_name).toBe("Second Light Fund");
+
+    // One user, one profile, one id — no second identity was minted.
+    const stored = await fresh.getInvestorProfileByUserId(identity.value.userId);
+    expect(stored).not.toBeUndefined();
+    expect(firstBody.id).toBe(stored?.id);
+    expect(secondBody.id).toBe(stored?.id);
   });
 
   /*

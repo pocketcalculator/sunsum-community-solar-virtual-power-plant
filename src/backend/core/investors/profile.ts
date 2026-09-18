@@ -100,37 +100,40 @@ export async function upsertMyInvestorProfile(
     });
   }
 
-  const existing = await store.getInvestorProfileByUserId(viewer.userId);
-  const now = new Date().toISOString();
-  const profile: InvestorProfile = {
-    id: existing?.id ?? store.nextId("investor"),
-    userId: viewer.userId,
-    organizationName: input.organizationName,
-    investorType: input.investorType,
-    capitalType: input.capitalType,
-    fundingStageFocus: input.fundingStageFocus,
-    ticketSizeMin: input.ticketSizeMin,
-    ticketSizeMax: input.ticketSizeMax,
-    geographies: input.geographies,
-    investmentObjectives: input.investmentObjectives,
-    impactPriorities: input.impactPriorities,
-    decisionCriteria: input.decisionCriteria,
-    dealRoomProfile: existing?.dealRoomProfile ?? defaultDealRoomProfile(input.investorType),
-    visiblePortfolioScope: existing?.visiblePortfolioScope ?? [],
-    onboardingCompletedAt: now,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  };
-  await store.upsertInvestorProfile(profile);
   /**
-   * Answer with the row as stored, not the one just built. Two first-time
-   * profile posts can both see no existing profile and mint different ids; the
-   * upsert conflicts on `user_id` and keeps whichever row landed first, so the
-   * loser's freshly-minted id is never stored and a later read would disagree
-   * with its own 201. Re-reading costs one query and makes the response true.
+   * One transaction around read, allocate, write and re-read. Re-reading alone
+   * was not enough: nothing stopped two first-time posts from both observing
+   * no profile, minting different ids, and racing the upsert. Serialising the
+   * whole sequence means the second caller sees the first caller's row as
+   * `existing` and reuses its id, so only one id is ever allocated and the
+   * response cannot disagree with what is stored.
    */
-  const stored = await store.getInvestorProfileByUserId(viewer.userId);
-  return ok(toInvestorProfilePayload(stored ?? profile));
+  return store.transaction(async (transaction) => {
+    const existing = await transaction.getInvestorProfileByUserId(viewer.userId);
+    const now = new Date().toISOString();
+    const profile: InvestorProfile = {
+      id: existing?.id ?? transaction.nextId("investor"),
+      userId: viewer.userId,
+      organizationName: input.organizationName,
+      investorType: input.investorType,
+      capitalType: input.capitalType,
+      fundingStageFocus: input.fundingStageFocus,
+      ticketSizeMin: input.ticketSizeMin,
+      ticketSizeMax: input.ticketSizeMax,
+      geographies: input.geographies,
+      investmentObjectives: input.investmentObjectives,
+      impactPriorities: input.impactPriorities,
+      decisionCriteria: input.decisionCriteria,
+      dealRoomProfile: existing?.dealRoomProfile ?? defaultDealRoomProfile(input.investorType),
+      visiblePortfolioScope: existing?.visiblePortfolioScope ?? [],
+      onboardingCompletedAt: now,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    await transaction.upsertInvestorProfile(profile);
+    const stored = await transaction.getInvestorProfileByUserId(viewer.userId);
+    return ok(toInvestorProfilePayload(stored ?? profile));
+  });
 }
 
 export function toInvestorProfilePayload(

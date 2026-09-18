@@ -109,9 +109,13 @@ export function readCookie(request: Request, name: string): string | undefined {
 function cookieAttributes(maxAgeSeconds: number): string {
   /**
    * `SameSite=Lax` lets a top-level navigation carry the session while keeping
-   * it off cross-site form posts and subresource requests, which is the
-   * defence against CSRF on the write endpoints. `Secure` is conditional only
-   * so that plain-HTTP localhost still works.
+   * it off cross-site form posts and subresource requests. It is a partial
+   * mitigation here, not the defence: Lax is scoped to the *site*, so a
+   * sibling origin under the same registrable domain still has the cookie
+   * attached. The origin check in `rejectCrossSiteWrite` is what actually
+   * refuses a forged write, and removing it would reopen that gap even though
+   * this attribute stays. `Secure` is conditional only so that plain-HTTP
+   * localhost still works.
    */
   const attributes = [
     "Path=/",

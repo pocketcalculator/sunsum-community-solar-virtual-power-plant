@@ -745,19 +745,20 @@ components:
             $ref: "#/components/schemas/Error"
     Forbidden:
       description: |
-        The caller is not allowed. Four cases concern authorization, and are
-        distinguished by `code`: wrong role for the endpoint, right role but not
-        the owner of this record, right role but an insufficient disclosure tier
-        (§7.7), or an investor who has not completed onboarding and so has no
-        mandate to authorize against.
+        The caller is not allowed. Three codes concern authorization:
+        `forbidden_role` (wrong role for the endpoint), `forbidden_owner`
+        (right role, but not the owner of this record), and `forbidden_tier`
+        (right role, but an insufficient disclosure tier under §7.7 — which is
+        also how an investor who has not completed onboarding is refused).
 
-        A fifth case is not about authorization at all. On writes, a request
+        A fourth code is not about authorization at all. On writes, a request
         that carries a session cookie but originates from another site is
         refused with `code: forbidden_origin` before identity is considered, so
         clients must not read a 403 as a role or ownership failure without
         checking `code`. See `CrossSiteRefused`.
 
-        Compare 401, which means no valid session at all.
+        Compare 401, which means no valid session at all, and 404, which is
+        what a project hidden from investors returns rather than a 403.
       content:
         application/json:
           schema:
@@ -1223,8 +1224,13 @@ components:
 
             Authorization codes map to the §8.2 matrix:
             `forbidden_role` (wrong role), `forbidden_owner` (right role, not your
-            record), `forbidden_tier` (right role, insufficient disclosure tier),
-            `forbidden_visibility` (project not investor-visible).
+            record), `forbidden_tier` (right role, but an insufficient disclosure
+            tier — which includes an investor who has not completed onboarding).
+
+            A project the operator has not made visible to investors answers
+            `404 not_found`, not a `403`. That is deliberate: a distinct
+            "exists but hidden" code would confirm the project exists to
+            exactly the caller who is not allowed to know it.
 
             `forbidden_origin` is not an authorization decision about the
             caller: it means the request was initiated by another site and was

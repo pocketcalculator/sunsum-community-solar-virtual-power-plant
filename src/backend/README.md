@@ -255,14 +255,17 @@ Two seams allow those integrations without changing the workflow rules:
   records the decision. `composition.ts` selects the Drizzle-backed
   `BackendStore` with `SUNSUM_STORE=db`; the default remains the explicit
   in-memory fixture. Persistence stays outside the handlers.
-- **Identity.** `handlers/identity/viewer.ts` exposes fixed demo owner, operator
-  and investor resolvers. **They have no security value.** They read nothing
-  from the request, so a caller cannot choose a role. Before production, replace
-  them with authenticated request-to-viewer resolution and add CSRF protection
-  for cookie sessions or suitable bearer-token protection.
+- **Identity.** Routes resolve their viewer from the signed `sunsum_session`
+  cookie in `handlers/identity/session.ts`. The deprecated fixed resolvers in
+  `handlers/identity/viewer.ts` are no longer on any request path — they survive
+  only as fixtures for core tests that need a `Viewer` without a session, and
+  must not be reintroduced into a route. What is still not production ready is
+  `POST /auth/demo-switch`, which issues a session for a seeded identity without
+  checking a credential; it is opt-in per deployment and is what a real identity
+  provider replaces.
 
-Neither is production ready. The App Service smoke test exercises the existing
-fixture-backed API, not a real database, data set, or identity provider.
+The App Service smoke test exercises a fixture-backed API, not a real data set
+or identity provider.
 
 Infrastructure clients must not be constructed in `core/`, `handlers/`, routes,
 or presentation. The composition boundary supplies dependencies to adapters
