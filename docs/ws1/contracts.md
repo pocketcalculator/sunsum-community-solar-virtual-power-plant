@@ -52,11 +52,14 @@ on WS1's behalf; flipping these rows to accepted is WS1's call.
 | Demo data                | `src/backend/core/store` seed — five Atlanta/Chattanooga pilot sites, deterministic on process start | 0.1.0   |
 | Identity and permissions | `src/backend/README.md` role/disclosure model; `src/backend/handlers/identity` session resolution | 0.1.0   |
 
-Known limitation carried by the identity gate: every route now requires a
-signed `sunsum_session` cookie and answers `401 unauthenticated` without one,
-and cookie-authenticated writes are refused across sites, so the limitation is
-no longer "no authentication". What remains is that a session *starts* without
-a credential — `POST /auth/demo-switch` hands out one of three seeded
+Known limitation carried by the identity gate: every *protected* route now
+requires a signed `sunsum_session` cookie and answers `401 unauthenticated`
+without one, and cookie-authenticated writes are refused across sites, so the
+limitation is no longer "no authentication". Two routes are deliberately
+anonymous, because a client cannot present a cookie it does not yet have:
+`POST /auth/demo-switch` issues the first one and `POST /auth/logout` clears
+it. Both are origin-checked instead. What remains is that a session *starts*
+without a credential — `POST /auth/demo-switch` hands out one of three seeded
 identities to anyone who can reach it, gated only by `SUNSUM_DEMO_AUTH`. Roles
 are read from the user row, never from caller-supplied input, so the disclosure
 tiers are enforced; but this is still a demo sign-in, and WS3 owns replacing it

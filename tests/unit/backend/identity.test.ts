@@ -31,6 +31,33 @@ import * as routes from "@/backend";
 const SECRET = "a-test-secret-that-is-long-enough-to-pass";
 const NOW = Date.UTC(2026, 8, 18, 12, 0, 0);
 
+/**
+ * An investor who started onboarding but did not finish: the profile row
+ * exists, `onboardingCompletedAt` is still null. It is the state between the
+ * two that tests usually cover, and the one authorization bugs hide in.
+ */
+async function seedIncompleteInvestorProfile(
+  store: BackendStore,
+  userId: string,
+): Promise<void> {
+  await store.upsertInvestorProfile({
+    id: store.nextId("investor"),
+    userId,
+    organizationName: "Half Finished Capital",
+    investorType: "impact_investor",
+    capitalType: "concessionary_debt",
+    fundingStageFocus: [],
+    ticketSizeMin: null,
+    ticketSizeMax: null,
+    geographies: [],
+    investmentObjectives: [],
+    impactPriorities: [],
+    decisionCriteria: [],
+    visiblePortfolioScope: [],
+    onboardingCompletedAt: null,
+  });
+}
+
 /*
  * The token, on its own.
  *
@@ -361,7 +388,63 @@ describe("signing in and out", () => {
     const viewer = await resolveViewer(withCookie(signedIn), unonboarded);
 
     expect(viewer.ok).toBe(false);
-    if (!viewer.ok) expect(viewer.failure.code).toBe("forbidden_role");
+    /*
+     * `forbidden_tier`, not `forbidden_role`. The caller is an investor; it is
+     * their onboarding that is incomplete, and the next state along — a
+     * profile whose `onboardingCompletedAt` is null — answers the same code.
+     * A client decides "send them to onboarding" from this code alone.
+     */
+    if (!viewer.ok) expect(viewer.failure.code).toBe("forbidden_tier");
+  });
+
+  /*
+   * The state between "no profile" and "onboarded": a profile row exists but
+   * `onboardingCompletedAt` is still null. `resolveViewer` deliberately admits
+   * it — the resolver boundary is the *profile*, not onboarding completion, and
+   * core applies the per-endpoint gates. A regression that conflated the two
+   * would either lock these users out of onboarding or let them read the
+   * pipeline, so both halves are asserted here.
+   */
+  it("admits an investor whose profile exists but onboarding is incomplete", async () => {
+    const partial = createMemoryBackendStore({ seedDemoProjects: false });
+    const signedIn = await handlePostDemoSwitch(
+      new Request("https://sunsum.test/api/auth/demo-switch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: "investor" }),
+      }),
+      partial,
+    );
+    await seedIncompleteInvestorProfile(partial, DEMO_INVESTOR_USER_ID);
+
+    const viewer = await resolveViewer(withCookie(signedIn), partial);
+
+    expect(viewer.ok).toBe(true);
+    if (viewer.ok && viewer.value.role === "investor") {
+      expect(viewer.value.investor.onboardingCompletedAt).toBeNull();
+    }
+  });
+
+  it("reports an incomplete investor profile as not onboarded", async () => {
+    const partial = createMemoryBackendStore({ seedDemoProjects: false });
+    const signedIn = await handlePostDemoSwitch(
+      new Request("https://sunsum.test/api/auth/demo-switch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: "investor" }),
+      }),
+      partial,
+    );
+    await seedIncompleteInvestorProfile(partial, DEMO_INVESTOR_USER_ID);
+
+    const me = await handleGetMe(withCookie(signedIn), partial);
+
+    expect(me.status).toBe(200);
+    // The profile is reported, but the journey is not finished.
+    expect(await me.json()).toMatchObject({
+      role: "investor",
+      onboarded: false,
+    });
   });
 
   // An unseeded database is a setup problem, and it is much cheaper to find it
@@ -722,6 +805,44 @@ describe("a deployment with no usable session secret", () => {
       expect(response.headers.get("set-cookie")).toBeNull();
     },
   );
+
+  /*
+   * Set-but-empty is the same mistake wearing a disguise, and it is the one a
+   * deployment actually makes: an unresolved variable reference, a secret
+   * binding that produced nothing. Treating `""` as "never configured" would
+   * send development down the ephemeral-secret fallback and report nothing, so
+   * it is refused exactly like any other too-short value. This is the only case
+   * in this block whose behaviour differs between the two environments, which
+   * is why it is asserted in development rather than production.
+   */
+  it("refuses a secret that is configured but empty, even in development", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("SUNSUM_SESSION_SECRET", "");
+
+    const response = await signIn();
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: "service_unavailable",
+    });
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  /*
+   * The control: a genuinely absent variable still falls back in development,
+   * which is what keeps the local inner loop working without configuration.
+   * Without this, the test above would also pass if the fallback had been
+   * deleted outright.
+   */
+  it("still falls back to a per-process secret when unset in development", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("SUNSUM_SESSION_SECRET", undefined);
+
+    const response = await signIn();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("set-cookie")).toContain(SESSION_COOKIE_NAME);
+  });
 
   it("works in production once the secret is long enough", async () => {
     vi.stubEnv("NODE_ENV", "production");

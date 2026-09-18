@@ -54,7 +54,13 @@ function isProduction(): boolean {
 export function resolveSessionSecret(): Result<string> {
   const configured = process.env.SUNSUM_SESSION_SECRET;
 
-  if (configured !== undefined && configured.length > 0) {
+  /*
+   * Set-but-empty is a misconfiguration, not an absence. Treating `""` as
+   * unset would let a deployment that meant to supply a secret fall through to
+   * the development fallback below and sign tokens with an ephemeral key,
+   * which is the very mistake this function exists to surface.
+   */
+  if (configured !== undefined) {
     if (configured.length < MIN_SESSION_SECRET_LENGTH) {
       return failure(
         "service_unavailable",
@@ -192,9 +198,14 @@ export async function resolveIdentity(
  * Turn a request into the identity behind it.
  *
  * An investor also carries their mandate, because every investor rule in core
- * needs it and loading it here keeps those rules synchronous. An investor who
- * has not onboarded yet therefore cannot be resolved into a `Viewer` at all;
- * {@link requireInvestorIdentity} is how the onboarding write gets in.
+ * needs it and loading it here keeps those rules synchronous. The boundary is
+ * narrower than it looks: only an investor with *no profile row* is refused
+ * here. A profile that exists but whose `onboardingCompletedAt` is still null
+ * resolves into a `Viewer` normally, and core applies the per-endpoint
+ * onboarding gates. `requireRole` is therefore not an onboarding check, and a
+ * new investor route must not treat it as one — see `requireInvestorTier` use
+ * in `core/engagements` and `core/investors`. {@link requireInvestorIdentity}
+ * is how the onboarding write itself gets in, before any profile exists.
  */
 export async function resolveViewer(
   request: Request,
@@ -208,8 +219,16 @@ export async function resolveViewer(
       identity.value.userId,
     );
     if (investor === null) {
+      /*
+       * `forbidden_tier`, not `forbidden_role`: the caller's role is correct,
+       * it is their onboarding that is incomplete. A missing profile is simply
+       * the earliest onboarding state, and the next one — a profile with a
+       * null `onboardingCompletedAt` — already answers `forbidden_tier` from
+       * core. Using two codes for two points on the same journey would leave a
+       * client unable to decide "send them to onboarding" from the code alone.
+       */
       return failure(
-        "forbidden_role",
+        "forbidden_tier",
         "This investor account has no profile yet.",
       );
     }

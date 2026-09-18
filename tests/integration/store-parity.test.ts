@@ -18,18 +18,28 @@
  *   npm run db:migrate && npm run db:reset && npm run db:seed
  *   npm run test:db
  *
- * It is not part of `npm test`, which must keep passing with no database at
- * all. That means CI does not cover it, which is a real gap — so the skip below
- * says so out loud rather than reporting a silent pass.
+ * It is not part of `npm test`, which must keep passing on a machine with no
+ * database at all. It is still run on every push: the `database` job in
+ * repo-health.yml stands up a PostgreSQL service container and runs this
+ * config. The skip below therefore covers a developer who has not started
+ * docker, not CI — but it still announces itself rather than reporting a
+ * silent pass, because a skipped assertion is not a passing one.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { Viewer } from "@/backend/core/identity";
-import { getPortfolio, type PortfolioQuery } from "@/backend/core/investors";
+import { sql } from "drizzle-orm";
+
+import type { Viewer, ViewerIdentity } from "@/backend/core/identity";
+import {
+  getPortfolio,
+  upsertMyInvestorProfile,
+  type InvestorProfileInput,
+  type PortfolioQuery,
+} from "@/backend/core/investors";
 import type { ProjectRecord } from "@/backend/core/projects";
-import { createMemoryBackendStore } from "@/backend/core/store";
-import { closeDb } from "@/backend/db/client";
+import { createMemoryBackendStore, type BackendStore } from "@/backend/core/store";
+import { closeDb, getDb } from "@/backend/db/client";
 import { PostgresBackendStore } from "@/backend/db/backend-store";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -68,6 +78,56 @@ const memoryStore = createMemoryBackendStore({ seedDemoProjects: true });
 /** Ordering is not part of the store contract; content is. */
 function byId(records: readonly ProjectRecord[]): readonly ProjectRecord[] {
   return [...records].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+/**
+ * How long the overlap test holds one caller open. Long enough that the other
+ * caller reliably lands inside the window on a loaded machine, short enough
+ * that it costs the suite a fraction of a second.
+ */
+const OVERLAP_MS = 400;
+
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * The same store, but its investor-profile write takes `ms` longer to return.
+ *
+ * Concurrency tests that merely start two calls together are not reproducible:
+ * whether they overlap is up to the scheduler and the connection pool, so they
+ * can report a pass for code that has no transaction. Delaying one caller in
+ * the middle of its sequence makes the interleaving a property of the test
+ * rather than of the machine it runs on.
+ *
+ * `transaction` is wrapped as well as `upsertInvestorProfile`, because the
+ * store hands the callback a *new* store built around the transaction handle —
+ * without re-wrapping that one, the delay would be bypassed by exactly the
+ * code path under test.
+ */
+function pauseAfterWrite(store: BackendStore, ms: number): BackendStore {
+  const wrap = (inner: BackendStore): BackendStore =>
+    new Proxy(inner, {
+      get(target, property, receiver): unknown {
+        if (property === "upsertInvestorProfile") {
+          return async (profile: Parameters<BackendStore["upsertInvestorProfile"]>[0]) => {
+            const result = await target.upsertInvestorProfile(profile);
+            await pause(ms);
+            return result;
+          };
+        }
+
+        if (property === "transaction") {
+          return <T>(operation: (nested: BackendStore) => Promise<T>) =>
+            target.transaction((nested) => operation(wrap(nested)));
+        }
+
+        const value = Reflect.get(target, property, receiver) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+  return wrap(store);
 }
 
 describe.skipIf(!databaseUrl)("the PostgreSQL store matches the mock", () => {
@@ -185,6 +245,127 @@ describe.skipIf(!databaseUrl)("the PostgreSQL store matches the mock", () => {
       expect(reread?.createdAt).toBe(existing.createdAt);
     } finally {
       await store.upsertInvestorProfile(existing);
+    }
+  });
+
+  /*
+   * The race the transaction in `upsertMyInvestorProfile` exists to close,
+   * asserted against the database that actually runs in production.
+   *
+   * The unit test for this covers `MemoryBackendStore`, whose `transaction`
+   * is an in-process promise queue that serialises callers by construction.
+   * PostgreSQL does not work that way: `db.transaction()` opens a READ
+   * COMMITTED transaction, and READ COMMITTED does not stop two first-time
+   * posts from both reading "no profile". Whether the fix holds therefore
+   * depends on the unique index on `investors.user_id` and on
+   * `ON CONFLICT (user_id) DO UPDATE`, neither of which the mock models — so
+   * passing the unit test is not evidence about this store.
+   *
+   * Two overlapping posts for one brand-new user, started without awaiting the
+   * first. The three assertions are the three ways the race showed up:
+   *
+   *   - two ids allocated for one user, so a later read picks one arbitrarily
+   *   - a caller handed back the *other* caller's organization name
+   *   - two rows for one user
+   *
+   * Writes its own user rather than borrowing the seed's, because the whole
+   * point is the path where no profile exists yet, and the seeded investor
+   * already has one.
+   */
+  it("allocates one profile when two first-time posts overlap", async () => {
+    const db = getDb();
+    const userId = "6f1c0d52-9a83-4e77-b2c4-18d59e0a7f36";
+
+    const submission = (organizationName: string): InvestorProfileInput => ({
+      organizationName,
+      investorType: "impact_investor",
+      capitalType: "concessionary_debt",
+      fundingStageFocus: [],
+      ticketSizeMin: null,
+      ticketSizeMax: null,
+      geographies: [],
+      investmentObjectives: [],
+      impactPriorities: [],
+      decisionCriteria: [],
+    });
+
+    const identity: ViewerIdentity = { userId, role: "investor" };
+
+    /*
+     * Cleanup runs first as well as last: a previous failure could have left
+     * the row behind, and this test only describes anything if it starts from
+     * a user with no profile.
+     */
+    const removeFixture = async (): Promise<void> => {
+      await db.execute(sql`DELETE FROM investors WHERE user_id = ${userId}`);
+      await db.execute(sql`DELETE FROM users WHERE id = ${userId}`);
+    };
+
+    await removeFixture();
+
+    try {
+      await db.execute(
+        sql`INSERT INTO users (id, name, email, role)
+            VALUES (${userId}, 'Race Fixture', 'race-fixture@example.test', 'investor')`,
+      );
+
+      /*
+       * Two posts whose read-write-reread sequences are forced to overlap.
+       *
+       * Starting both with `Promise.all` and hoping is not enough — measured,
+       * the statements complete fast enough that the first caller finishes
+       * before the second's read returns, and the test passes against code
+       * with no transaction at all. So the first caller is slowed *after* its
+       * write and the second is started during that pause, which pins the
+       * interleaving instead of leaving it to the scheduler:
+       *
+       *   without a transaction   the first write autocommits, the second
+       *                           caller reads it, updates the row to its own
+       *                           name, and the first caller's re-read returns
+       *                           "Second Light Fund" to the caller who sent
+       *                           "First Light Fund"
+       *
+       *   with a transaction      the first write is uncommitted, so the
+       *                           second caller's insert blocks on the unique
+       *                           index until the first commits, and each
+       *                           caller re-reads its own submission
+       */
+      const [first, second] = await Promise.all([
+        upsertMyInvestorProfile(
+          identity,
+          submission("First Light Fund"),
+          pauseAfterWrite(store, OVERLAP_MS),
+        ),
+        (async () => {
+          await pause(OVERLAP_MS / 4);
+          return upsertMyInvestorProfile(identity, submission("Second Light Fund"), store);
+        })(),
+      ]);
+
+      expect(first.ok, "the first post failed").toBe(true);
+      expect(second.ok, "the second post failed").toBe(true);
+
+      if (!first.ok || !second.ok) return;
+
+      /** One user, one profile id, whichever order they landed in. */
+      expect(first.value.id).toBe(second.value.id);
+
+      /*
+       * Each caller is told about their own submission. This is the assertion
+       * that discriminates: the handler returns a re-read, so both callers
+       * converge on the same id even when the race is wide open, and an
+       * id-only check passes against the broken code.
+       */
+      expect(first.value.organization_name).toBe("First Light Fund");
+      expect(second.value.organization_name).toBe("Second Light Fund");
+
+      const rows = await db.execute<{ count: string }>(
+        sql`SELECT count(*)::text AS count FROM investors WHERE user_id = ${userId}`,
+      );
+
+      expect(rows.rows[0]?.count, "the race left more than one profile row").toBe("1");
+    } finally {
+      await removeFixture();
     }
   });
 });
