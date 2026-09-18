@@ -15,13 +15,24 @@ export const readMigrationApproval = (
   }
   const resolved = resolve(path);
   const verifiedBytes = () => {
-    const bytes = readFileSync(resolved);
-    if (createHash("sha256").update(bytes).digest("hex") !== expectedSha256.toLowerCase()) {
-      throw new DatabaseConfigurationError("Migration approval no longer matches its reviewed SHA-256.");
+    try {
+      const bytes = readFileSync(resolved);
+      if (createHash("sha256").update(bytes).digest("hex") !== expectedSha256.toLowerCase()) {
+        throw new DatabaseConfigurationError("Migration approval no longer matches its reviewed SHA-256.");
+      }
+      return bytes;
+    } catch (error) {
+      if (error instanceof DatabaseConfigurationError) throw error;
+      throw new DatabaseConfigurationError("Cannot read the migration approval file. Check --approval points to an existing readable file.");
     }
-    return bytes;
   };
-  const input: unknown = JSON.parse(verifiedBytes().toString("utf8").replace(/^\uFEFF/u, ""));
+  const bytes = verifiedBytes();
+  let input: unknown;
+  try {
+    input = JSON.parse(bytes.toString("utf8").replace(/^\uFEFF/u, ""));
+  } catch {
+    throw new DatabaseConfigurationError("Migration approval file is not valid JSON. Correct the file and obtain a new reviewed SHA-256.");
+  }
   const expected = {
     operation: "DatabaseMigration",
     host: config.host,

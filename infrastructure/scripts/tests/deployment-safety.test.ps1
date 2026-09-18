@@ -654,6 +654,8 @@ try {
     }
     $global:AzureCodeWrites = 0
     $global:AzureCodeReadFailure = $false
+    $global:AzureCodePolicy = @{ ftp = 'false'; scm = 'false' }
+    $global:AzureCodePolicyReads = @()
     $global:AzureCodeRuntime = @{}
     $global:AzureCodeBuildSettings = @()
     $global:AzureCodeKind = 'app,linux'
@@ -686,7 +688,15 @@ try {
             return ($web | ConvertTo-Json)
         }
         if ($args[0] -ceq 'appservice') { return (Get-TestAppServicePlan $args) }
-        if ($args[0] -ceq 'resource' -and $args[1] -ceq 'show') { return 'false' }
+        if ($args[0] -ceq 'resource' -and $args[1] -ceq 'show') {
+            $id = [string]$args[[array]::IndexOf($args, '--ids') + 1]
+            $policy = ($id -split '/')[-1]
+            if ($policy -cnotin @('ftp', 'scm') -or $id -cne "/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/sample-resource-group/providers/Microsoft.Web/sites/sample-web/basicPublishingCredentialsPolicies/$policy") { throw 'Unexpected publishing policy target.' }
+            $global:AzureCodePolicyReads += $policy
+            $response = $global:AzureCodePolicy[$policy]
+            if ($response -eq 'failed-read') { $global:LASTEXITCODE = 1; return '' }
+            return $response
+        }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') {
             if ($global:AzureCodeReadFailure) { $global:LASTEXITCODE = 1; return '' }
             if ($args[2] -ceq 'show') { return ($global:AzureCodeRuntime | ConvertTo-Json) }
@@ -721,7 +731,7 @@ try {
         $global:AzureCodeKind = 'app,linux'
         $global:AzureCodeHelp = '--track-status --clean'
         $global:AzureCodeReadFailure = $scenario -ceq 'read-failure'
-        $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = '1.2'; scmMinTlsVersion = '1.2' }
+        $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = '1.2'; scmMinTlsVersion = '1.2'; ftpsState = 'Disabled' }
         $global:AzureCodeBuildSettings = @(
             @{ name = 'SCM_DO_BUILD_DURING_DEPLOYMENT'; value = 'true' },
             @{ name = 'CUSTOM_BUILD_COMMAND'; value = 'npm ci --include=dev && npm run build' }
@@ -752,7 +762,7 @@ try {
     }
     foreach ($property in @('minTlsVersion', 'scmMinTlsVersion')) {
         foreach ($value in @('1.0', '1.1', $null, '', 'TLS1_2', 'unknown', 1.2, 'missing')) {
-            $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = '1.2'; scmMinTlsVersion = '1.2' }
+            $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = '1.2'; scmMinTlsVersion = '1.2'; ftpsState = 'Disabled' }
             if ($value -ceq 'missing') { $global:AzureCodeRuntime.Remove($property) } else { $global:AzureCodeRuntime[$property] = $value }
             $global:AzureCodeWrites = 0
             $message = ''
@@ -762,7 +772,7 @@ try {
     }
     foreach ($siteTls in @('1.2', '1.3')) {
         foreach ($scmTls in @('1.2', '1.3')) {
-            $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = $siteTls; scmMinTlsVersion = $scmTls }
+            $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = $siteTls; scmMinTlsVersion = $scmTls; ftpsState = 'Disabled' }
             $global:AzureCodeWrites = 0
             $message = ''
             try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
@@ -790,6 +800,28 @@ try {
         }
     }
     $global:AzureCodePlanId = $global:AzurePlanId
+    foreach ($state in @('AllAllowed', 'FtpsOnly', '', $null, 0, @('Disabled'), 'missing')) {
+        if ($state -ceq 'missing') { $global:AzureCodeRuntime.Remove('ftpsState') } else { $global:AzureCodeRuntime.ftpsState = $state }
+        $global:AzureCodeWrites = 0
+        $global:AzureCodePolicyReads = @()
+        $message = ''
+        try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+        if ($message -notlike '*ftpsState=Disabled*' -or $global:AzureCodeWrites -ne 0 -or $global:AzureCodePolicyReads.Count -ne 0) { throw 'Unsafe FTP state reached publishing-policy reads or upload.' }
+    }
+    $global:AzureCodeRuntime.ftpsState = 'Disabled'
+    foreach ($policy in @('ftp', 'scm')) {
+        foreach ($response in @('true', 'null', '"false"', '', '{}', 'invalid-json', 'failed-read')) {
+            $global:AzureCodePolicy = @{ ftp = 'false'; scm = 'false' }
+            $global:AzureCodePolicy[$policy] = $response
+            $global:AzureCodePolicyReads = @()
+            $global:AzureCodeWrites = 0
+            $message = ''
+            try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+            if ($message -notlike '*basic-publishing credential policies*' -or $global:AzureCodeWrites -ne 0 -or
+                ($global:AzureCodePolicyReads -join ',') -cne $(if ($policy -eq 'ftp') { 'ftp' } else { 'ftp,scm' })) { throw 'Enabled or unreadable publishing policy reached upload.' }
+        }
+    }
+    $global:AzureCodePolicy = @{ ftp = 'false'; scm = 'false' }
     $originalArchive = [System.IO.File]::ReadAllBytes($zipPath)
     $global:AzureCodeChange = $true
     $global:AzureCodeWrites = 0
@@ -854,6 +886,7 @@ try {
     Remove-Variable -Name AzureCodeKind, AzureCodeHelp -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureCodeOriginalPath, AzureCodeExpectedHash, AzureCodeSnapshotPath -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureCodeChange, AzureCodeChanged -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name AzureCodePolicy, AzureCodePolicyReads -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzurePlanId, AzurePlanResponse, AzurePlanReads, AzureCodePlanId -Scope Global -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }
 }

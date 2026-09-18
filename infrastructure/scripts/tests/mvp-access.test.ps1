@@ -169,11 +169,12 @@ try {
     function global:az {
         $global:MvpAccessCalls++
         $global:LASTEXITCODE = 0
+        if ($args[0] -ceq 'resource' -and $args[1] -ceq 'show') { return 'false' }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
             return '{"id":"/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/sample-resource-group/providers/Microsoft.Web/sites/sample-web","httpsOnly":true,"kind":"app,linux","identity":{"principalId":"55555555-5555-4555-8555-555555555555"}}'
         }
         if ($args[0] -ceq 'rest') { return '{"properties":{"platform":{"enabled":false}}}' }
-        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config' -and $args[2] -ceq 'show') { return '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2"}' }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config' -and $args[2] -ceq 'show') { return '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2","ftpsState":"Disabled"}' }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') { return '[]' }
         throw 'A failed prerequisite must never reach a deployment.'
     }
@@ -185,7 +186,7 @@ try {
             -ExpectedSha256 (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash `
             -OutputPath (Join-Path $fixture 'no-secret.parameters.json') -Apply
     }
-    if ($global:MvpAccessCalls -ne 4) { throw 'Sign-in prerequisite inspection did not reach the missing-secret guard.' }
+    if ($global:MvpAccessCalls -ne 6) { throw 'Sign-in prerequisite inspection did not reach the missing-secret guard.' }
     $path = Join-Path $fixture 'BlobRoles.json'
     Assert-Throws {
         & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') -Operation BlobRoles `
@@ -193,17 +194,18 @@ try {
             -ExpectedSha256 (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash `
             -OutputPath (Join-Path $fixture 'wrong-principal.parameters.json') -Apply
     }
-    if ($global:MvpAccessCalls -ne 5) { throw 'Blob role prerequisite did not inspect the web identity exactly once.' }
+    if ($global:MvpAccessCalls -ne 10) { throw 'Blob role prerequisite did not inspect the web identity and publishing baseline.' }
     $global:MvpRaceOutput = Join-Path $fixture 'race.parameters.json'
     $global:MvpAccessCalls = 0
     function global:az {
         $global:MvpAccessCalls++
         $global:LASTEXITCODE = 0
+        if ($args[0] -ceq 'resource' -and $args[1] -ceq 'show') { return 'false' }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
             return '{"id":"synthetic-test-resource","httpsOnly":true,"kind":"app,linux"}'
         }
         if ($args[0] -ceq 'rest') { return '{"properties":{"platform":{"enabled":false}}}' }
-        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config' -and $args[2] -ceq 'show') { return '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2"}' }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config' -and $args[2] -ceq 'show') { return '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2","ftpsState":"Disabled"}' }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') {
             Set-Content -LiteralPath "$global:MvpRaceOutput.before-auth.json" -Value 'concurrent-review-baseline' -Encoding utf8NoBOM
             return '[{"name":"MICROSOFT_PROVIDER_AUTHENTICATION_SECRET","value":"synthetic-test-only","slotSetting":true}]'
@@ -217,17 +219,18 @@ try {
             -ExpectedSha256 (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash `
             -OutputPath $global:MvpRaceOutput -Apply
     }
-    if ($global:MvpAccessCalls -ne 4 -or
+    if ($global:MvpAccessCalls -ne 6 -or
         (Get-Content -LiteralPath "$global:MvpRaceOutput.before-auth.json" -Raw).Trim() -cne 'concurrent-review-baseline') {
         throw 'Create-only writes must preserve a concurrent audit record and stop before deployment.'
     }
     $global:MvpAuthReads = 0
     $global:MvpAuthWrites = 0
     $global:MvpLatestAuth = ''
-    $global:MvpTlsResponse = '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2"}'
+    $global:MvpTlsResponse = '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2","ftpsState":"Disabled"}'
     $global:MvpTlsReads = 0
     function global:az {
         $global:LASTEXITCODE = 0
+        if ($args[0] -ceq 'resource' -and $args[1] -ceq 'show') { return 'false' }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
             return '{"id":"synthetic-test-resource","httpsOnly":true,"kind":"app,linux"}'
         }
@@ -281,7 +284,7 @@ try {
     $global:MvpLatestAuth = '{"properties":{"platform":{"enabled":false}}}'
     foreach ($property in @('minTlsVersion', 'scmMinTlsVersion')) {
         foreach ($value in @('1.0', '1.1', $null, '', 'TLS1_2', 'unknown', 1.2, 'missing')) {
-            $transport = @{ minTlsVersion = '1.2'; scmMinTlsVersion = '1.2' }
+            $transport = @{ minTlsVersion = '1.2'; scmMinTlsVersion = '1.2'; ftpsState = 'Disabled' }
             if ($value -ceq 'missing') { $transport.Remove($property) } else { $transport[$property] = $value }
             $global:MvpTlsResponse = $transport | ConvertTo-Json -Compress
             $global:MvpTlsReads = 0; $global:MvpAuthReads = 0; $global:MvpAuthWrites = 0
@@ -301,7 +304,7 @@ try {
     }
     foreach ($siteTls in @('1.2', '1.3')) {
         foreach ($scmTls in @('1.2', '1.3')) {
-            $global:MvpTlsResponse = @{ minTlsVersion = $siteTls; scmMinTlsVersion = $scmTls } | ConvertTo-Json -Compress
+            $global:MvpTlsResponse = @{ minTlsVersion = $siteTls; scmMinTlsVersion = $scmTls; ftpsState = 'Disabled' } | ConvertTo-Json -Compress
             $global:MvpTlsReads = 0; $global:MvpAuthReads = 0; $global:MvpAuthWrites = 0
             $signInArgs.OutputPath = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json"
             & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') @signInArgs -Apply | Out-Null
@@ -394,6 +397,8 @@ try {
     $global:MvpContainerReads = 0
     function global:az {
         $global:LASTEXITCODE = 0
+        if ($args[0] -ceq 'resource' -and $args[1] -ceq 'show') { return 'false' }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'config') { return '{"ftpsState":"Disabled"}' }
         if ($args[0] -ceq 'webapp') {
             return '{"id":"synthetic-test-resource","httpsOnly":true,"kind":"app,linux","identity":{"principalId":"44444444-4444-4444-8444-444444444444"}}'
         }
@@ -473,7 +478,8 @@ try {
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') {
             return '{"id":"synthetic-test-resource","httpsOnly":true,"kind":"app,linux","identity":{"principalId":"44444444-4444-4444-8444-444444444444"}}'
         }
-        if ($args[0] -ceq 'webapp' -and $args[2] -ceq 'show') { return '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2"}' }
+        if ($args[0] -ceq 'resource' -and $args[1] -ceq 'show') { return 'false' }
+        if ($args[0] -ceq 'webapp' -and $args[2] -ceq 'show') { return '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2","ftpsState":"Disabled"}' }
         if ($args[0] -ceq 'webapp') { return '[{"name":"MICROSOFT_PROVIDER_AUTHENTICATION_SECRET","value":"synthetic-test-only","slotSetting":true}]' }
         if ($args[0] -ceq 'rest') {
             if (($args -join ' ') -like '*/containers/*') { return '{"properties":{"publicAccess":"None"}}' }
@@ -521,6 +527,64 @@ try {
         Remove-Item Function:\Get-FileHash -Force
         Remove-Variable MvpHashMismatchPath, MvpMutationPath, MvpMutationKind, MvpMutationOperation, MvpMutationPending, MvpMutationSucceeded, MvpMutationWrites, MvpSnapshotPath -Scope Global -ErrorAction SilentlyContinue
     }
+    $publishingCases = @()
+    foreach ($state in @('AllAllowed', 'FtpsOnly', '', $null, 0, @('Disabled'), 'missing')) {
+        $transport = @{ minTlsVersion = '1.2'; scmMinTlsVersion = '1.2'; ftpsState = $state }
+        if ($state -ceq 'missing') { $transport.Remove('ftpsState') }
+        $publishingCases += @{ config = ($transport | ConvertTo-Json -Compress); ftp = 'false'; scm = 'false'; expected = '*ftpsState=Disabled*'; reads = '' }
+    }
+    foreach ($response in @('failed-read', 'null', '[]', 'invalid-json')) {
+        $publishingCases += @{ config = $response; ftp = 'false'; scm = 'false'; expected = '*'; reads = '' }
+    }
+    foreach ($policy in @('ftp', 'scm')) {
+        foreach ($response in @('true', 'null', '"false"', '', '{}', 'invalid-json', 'failed-read')) {
+            $case = @{ config = '{"minTlsVersion":"1.2","scmMinTlsVersion":"1.2","ftpsState":"Disabled"}'; ftp = 'false'; scm = 'false'; expected = '*basic-publishing credential policies*'; reads = $(if ($policy -eq 'ftp') { 'ftp' } else { 'ftp,scm' }) }
+            $case[$policy] = $response
+            $publishingCases += $case
+        }
+    }
+    function global:az {
+        $global:LASTEXITCODE = 0
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'show') { return '{"httpsOnly":true,"kind":"app,linux"}' }
+        if (($args[0..2] -join ' ') -ceq 'webapp config show') {
+            $global:MvpPublishingConfigReads++
+            if ($global:MvpPublishingCase.config -ceq 'failed-read') { $global:LASTEXITCODE = 1; return '' }
+            return $global:MvpPublishingCase.config
+        }
+        if (($args[0..1] -join ' ') -ceq 'resource show') {
+            $id = [string]$args[[array]::IndexOf($args, '--ids') + 1]
+            $policy = ($id -split '/')[-1]
+            if ($policy -cnotin @('ftp', 'scm') -or $id -cne "/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/sample-resource-group/providers/Microsoft.Web/sites/sample-web/basicPublishingCredentialsPolicies/$policy") { throw 'Unexpected publishing policy target.' }
+            $global:MvpPublishingReads += $policy
+            if ($global:MvpPublishingCase[$policy] -ceq 'failed-read') { $global:LASTEXITCODE = 1; return '' }
+            return $global:MvpPublishingCase[$policy]
+        }
+        $global:MvpPublishingUnexpected++
+        throw 'Unsafe publishing must stop before any downstream access operation.'
+    }
+    try {
+        foreach ($operation in @('SignIn', 'BlobRoles')) {
+            $config = if ($operation -eq 'SignIn') { $signIn } else { $roles }
+            $path = Join-Path $fixture "publishing-$operation.json"
+            $config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding utf8NoBOM
+            foreach ($case in $publishingCases) {
+                $global:MvpPublishingCase = $case
+                $global:MvpPublishingReads = @()
+                $global:MvpPublishingConfigReads = 0
+                $global:MvpPublishingUnexpected = 0
+                $message = ''
+                try {
+                    & (Join-Path $PSScriptRoot '..\Deploy-AccessConfiguration.ps1') -Operation $operation -SubscriptionId $subscription `
+                        -ResourceGroupName $group -ConfigurationPath $path -ExpectedSha256 (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash `
+                        -OutputPath (Join-Path $fixture "$([guid]::NewGuid().ToString('N')).json") -Apply | Out-Null
+                } catch { $message = $_.Exception.Message }
+                if ($message -eq '' -or $message -notlike $case.expected -or $global:MvpPublishingConfigReads -ne 1 -or
+                    $global:MvpPublishingUnexpected -ne 0 -or ($global:MvpPublishingReads -join ',') -cne $case.reads) {
+                    throw "Publishing baseline did not fail closed for $operation."
+                }
+            }
+        }
+    } finally { Remove-Variable MvpPublishingCase, MvpPublishingReads, MvpPublishingConfigReads, MvpPublishingUnexpected -Scope Global }
     if ($BicepPath) {
         $templatePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\templates\storage-role-grants.bicep'))
         $compiledJson = & $BicepPath build $templatePath --no-restore --stdout

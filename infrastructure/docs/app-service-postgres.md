@@ -711,6 +711,9 @@ Prepare an ignored `.azure\dev\migration-approval.json`, binding the captured
 ```
 
 All fields are required; extra fields or mismatches fail before client creation.
+Missing or unreadable approval files and malformed JSON are reported as local
+configuration errors, not PostgreSQL connectivity errors. Diagnostics omit file
+contents and paths, including if the approval file disappears before the final check.
 The command rechecks the digest before constructing the client and uses the
 captured environment, not later changes. Review and retain the generated SQL
 and code revision separately; this target record does not hash the SQL files.
@@ -858,7 +861,15 @@ pwsh -NoProfile -File infrastructure\scripts\Deploy-AccessConfiguration.ps1 `
 # Future WRITE: new output path plus -Apply, only after administrator/user approval.
 ```
 
-Before sign-in activation, the script reads the site's `minTlsVersion` and
+Both SignIn and BlobRoles read the site's `ftpsState` and require exactly
+`Disabled`, then inspect the named app's FTP and SCM basic-publishing policies
+through ARM. Only explicit `false` values permit continuation; missing, malformed
+or failed reads stop before secret inspection or access deployment. Operators
+need read permission for both publishing-policy resources. Remediation is a
+separate approved operation; the script never disables settings automatically.
+These preflights are not a lock against concurrent Azure configuration changes.
+
+Before sign-in activation, the script also reads the site's `minTlsVersion` and
 `scmMinTlsVersion` and requires each to be the string `1.2` or `1.3`. Older,
 missing, malformed or unreadable settings block activation. It does not change
 transport configuration; remediate it through a separate approved operation.
@@ -972,8 +983,9 @@ The original audit record remains after temporary-copy cleanup. StorageNetwork
 continues to use validated in-memory values, with record integrity checked before
 its direct update; it does not read network settings back from the audit file.
 
-The explicit Azure CLI path checks the existing Linux/HTTPS target and disabled
-FTP/SCM policies. It also requires `NODE|22-lts`, the exact documented npm startup
+The explicit Azure CLI path checks the existing Linux/HTTPS target,
+`ftpsState=Disabled`, and disabled FTP/SCM basic-publishing policies using the
+same publishing guard as access configuration. It also requires `NODE|22-lts`, the exact documented npm startup
 command, `SCM_DO_BUILD_DURING_DEPLOYMENT=true`, and the documented custom build
 command. Both site and SCM minimum TLS must be explicitly `1.2` or `1.3`, checked
 in the same configuration read before the ZIP is uploaded. An enabled

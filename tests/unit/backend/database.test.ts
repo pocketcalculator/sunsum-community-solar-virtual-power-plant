@@ -17,6 +17,7 @@ import {
 } from "@/backend/infrastructure/database/pool";
 
 vi.mock("server-only", () => ({}));
+vi.mock("@/backend/db", () => { throw new Error("PG tooling must not load the application persistence barrel."); });
 
 const local = {
   NODE_ENV: "development",

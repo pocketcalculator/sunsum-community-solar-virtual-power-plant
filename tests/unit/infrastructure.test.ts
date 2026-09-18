@@ -14,7 +14,8 @@ describe("the bounded Azure preparation contract", () => {
   it("reuses the canonical schema and migrations with a separate explicit Azure operator command", () => {
     expect(read("drizzle.config.ts")).toContain("./src/backend/db/schema.ts");
     expect(read("scripts/db-migrate.ts")).toContain("../src/backend/db/migrations");
-    expect(read("src/backend/infrastructure/database/pool.ts")).toContain('from "../../db"');
+    expect(read("src/backend/infrastructure/database/pool.ts")).toContain('from "../../db/schema"');
+    expect(read("src/backend/infrastructure/database/pool.ts")).not.toContain('from "../../db"');
     expect(existsSync(join(root, "src/backend/infrastructure/database/schema.ts"))).toBe(false);
     expect(read("package.json")).toContain('"db:migrate": "node scripts/db.mjs migrate"');
     expect(read("package.json")).toContain('"db:migrate:azure"');

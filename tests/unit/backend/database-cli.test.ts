@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { readMigrationApproval } from "../../../scripts/migration-approval";
 import type { DatabaseConfig } from "../../../src/backend/infrastructure/database/config";
+import { DatabaseConfigurationError } from "../../../src/backend/infrastructure/database/errors";
 
 vi.mock("server-only", () => ({}));
 
@@ -63,8 +64,28 @@ describe("database CLI safety gates", () => {
       const missing = run([...operatorArgs, "scripts/db-migrate.ts", "--apply"], env);
       expect(missing.status).toBe(1);
       expect(missing.stderr).toContain("requires a reviewed --approval");
+      for (const unreadable of [join(directory, "synthetic-private-missing.json"), directory]) {
+        expect(() => readMigrationApproval(unreadable, hash, config, 5000)).toThrow(DatabaseConfigurationError);
+        const result = run([...operatorArgs, "scripts/db-migrate.ts", "--apply", "--approval", unreadable, "--expected-sha256", hash], env);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain("Cannot read the migration approval file");
+        expect(result.stderr).not.toContain(directory);
+        expect(result.stderr).not.toContain("Check network");
+        expect(result.stdout).not.toContain("applied");
+      }
+      const invalidJson = '{"synthetic-private-value":';
+      writeFileSync(path, invalidJson);
+      const invalidHash = createHash("sha256").update(invalidJson).digest("hex");
+      expect(() => readMigrationApproval(path, invalidHash, config, 5000)).toThrow(DatabaseConfigurationError);
+      const invalid = run([...operatorArgs, "scripts/db-migrate.ts", "--apply", "--approval", path, "--expected-sha256", invalidHash], env);
+      expect(invalid.status).toBe(1);
+      expect(invalid.stderr).toContain("Migration approval file is not valid JSON");
+      expect(invalid.stderr).not.toContain("synthetic-private-value");
+      expect(invalid.stderr).not.toContain("Check network");
+      rmSync(path);
+      expect(() => approval.verifyUnchanged()).toThrow("Cannot read the migration approval file");
     } finally { rmSync(directory, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   it("does not report a configured database when settings are absent", () => {
     const result = run([...operatorArgs, "scripts/db-check.ts"], { PGHOST: "" });

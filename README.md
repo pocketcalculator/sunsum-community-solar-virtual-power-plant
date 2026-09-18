@@ -156,11 +156,15 @@ and investor authorization require the backend and domain handoffs described in
 
 **Azure Database for PostgreSQL Flexible Server with Drizzle ORM is the
 selected persistence stack**, with Drizzle Kit for schema and migrations.
-The [server-only connection foundation](src/backend/infrastructure/database/README.md)
-and migration tooling are installed, but the Azure database is not provisioned
-and no domain persistence adapter is implemented; the portfolio API still uses
-explicit in-memory demo fixtures. The public preview has been smoke-tested on
-Linux Azure App Service F1, without adding a database or identity provider.
+The implemented [PostgreSQL store](src/backend/db/README.md) is selected by
+`SUNSUM_STORE=db` and configured with `DATABASE_URL` and `SUNSUM_DB_AUTH`.
+The default remains the in-memory fixture store. The separate
+[connection and migration tooling](src/backend/infrastructure/database/README.md)
+uses `PG*` and `SUNSUM_DATABASE_AUTH`; those settings do not configure the
+application adapter. The [development deployment guide](infrastructure/docs/deployment.md)
+records an Azure PostgreSQL-backed deployment. That evidence is separate from
+the public frontend smoke test and does not establish authenticated participants
+or verify every prepared provisioning path.
 
 The visual baseline remains provisional, informed by earlier SolarEase mockups
 and the project's VPP flow board. Hosting the preview does not establish a

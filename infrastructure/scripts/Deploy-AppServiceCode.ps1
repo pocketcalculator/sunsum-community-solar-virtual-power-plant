@@ -46,16 +46,9 @@ try {
         throw 'The target must be the HTTPS-only Linux app in Azure public cloud.'
     }
     Assert-AppServiceFreePlan -SubscriptionId $SubscriptionId -PlanResourceId $app['serverFarmId']
-    foreach ($policy in @('ftp', 'scm')) {
-        $raw = & az resource show --ids "$($app.id)/basicPublishingCredentialsPolicies/$policy" `
-            --api-version 2024-04-01 --query properties.allow --output json --only-show-errors
-        if ($LASTEXITCODE -ne 0 -or ($raw -join "`n").Trim() -cne 'false') {
-            throw 'Both publishing-credential policies must already be disabled. This script will not modify them.'
-        }
-    }
 
     $raw = & az webapp config show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
-        --query '{linuxFxVersion:linuxFxVersion,appCommandLine:appCommandLine,minTlsVersion:minTlsVersion,scmMinTlsVersion:scmMinTlsVersion}' --output json --only-show-errors
+        --query '{linuxFxVersion:linuxFxVersion,appCommandLine:appCommandLine,minTlsVersion:minTlsVersion,scmMinTlsVersion:scmMinTlsVersion,ftpsState:ftpsState}' --output json --only-show-errors
     if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the existing Node and startup configuration before source deployment.' }
     $runtime = ($raw -join "`n") | ConvertFrom-Json -AsHashtable
     if ($runtime.linuxFxVersion -cne 'NODE|22-lts' -or $runtime.appCommandLine -cne 'npm run start -- --hostname 0.0.0.0') {
@@ -66,6 +59,8 @@ try {
         $runtime.scmMinTlsVersion -isnot [string] -or $runtime.scmMinTlsVersion -cnotin @('1.2', '1.3')) {
         throw 'Source deployment requires site and SCM minimum TLS 1.2 or 1.3; remediate transport settings through a separate approved operation.'
     }
+    Assert-AppServicePublishingDisabled -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName `
+        -WebAppName $WebAppName -FtpsState $runtime['ftpsState']
     $raw = & az webapp config appsettings list --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
         --query "[?name=='SCM_DO_BUILD_DURING_DEPLOYMENT' || name=='CUSTOM_BUILD_COMMAND' || name=='WEBSITE_RUN_FROM_PACKAGE']" --output json --only-show-errors
     if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the existing remote-build settings before source deployment.' }

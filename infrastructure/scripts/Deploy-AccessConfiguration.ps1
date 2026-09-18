@@ -52,18 +52,25 @@ try {
             'app' -notin ($web.kind -split ',') -or 'linux' -notin ($web.kind -split ',') -or 'functionapp' -in ($web.kind -split ',')) {
             throw 'Expected the existing HTTPS-only Linux web app, not a Function App.'
         }
+        $raw = & az webapp config show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $config.webAppName `
+            --query '{minTlsVersion:minTlsVersion,scmMinTlsVersion:scmMinTlsVersion,ftpsState:ftpsState}' --output json --only-show-errors
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot verify site configuration before access changes.' }
+        $transport = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
+        if ($transport -isnot [System.Collections.IDictionary]) { throw 'Expected a site configuration object before access changes.' }
     }
     if ($Operation -eq 'SignIn') {
-        $raw = & az webapp config show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $config.webAppName `
-            --query '{minTlsVersion:minTlsVersion,scmMinTlsVersion:scmMinTlsVersion}' --output json --only-show-errors
-        if ($LASTEXITCODE -ne 0) { throw 'Cannot verify site and SCM minimum TLS before sign-in changes.' }
-        $transport = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
         if ($transport -isnot [System.Collections.IDictionary] -or
             -not $transport.Contains('minTlsVersion') -or -not $transport.Contains('scmMinTlsVersion') -or
             $transport.minTlsVersion -isnot [string] -or $transport.minTlsVersion -cnotin @('1.2', '1.3') -or
             $transport.scmMinTlsVersion -isnot [string] -or $transport.scmMinTlsVersion -cnotin @('1.2', '1.3')) {
             throw 'Sign-in changes require site and SCM minimum TLS 1.2 or 1.3; remediate transport settings through a separate approved operation.'
         }
+    }
+    if ($Operation -in @('SignIn', 'BlobRoles')) {
+        Assert-AppServicePublishingDisabled -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName `
+            -WebAppName $config.webAppName -FtpsState $transport['ftpsState']
+    }
+    if ($Operation -eq 'SignIn') {
         $raw = & az rest --method get --url "https://management.azure.com$($web.id)/config/authsettingsV2?api-version=2024-04-01" --output json --only-show-errors
         if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect current authentication; do not activate blindly.' }
         $auth = ($raw -join "`n") | ConvertFrom-Json -AsHashtable

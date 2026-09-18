@@ -78,24 +78,28 @@ SunSum Solar is intended to help bridge these two gaps through aggregation and a
 Server with Drizzle ORM.** Use Drizzle's PostgreSQL integration for server-side
 data access and Drizzle Kit for schema and migration tooling. The underlying
 PostgreSQL driver is **node-postgres (`pg`)**, using an asynchronous password
-callback for managed-identity token refresh and a bounded server-only pool.
-The [connection foundation](../src/backend/infrastructure/database/README.md)
-defines the shared local/Azure configuration contract.
+callback for Entra token authentication. The application client and store in
+[`backend/db`](../src/backend/db/README.md) use `DATABASE_URL` and `SUNSUM_DB_AUTH`.
+The separate [connection foundation](../src/backend/infrastructure/database/README.md)
+provides a bounded pool and operator tools using `PG*` and `SUNSUM_DATABASE_AUTH`.
+These are distinct implementations and configuration contracts; setting `PG*`
+does not configure the application store.
 
 PostgreSQL will hold the relational application records and document metadata.
 Original PDFs, spreadsheets, photos, and other uploaded files belong in private
 Blob Storage, not in a separate document database.
 
-This is a technology decision, not a claim that persistence is implemented.
-The current backend still uses in-memory fixtures. Connection wiring and Drizzle
-tooling and the canonical local domain schema/migrations/seed from
-[`backend/db`](../src/backend/db/README.md) are present. Cloud provisioning,
-applied Azure database identity/table grants and a real application store adapter
-remain to be added.
-Keep generated SQL migrations under version
-control and review them before applying them to a shared environment. The App
-Service F1 smoke test does not include a database or make database hosting free;
-confirm the PostgreSQL compute/storage budget separately.
+The application persistence adapter is implemented: `PostgresBackendStore`
+implements `BackendStore`, and the composition root selects it for
+`SUNSUM_STORE=db`. Unset or `mock` uses explicit in-memory fixtures. The canonical
+schema, migrations and seed live in `backend/db`. The
+[development deployment guide](../infrastructure/docs/deployment.md) records
+PostgreSQL-backed Azure operation; new environments still require reviewed
+provisioning, configuration and identity/table grants. Fixed demo endpoint
+identities remain separate from real application-user authentication.
+Keep generated SQL migrations under version control and review them before
+applying them to a shared environment. F1 applies only to web hosting; confirm
+the PostgreSQL compute/storage budget separately.
 
 Fabric is optional downstream analytics. The application reads and writes
 PostgreSQL, not the mirrored analytics endpoint.

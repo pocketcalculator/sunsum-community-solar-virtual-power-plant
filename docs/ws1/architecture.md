@@ -20,9 +20,13 @@ Next.js and TypeScript remain the frontend stack. The
 [technical design](../sunsum_technical_design_doc.md) selects Azure Database
 for PostgreSQL Flexible Server with Drizzle ORM and Drizzle Kit for server-side
 persistence, and Linux App Service for web hosting. The preview has been
-smoke-tested on F1. A separate server-only connection and migration-tooling
-foundation is now present, but domain persistence and cloud database integration
-are not implemented. This frontend foundation still requires no database credentials.
+smoke-tested on F1. The implemented `PostgresBackendStore` is selected through
+`SUNSUM_STORE=db` and uses `DATABASE_URL`/`SUNSUM_DB_AUTH`; the default fixture mode
+still needs no database. The separate `PG*` connection and migration tooling is
+not that application adapter. The [development deployment guide](../../infrastructure/docs/deployment.md)
+records an Azure database-backed deployment, while provisioning a new environment
+and authenticating real participants remain separate work. The browser-only
+profile flow still saves nothing and requires no database credentials.
 
 ## Implemented responsibility boundaries
 

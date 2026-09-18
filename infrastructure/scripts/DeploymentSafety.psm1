@@ -102,6 +102,26 @@ function Assert-AppServiceFreePlan {
     }
 }
 
+function Assert-AppServicePublishingDisabled {
+    param(
+        [Parameter(Mandatory)][guid] $SubscriptionId,
+        [Parameter(Mandatory)][string] $ResourceGroupName,
+        [Parameter(Mandatory)][string] $WebAppName,
+        [AllowNull()][object] $FtpsState
+    )
+    if ($FtpsState -isnot [string] -or $FtpsState -cne 'Disabled') {
+        throw 'The web app must have ftpsState=Disabled before this operation; remediate publishing settings through a separately reviewed operation.'
+    }
+    $webId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$WebAppName"
+    foreach ($policy in @('ftp', 'scm')) {
+        $raw = & az resource show --ids "$webId/basicPublishingCredentialsPolicies/$policy" --subscription $SubscriptionId `
+            --api-version 2024-04-01 --query properties.allow --output json --only-show-errors
+        if ($LASTEXITCODE -ne 0 -or ($raw -join "`n").Trim() -cne 'false') {
+            throw 'Both FTP and SCM basic-publishing credential policies must be explicitly disabled; no update was attempted.'
+        }
+    }
+}
+
 function Assert-ExactPublicIpv4 {
     param([AllowEmptyString()][string] $Address)
     if ($Address -cnotmatch '^(0|[1-9][0-9]{0,2})(\.(0|[1-9][0-9]{0,2})){3}$') {
@@ -210,4 +230,4 @@ function Test-AppServiceResponse {
     }
 }
 
-Export-ModuleMember -Function Assert-AppServiceFreePlan, New-DeploymentApproval, New-DeploymentSnapshot, Assert-DeploymentSnapshot, Remove-DeploymentSnapshot, Assert-ExactPublicIpv4, Test-AppServiceArchivePath, Assert-FirewallApproval, Test-AppServiceResponse
+Export-ModuleMember -Function Assert-AppServicePublishingDisabled, Assert-AppServiceFreePlan, New-DeploymentApproval, New-DeploymentSnapshot, Assert-DeploymentSnapshot, Remove-DeploymentSnapshot, Assert-ExactPublicIpv4, Test-AppServiceArchivePath, Assert-FirewallApproval, Test-AppServiceResponse

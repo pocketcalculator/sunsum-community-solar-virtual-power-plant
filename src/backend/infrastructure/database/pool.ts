@@ -11,7 +11,7 @@ import type {
 } from "./config";
 import { databasePassword } from "./credentials";
 import { DatabaseConfigurationError, databaseErrorCode } from "./errors";
-import * as schema from "../../db";
+import * as schema from "../../db/schema";
 
 export const postgresPoolConfig = (
   config: DatabaseConfig,
