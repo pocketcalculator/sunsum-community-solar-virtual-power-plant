@@ -84,6 +84,15 @@ it is misplaced.
 | **S-DOC**   | `documents/`   | `/sites/{id}/documents`, `/sites/{id}/acknowledgements`                      | partial |
 | **S-ACT**   | `activity/`    | `/projects/{id}/activity`                                                    | partial |
 | **S-VIEW**  | `views/`       | Composed reads: the site-owner dashboard, `/projects/{id}/deal-room`         | partial |
+| —           | `export/`      | `/export`                                                                    | done    |
+
+`export/` is not one of the design document's services. It is a composed read
+like `views/`, but it belongs to every role rather than to one, so giving it a
+service letter would imply an ownership that does not exist. It reads only
+through the other services' use-cases — `getOwnerSites`, `getPortfolio` with
+`getDealRoom`, `getPipeline` with `getSubmissionDetail` — so it cannot widen
+what a role may see, and a change to a visibility rule reaches the export
+without anyone remembering to update it.
 
 S-VIA, the viability engine, is deliberately absent: the charter puts it in a
 separate Python deployable, so it will be reached as a client from

@@ -68,6 +68,8 @@ tags:
     description: S-INV — investor profiles, mandate capture, portfolio matching
   - name: Engagements
     description: S-ENG and S-VIEW — interest, operator review, and deal-room disclosure
+  - name: Export
+    description: Composed download of whatever the caller can already see
 paths:
   /auth/demo-switch:
     post:
@@ -757,6 +759,59 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "503": { $ref: "#/components/responses/AuthUnavailable" }
+  /export:
+    get:
+      tags: [Export]
+      operationId: getExport
+      summary: Download the caller's own projects and documents
+      description: |
+        One endpoint for all three roles. The bundle is assembled from the same
+        use-cases the caller's own dashboard reads — `/me/sites` for an owner,
+        `/portfolio` plus each `/projects/{id}/deal-room` for an investor,
+        `/pipeline` plus each `/submissions/{id}` for an operator — so an
+        export can never widen what a role may see.
+
+        Documents are a **manifest, not bytes**. `content_url` points at
+        `GET /sites/{id}/documents/{documentId}/content` when the caller has a
+        route to that content, and is `null` otherwise. It is always `null` for
+        an investor: deal-room content delivery is the §7.6 short-lived-SAS
+        design and is not implemented, so offering a link would promise a
+        download that answers 403.
+
+        Served as an attachment with `Cache-Control: no-store`, because the
+        bundle is scoped to one caller.
+      parameters:
+        - name: format
+          in: query
+          description: Defaults to `json`. An unrecognised value is refused rather than silently defaulted.
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+      responses:
+        "200":
+          description: |
+            The export, as a download. The CSV carries the same rows as the
+            JSON in two `#`-captioned tables, projects then documents.
+          headers:
+            Content-Disposition:
+              description: "`attachment`, RFC 5987 encoded, e.g. `sunsum-export-site-owner-2026-09-18.json`."
+              schema: { type: string }
+            Cache-Control:
+              description: Always `no-store`.
+              schema: { type: string }
+            X-Content-Type-Options:
+              description: Always `nosniff`.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportBundle" }
+            text/csv:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
 components:
   securitySchemes:
     sessionCookie:
@@ -877,6 +932,85 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    ExportBundle:
+      type: object
+      required:
+        [
+          generated_at,
+          role,
+          user_id,
+          scope,
+          project_count,
+          document_count,
+          projects,
+          documents,
+        ]
+      description: |
+        Everything the caller may see, flattened for download. `scope` states in
+        prose what the bundle covers for this role, so a file that has been
+        detached from the request that produced it still says what it is.
+      properties:
+        generated_at: { type: string, format: date-time }
+        role:
+          type: string
+          enum: [site_owner, operator, investor]
+        user_id: { type: string, format: uuid }
+        scope: { type: string }
+        project_count: { type: integer }
+        document_count: { type: integer }
+        projects:
+          type: array
+          items: { $ref: "#/components/schemas/ExportProjectRow" }
+        documents:
+          type: array
+          items: { $ref: "#/components/schemas/ExportDocumentRow" }
+    ExportProjectRow:
+      type: object
+      required: [name]
+      description: |
+        One project or submission. Every field but `name` is nullable because
+        the three roles see different slices — an investor has no
+        `submission_status` and never receives `address` or `site_id`; a
+        submission that has not been accepted has no `project_id`.
+      properties:
+        site_id: { type: string, format: uuid, nullable: true }
+        project_id: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        address: { type: string, nullable: true }
+        locality: { type: string, nullable: true }
+        site_type: { type: string, nullable: true }
+        submission_status: { type: string, nullable: true }
+        project_stage: { type: string, nullable: true }
+        journey_stage_id: { type: string, nullable: true }
+        viability_status: { type: string, nullable: true }
+        estimated_system_size_kw_low: { type: number, nullable: true }
+        estimated_system_size_kw_high: { type: number, nullable: true }
+        estimated_annual_generation_kwh_low: { type: number, nullable: true }
+        estimated_annual_generation_kwh_high: { type: number, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+    ExportDocumentRow:
+      type: object
+      required: [id, original_filename]
+      description: |
+        Document metadata and where to fetch it. Never the bytes: an export that
+        embedded content would fail whenever object storage is unreachable.
+      properties:
+        id: { type: string, format: uuid }
+        site_id: { type: string, format: uuid, nullable: true }
+        project_id: { type: string, format: uuid, nullable: true }
+        original_filename: { type: string }
+        content_type: { type: string, nullable: true }
+        size_bytes: { type: integer, nullable: true }
+        doc_type: { type: string, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+        content_url:
+          type: string
+          nullable: true
+          description: |
+            Relative path to `GET /sites/{id}/documents/{documentId}/content`,
+            or null when the caller has no route to the content. Always null for
+            an investor. Relative because the service is behind a proxy that
+            rewrites host and scheme, so it cannot know its own public origin.
     Identity:
       type: object
       required: [user_id, role]

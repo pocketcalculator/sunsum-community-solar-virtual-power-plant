@@ -25,6 +25,7 @@ export {
 
 export {
   demoSwitchRoute,
+  getExportRoute,
   getInvestorProfileRoute,
   getMeRoute,
   getPipelineRoute,
