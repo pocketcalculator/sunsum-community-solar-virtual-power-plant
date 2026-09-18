@@ -12,34 +12,58 @@ this directory. Keep environment-specific values outside committed templates.
 
 - `resources.bicep` is the dev infrastructure entry, with versioned inputs in
   `resources.dev.bicepparam` and the Azure target in `../config/dev.json`.
-  It always manages the fixture-only web app and private Storage. PostgreSQL and
-  the App Service plan are existing references; no create/existing modes are used.
+  It manages a Linux B1/Basic plan, fixture-only web app, private Storage and a
+  new Entra-only PostgreSQL server/database. All use separate test targets in
+  the existing resource group; no create/existing modes are used.
 - `modules/` holds `web.bicep`, `storage.bicep`, `network.bicep` and `postgres.bicep`.
   These are invoked by parent templates rather than used as deployment entry points.
-  The PostgreSQL creation module is retained but is not called by the dev entry.
-- `resources.bicep` retains PostgreSQL creation-only parameters, its module call
-  and original output expressions as comments beside the active `existingPostgres`
-  reference. Restoring creation requires switching those blocks and supplying
-  the corresponding parameters, not toggling a deployment mode.
-- `modules/web.bicep` keeps the original plan-creation block commented out next
-  to `existingPlan`. To later enable creation, restore the block and update the
-  web resource's `serverFarmId` reference through a separately reviewed change.
+  The dev entry invokes web, Storage and PostgreSQL creation modules.
+- `resources.bicep` passes explicit PostgreSQL creation inputs to the module and
+  returns the new server's connection outputs. The native parameters select
+  PostgreSQL 17/Burstable B1ms/32 GiB. Tenant and administrator identity values are
+  redacted in public parameters; supply approved values locally before preview/apply.
+  Placeholders compile locally but cannot pass deployment preflight.
+- `modules/web.bicep` creates the explicitly requested, billable B1 plan and links
+  the web app through `plan.id`.
+  Dev uses `asp-sunsum-dev-test-centralus` and `app-sunsum-dev-test-centralus`:
+  resource type, project, environment, test purpose and region, without a SKU suffix.
+  Storage is `stsunsumdevtestcentralus` and PostgreSQL is
+  `db-sunsum-dev-test-centralus` with an empty `sunsum_test` database. Child resource
+  names are scoped to these new parents. Earlier targets are not reused or removed.
+  Confirm global name availability, regional quota and charges before deployment.
 - `app-service.bicep` declares the App Service plan, web app, managed identity
   and application settings for the existing development environment.
 - `app-service.dev.bicepparam` contains the non-secret shared development values
   introduced on main. It does not contain a database password.
 
-See the [development deployment guide](../docs/deployment.md) for that path and
+See the [earlier smoke-app notes](../docs/deployment.md#earlier-database-backed-smoke-app) for that path and
 the database grant required for a newly created web identity. This is distinct
 from the preparation entry points below; review which template owns a site's
-settings before applying either to the same app. Keep new approval records and
-identity details for the preparation workflow in ignored local configuration.
+settings before applying either to the same app. Keep identity values in ignored
+`.azure/dev/identity-values.json` and approval records in ignored local
+configuration; do not publish credentials or personal administrator data.
+
+## Configuration contract
+
+| Input | Owns |
+| --- | --- |
+| `../config/dev.json` | Explicit subscription, resource group, stable deployment name, `templatePath` and `parametersPath`. Paths resolve from this config's directory. |
+| `resources.dev.bicepparam` | Test resource names and compute settings, with tenant/administrator placeholders; bound to `resources.bicep` by its native `using` declaration. |
+| `resources.bicep` and `modules/` | Desired resource state: B1/Basic plan, fixture-only web app, private Storage, and a new Entra-only PostgreSQL server/database. |
+
+Versioned inputs support local compilation; preview/apply also needs the three
+redacted identity values supplied locally. The ignored identity backup is not
+automatically loaded, and generated `.azure/` artifacts are not required inputs.
+There are no SQL/plan/web creation-mode switches. The deployment script
+compiles the parameters and root together and verifies that their binding matches.
+See [infrastructure deployment](../docs/deployment.md#infrastructure-deployment)
+for commands, artifact handling and normal create/update/no-change behavior.
 
 ## Prepared entry points
 
 | Template | Scope | Use |
 | --- | --- | --- |
-| `resources.bicep` | Resource group | Fixture-only web app on an existing plan, private Storage and read-only reference to existing PostgreSQL. |
+| `resources.bicep` | Resource group | Complete test copy: Linux B1/Basic plan, fixture-only web app, private Storage and new Entra-only PostgreSQL server/database. |
 | `postgres-firewall.bicep` | Resource group | Only approved individual IPv4 rules for an existing PostgreSQL server; no rules by default. |
 | `main.bicep` | Resource group | Separate document-storage entry using Storage/network modules; its optional network path is not selected by dev config. |
 | `storage-role-grants.bicep` | Resource group | Separate administrator grant to the web identity at the two container scopes only. |
@@ -87,8 +111,8 @@ reviewed target and approval record.
 
 The dev entry is reapplied using `Deploy-Infrastructure.ps1`; it generates local
 artifacts and uses Incremental mode rather than a first-time collision guard.
-The legacy `Provision-Infrastructure.ps1` expects a creation-capable root and
-is not an entry point for the current existing-resource dev composition. Preflights
+The legacy `Provision-Infrastructure.ps1` retains its F1-only web checks and
+is not an entry point for the current B1 test composition. Preflights
 do not reserve names or make an ARM deployment transactional. A caller with direct
 Azure write permissions can submit a different template or direct resource write;
 enforcing restrictions against that caller requires separately managed Azure

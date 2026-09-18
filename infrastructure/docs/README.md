@@ -10,6 +10,12 @@ procedures, and decision records in this directory.
 
 ## Contents
 
+- [Deployment](./deployment.md) - default infrastructure commands, generated
+  artifacts, update/rerun behavior and separately labeled earlier smoke-app notes.
+- [App Service / PostgreSQL operations](./app-service-postgres.md) - network
+  approvals, Entra SQL bootstrap, migrations, sign-in and code deployment.
+- [Template configuration](../templates/README.md#configuration-contract) -
+  versioned source inputs and resource ownership.
 - [ADR 0001 — database and persistence](./adr-0001-database-and-persistence.md)
 - [Blob storage for site documents](./blob-storage.md) — the provisioned
   `stsunsumsolardevcus` account, and the two access blockers that currently
@@ -32,23 +38,16 @@ the prepared Bicep/Azure CLI foundation, local checks, exact-IP approval and exp
 Entra SQL bootstrap. This preparation does not provision or connect a cloud
 database. No orchestration framework is required.
 
-For reviewed create/update reruns, see
-[repeatable infrastructure deployment](app-service-postgres.md#repeatable-infrastructure-deployment).
-`pwsh -File infrastructure/scripts/Deploy-Infrastructure.ps1` reads the single
-committed `infrastructure/config/dev.json` config by default and compiles its
-versioned Bicep and native parameter file. No prebuilt artifacts are required. Add `-Preview`
-for what-if or `-Apply` for separately authorized writes; no dev wrapper is needed.
-That command accepts template-owned updates and no-change runs. PostgreSQL and
-the plan are existing references for now; first-time creation is not part of this
-dev entry point.
-
-The separate [development deployment guide](deployment.md) records the existing
-Azure environment and its verified PostgreSQL-backed application deployment.
-That path uses managed identity rather than a database password. It also records
-the one-time database grant that a template cannot perform. These recorded
-results do not certify a new deployment of the broader preparation foundation.
-F1 is the web-hosting tier only; PostgreSQL compute and storage costs must be
-confirmed separately.
+The [deployment guide](deployment.md#infrastructure-deployment) is the normal
+entry point for creating, updating and reapplying dev infrastructure. It manages
+a new B1/Basic plan, fixture-backed web app, private Storage and new Entra-only
+PostgreSQL server with an empty test database, all under distinct test names in
+the existing resource group. SQL bootstrap, migrations and application activation
+remain separate operations; existing data and grants are not copied. The same
+guide keeps earlier database-backed smoke-app notes separate from this default
+workflow; those notes do not certify a new deployment.
+B1 is a paid web-hosting tier explicitly requested for this experiment;
+PostgreSQL compute and Storage costs remain separate.
 
 If enabling [Fabric mirroring](https://learn.microsoft.com/en-us/fabric/mirroring/azure-database-postgresql),
 use a supported General Purpose or Memory Optimized PostgreSQL server.

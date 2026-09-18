@@ -19,8 +19,6 @@ param databaseName string = 'sunsum'
 ])
 param runtimeRoleName string = 'sunsum_runtime'
 
-/*
-Creation-only inputs are retained for restoring PostgreSQL provisioning later.
 @minLength(36)
 @maxLength(36)
 param tenantId string
@@ -49,14 +47,12 @@ param postgresStorageSizeGB int = 32
   '17'
 ])
 param postgresVersion string = '17'
-*/
 
 var tags = {
   environment: environmentName
   application: 'sunsum'
 }
 
-/*
 module postgres './modules/postgres.bicep' = {
   name: 'postgres-${uniqueString(deployment().name)}'
   params: {
@@ -73,11 +69,6 @@ module postgres './modules/postgres.bicep' = {
     postgresVersion: postgresVersion
     tags: tags
   }
-}
-*/
-
-resource existingPostgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' existing = {
-  name: postgresServerName
 }
 
 module storage './modules/storage.bicep' = {
@@ -103,14 +94,12 @@ module web './modules/web.bicep' = {
 output AZURE_WEB_APP_NAME string = webAppName
 output AZURE_WEB_APP_URL string = web.outputs.url
 output AZURE_WEB_APP_PRINCIPAL_ID string = web.outputs.principalId
-// output AZURE_POSTGRES_SERVER_NAME string = postgres.outputs.name
-output AZURE_POSTGRES_SERVER_NAME string = existingPostgres.name
+output AZURE_POSTGRES_SERVER_NAME string = postgres.outputs.name
 output AZURE_STORAGE_ACCOUNT_NAME string = storageAccountName
 output AZURE_STORAGE_BLOB_ENDPOINT string = storage.outputs.blobEndpoint
 output SITE_DOCUMENTS_CONTAINER string = 'site-documents'
 output PROJECT_DOCUMENTS_CONTAINER string = 'project-documents'
-// output PGHOST string = postgres.outputs.fqdn
-output PGHOST string = existingPostgres.properties.fullyQualifiedDomainName
+output PGHOST string = postgres.outputs.fqdn
 output PGPORT string = '5432'
 output PGDATABASE string = databaseName
 output PGUSER string = runtimeRoleName

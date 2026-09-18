@@ -70,6 +70,7 @@ function global:az {
             'existing-wrong-sku' { $plan.sku.name='B2' }
             'existing-free' { $plan.sku.name='F1';$plan.sku.tier='Free' }
             'existing-wrong-tier' { $plan.sku.tier='Free' }
+            'existing-missing-tier' { $null=$plan.sku.Remove('tier') }
             'existing-wrong-id' { $plan.id="$planId-other" }
             'existing-boolean-sku' { $plan.sku.name=$true }
             'existing-missing-sku' { $null=$plan.Remove('sku') }
@@ -95,7 +96,7 @@ function global:az {
     if ($state.Mode -ceq 'read-failure') { $global:LASTEXITCODE = 1; return '' }
     if ($state.Mode -ceq 'invalid-json') { return 'not-json' }
     $changes = @(
-        @{resourceId=$planId;changeType='Create';after=@{sku=@{name='F1';tier='Free'}}},
+        @{resourceId=$planId;changeType='Create';after=@{sku=@{name='B1';tier='Basic'}}},
         @{resourceId=$siteId;changeType='Create';after=@{properties=@{serverFarmId=$planId}}},
         @{resourceId=$storageId;changeType='Create';after=@{properties=@{}}},
         @{resourceId="${prefix}Microsoft.Storage/storageAccounts/unrelated";changeType='Ignore'}
@@ -104,6 +105,9 @@ function global:az {
     switch ($state.Mode) {
         'Modify' { foreach ($change in $changes[0..2]) { $change.changeType='Modify' }; $changes[2].delta=@(@{path='properties.example';propertyChangeType='Delete'}) }
         'NoChange' { foreach ($change in $changes[0..2]) { $change.changeType='NoChange' } }
+        'create-omitted-tier' { $null=$changes[0].after.sku.Remove('tier') }
+        'modify-omitted-tier' { $changes[0].changeType='Modify';$null=$changes[0].after.sku.Remove('tier') }
+        'nochange-omitted-tier' { $changes[0].changeType='NoChange';$null=$changes[0].after.sku.Remove('tier') }
         'mixed' { $changes[0].changeType='NoChange';$changes[1].changeType='Modify' }
         'Delete' { $changes[1].changeType='Delete' }
         'Ignore' { $changes[1].changeType='Ignore' }
@@ -118,7 +122,15 @@ function global:az {
         'failed-status' { $result.status='Failed' }
         'diagnostics' { $result.diagnostics=@(@{message='Unresolved resource'}) }
         'error' { $result.error=@{message='Failure'} }
-        'paid-plan' { $changes[0].after.sku.name='B1' }
+        'wrong-plan-sku' { $changes[0].after.sku.name='B2' }
+        'wrong-plan-sku-omitted-tier' { $changes[0].after.sku.name='B2';$null=$changes[0].after.sku.Remove('tier') }
+        'free-plan' { $changes[0].after.sku.name='F1';$changes[0].after.sku.tier='Free' }
+        'wrong-plan-tier' { $changes[0].after.sku.tier='Free' }
+        'null-plan-tier' { $changes[0].after.sku.tier=$null }
+        'blank-plan-tier' { $changes[0].after.sku.tier='' }
+        'boolean-plan-tier' { $changes[0].after.sku.tier=$true }
+        'missing-plan-name' { $null=$changes[0].after.sku.Remove('name') }
+        'missing-plan-sku' { $null=$changes[0].after.Remove('sku') }
         'boolean-plan' { $changes[0].after.sku.name=$true }
         'unknown-plan' { $null=$changes[0].Remove('after') }
         'bad-plan-id' { $changes[1].after.properties.serverFarmId=$storageId }
@@ -140,7 +152,7 @@ try {
     $artifactRoot=Join-Path $fixture '.azure/dev/deployments'
     if (@(Get-ChildItem -LiteralPath $artifactRoot -Recurse -Filter 'manifest.json').Count -ne 1) { throw 'Default did not generate artifacts.' }
     Assert-Blocked { & $runner @runnerOptions -Preview -Apply } 'conflicting switches' $true
-    foreach ($mode in @('Create','Modify','mixed','NoChange','NoChange','outside-nochange','empty','existing-plan','source-drift')) {
+    foreach ($mode in @('Create','Modify','mixed','NoChange','NoChange','create-omitted-tier','modify-omitted-tier','nochange-omitted-tier','outside-nochange','empty','existing-plan','source-drift')) {
         $state.Mode=$mode
         $state.Calls.Clear()
         & $runner @runnerOptions -Preview | Out-Null
@@ -150,10 +162,11 @@ try {
         & $runner @runnerOptions -Apply | Out-Null
         if ($state.Compilations -ne $beforeApplyCompilation + 1) { throw 'Apply must compile once and deploy the exact previewed build.' }
         if (@($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count -ne 1) { throw "Repeatable scenario rejected: $mode" }
+        if ($mode -cne 'existing-plan' -and @($state.Calls | Where-Object { $_ -like 'appservice plan show *' }).Count) { throw 'Managed B1 plans must not require an existing plan read.' }
         if ($state.Calls[$state.Calls.Count - 1] -notlike 'deployment group create *') { throw 'Apply must not add post-deployment Azure checks.' }
         foreach ($path in $state.Snapshots) { if (Test-Path -LiteralPath $path) { throw 'Snapshot was not cleaned up.' } }
     }
-    foreach ($mode in @('Delete','Deploy','duplicate','outside','outside-delete','malformed','no-changes','failed-status','diagnostics','error','paid-plan','boolean-plan','unknown-plan','bad-plan-id','masked-site','cross-subscription','read-failure','invalid-json','snapshot-drift','existing-wrong-sku','existing-free','existing-wrong-tier','existing-wrong-id','existing-boolean-sku','existing-missing-sku','existing-malformed','plan-read-failure')) {
+    foreach ($mode in @('Delete','Deploy','duplicate','outside','outside-delete','malformed','no-changes','failed-status','diagnostics','error','wrong-plan-sku','wrong-plan-sku-omitted-tier','free-plan','wrong-plan-tier','null-plan-tier','blank-plan-tier','boolean-plan-tier','missing-plan-name','missing-plan-sku','boolean-plan','unknown-plan','bad-plan-id','masked-site','cross-subscription','read-failure','invalid-json','snapshot-drift','existing-wrong-sku','existing-free','existing-wrong-tier','existing-missing-tier','existing-wrong-id','existing-boolean-sku','existing-missing-sku','existing-malformed','plan-read-failure')) {
         $state.Mode=$mode
         Assert-Blocked { & $runner @runnerOptions -Apply } $mode
     }
@@ -170,7 +183,33 @@ try {
         $state.TemplateJson=@{ resources=@(@{type='Microsoft.Resources/deployments';properties=$nested}) } | ConvertTo-Json -Depth 10
         Assert-Blocked { & $runner @runnerOptions -Apply } 'linked or complete nested template' $true
     }
+    $state.TemplateJson='{"resources":[],"parameters":{"tenantId":{"type":"string"},"postgresAdminObjectId":{"type":"string"},"postgresAdminPrincipalName":{"type":"string"}}}'
+    $identityInputs = @{
+        tenantId=@{value='22222222-2222-4222-8222-222222222222'}
+        postgresAdminObjectId=@{value='33333333-3333-4333-8333-333333333333'}
+        postgresAdminPrincipalName=@{value='synthetic-administrator'}
+    }
+    foreach ($field in $identityInputs.Keys) {
+        $invalidValues = @($null, $true, '', '<redacted>', "invalid`nvalue", 'missing-entry')
+        if ($field -cne 'postgresAdminPrincipalName') { $invalidValues += @('00000000-0000-0000-0000-000000000000', 'invalid-uuid') }
+        foreach ($invalidValue in $invalidValues) {
+            $invalidInputs = $identityInputs.Clone()
+            if ($invalidValue -ceq 'missing-entry') { $null=$invalidInputs.Remove($field) }
+            else { $invalidInputs[$field]=@{value=$invalidValue} }
+            $state.ParametersJson=@{parameters=$invalidInputs} | ConvertTo-Json -Depth 5 -Compress
+            Assert-Blocked { & $runner @runnerOptions -Preview } "redacted identity preview: $field" $true
+            Assert-Blocked { & $runner @runnerOptions -Apply } "redacted identity apply: $field" $true
+        }
+    }
+    $state.ParametersJson='{"parameters":{"tenantId":{"value":"00000000-0000-0000-0000-000000000000"},"postgresAdminObjectId":{"value":"00000000-0000-0000-0000-000000000000"},"postgresAdminPrincipalName":{"value":"<postgres-admin-principal-name>"}}}'
+    $state.Calls.Clear()
+    & $runner @runnerOptions | Out-Null
+    if ($state.Calls.Count) { throw 'Redacted local compilation called Azure.' }
+    $state.ParametersJson=@{parameters=$identityInputs} | ConvertTo-Json -Depth 5 -Compress
+    & $runner @runnerOptions -Preview | Out-Null
+    & $runner @runnerOptions -Apply | Out-Null
     $state.TemplateJson='{"resources":[]}'
+    $state.ParametersJson='{"parameters":{}}'
     Push-Location ([System.IO.Path]::GetTempPath())
     try {
         $state.Calls.Clear()
@@ -208,7 +247,7 @@ try {
         throw 'Failed apply did not stop without retry.'
     }
     if ($state.Calls[$state.Calls.Count - 1] -notlike 'deployment group create *') { throw 'Failed apply must not add Azure calls after deployment.' }
-    Write-Output 'Repeatable deployment checks passed: source compilation, fresh checkout, create/update/no-change, snapshots, F1 creation and existing B1 checks, and no retry.'
+    Write-Output 'Repeatable deployment checks passed: source compilation, fresh checkout, create/update/no-change, snapshots, B1 creation and reference checks, and no retry.'
 } finally {
     Remove-Item -LiteralPath Function:\az -Force
     Remove-Item -LiteralPath Function:\Invoke-RepeatableTestCompiler -Force

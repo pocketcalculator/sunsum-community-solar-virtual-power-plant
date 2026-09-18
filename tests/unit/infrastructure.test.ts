@@ -21,14 +21,17 @@ describe("the bounded Azure preparation contract", () => {
     expect(read("package.json")).toContain('"db:migrate:azure"');
   });
 
-  it("always manages the dev web app while referencing PostgreSQL and the plan", () => {
+  it("creates the complete dev test stack without existing resource references", () => {
     const source = read("infrastructure/templates/resources.bicep");
     const core = source.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
-    expect(core).not.toMatch(/webAppMode|postgresMode|postgresAdminObjectId/u);
+    expect(core).not.toMatch(/webAppMode|postgresMode|existingPostgres|\bexisting\s*=/u);
     expect(core).toContain("module web './modules/web.bicep' = {");
-    expect(core).toContain("resource existingPostgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' existing = {");
-    expect(core).not.toContain("module postgres");
-    expect(source).toContain("module postgres './modules/postgres.bicep' = {");
+    expect(core).toContain("module storage './modules/storage.bicep' = {");
+    expect(core).toContain("module postgres './modules/postgres.bicep' = {");
+    expect(core).toContain("serverName: postgresServerName");
+    expect(core).toContain("adminObjectId: postgresAdminObjectId");
+    expect(core).toContain("output AZURE_POSTGRES_SERVER_NAME string = postgres.outputs.name");
+    expect(core).toContain("output PGHOST string = postgres.outputs.fqdn");
     expect(core).not.toContain("web-sign-in.bicep");
     expect(core).not.toContain("storage-role-grants.bicep");
   });
@@ -79,10 +82,14 @@ describe("the bounded Azure preparation contract", () => {
     ], { cwd: root, encoding: "utf8", timeout: 45_000 });
     expect(result).toContain("MVP access safety checks passed");
   }, 50_000);
-  it("reuses B1 for the temporary dev test without changing the F1 creation guard", () => {
-    const web = read("infrastructure/templates/modules/web.bicep");
-    expect(web).toContain("resource existingPlan 'Microsoft.Web/serverfarms@2024-04-01' existing = {");
-    expect(web).toContain("serverFarmId: existingPlan.id");
+  it("creates the requested B1 plan without relaxing other commands' F1 guards", () => {
+    const web = read("infrastructure/templates/modules/web.bicep").replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+    expect(web).toContain("resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {");
+    expect(web).not.toContain("existingPlan");
+    expect(web).toContain("serverFarmId: plan.id");
+    expect(web).toContain("name: 'B1'");
+    expect(web).toContain("tier: 'Basic'");
+    expect(web).toContain("reserved: true");
     const deploy = read("infrastructure/scripts/Deploy-Infrastructure.ps1");
     const validation = read("infrastructure/scripts/InfrastructureValidation.psm1");
     expect(deploy).toContain("Assert-InfrastructureConfig $config");
@@ -90,9 +97,10 @@ describe("the bounded Azure preparation contract", () => {
     expect(deploy).toContain("Get-ValidatedInfrastructureChanges -Result $result");
     expect(validation).toContain("$plan.sku.name -ine 'B1'");
     expect(validation).toContain("$plan.sku.tier -ine 'Basic'");
+    expect(validation).not.toContain("'F1'");
     expect(read("infrastructure/scripts/Deploy-AppServiceCode.ps1")).toContain("Assert-AppServiceFreePlan");
-    expect(validation).toContain("'F1'");
-    expect(validation).toContain("'Free'");
+    expect(validation).toContain("$change.after.sku['name'] -ine 'B1'");
+    expect(validation).toContain("$change.after.sku['tier'] -ine 'Basic'");
     expect(web).toContain("alwaysOn: false");
     expect(web).toContain("linuxFxVersion: 'NODE|22-lts'");
     expect(web).toContain("npm run start -- --hostname 0.0.0.0");
@@ -105,6 +113,7 @@ describe("the bounded Azure preparation contract", () => {
     expect(provision).toContain("if (-not $Apply)");
     expect(provision).toContain("--mode Incremental");
     expect(provision).toContain("DatabaseBudgetApproval");
+    expect(provision).toContain("Assert-AppServiceFreePlan");
   });
 
   it("declares a fixture-only web host with database configuration kept in operator outputs", () => {
@@ -153,10 +162,25 @@ describe("the bounded Azure preparation contract", () => {
     const config = JSON.parse(read("infrastructure/config/dev.json"));
     expect(config.templatePath).toBe("../templates/resources.bicep");
     expect(config.parametersPath).toBe("../templates/resources.dev.bicepparam");
+    expect(config.deploymentName).toBe("sunsum-dev-test-infrastructure");
     expect(Object.keys(config).sort()).toEqual([
       "deploymentName", "parametersPath", "resourceGroupName", "subscriptionId", "templatePath",
     ]);
-    expect(read("infrastructure/templates/resources.dev.bicepparam")).toContain("using './resources.bicep'");
+    const parameters = read("infrastructure/templates/resources.dev.bicepparam");
+    expect(parameters).toContain("using './resources.bicep'");
+    expect(parameters).toContain("param environmentName = 'dev-test'");
+    expect(parameters).toContain("param appServicePlanName = 'asp-sunsum-dev-test-centralus'");
+    expect(parameters).toContain("param webAppName = 'app-sunsum-dev-test-centralus'");
+    expect(parameters).toContain("param storageAccountName = 'stsunsumdevtestcentralus'");
+    expect(parameters).toContain("param postgresServerName = 'db-sunsum-dev-test-centralus'");
+    expect(parameters).toContain("param databaseName = 'sunsum_test'");
+    expect(parameters).toContain("param tenantId = '00000000-0000-0000-0000-000000000000'");
+    expect(parameters).toContain("param postgresAdminObjectId = '00000000-0000-0000-0000-000000000000'");
+    expect(parameters).toContain("param postgresAdminPrincipalName = '<postgres-admin-principal-name>'");
+    expect(parameters).toContain("param postgresAdminPrincipalType = 'User'");
+    expect(parameters).toContain("param postgresVersion = '17'");
+    expect(parameters).toContain("param postgresSkuName = 'Standard_B1ms'");
+    expect(parameters).not.toMatch(/readEnvironmentVariable|stsunsumdev928e5e28|db-sunsum-dev-centralus/u);
     expect(existsSync(join(root, "infrastructure/scripts/Deploy-DevInfrastructure.ps1"))).toBe(false);
     const result = execFileSync("pwsh", [
       "-NoProfile", "-NonInteractive", "-Command",
