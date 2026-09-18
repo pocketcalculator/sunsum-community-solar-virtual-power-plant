@@ -28,6 +28,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 
 import type { ActivityRecord } from "@/backend/core/activity";
+import { normalizeDocType } from "@/backend/core/documents";
 import type { EngagementRecord, FundingNeedRecord } from "@/backend/core/engagements";
 import type { InvestorProfile } from "@/backend/core/identity";
 import type { ProjectRecord, ProjectStage, SiteType } from "@/backend/core/projects";
@@ -718,7 +719,14 @@ export class PostgresBackendStore implements BackendStore {
       originalFilename: row.originalFilename,
       contentType: row.contentType,
       sizeBytes: Number(row.sizeBytes),
-      docType: row.docType,
+      /**
+       * `doc_type` is nullable in the database but never null on the record: it
+       * is a blob-path segment, and a null would format a path with an empty
+       * one. Resolved through the same function the write path uses, so a row
+       * stored before the column was relaxed reads back as `other` rather than
+       * addressing a blob nothing wrote.
+       */
+      docType: normalizeDocType(row.docType),
       disclosureClass: row.disclosureClass,
       uploadedByUserId: row.uploadedByUserId,
       createdAt: row.createdAt.toISOString(),

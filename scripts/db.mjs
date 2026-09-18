@@ -19,46 +19,15 @@
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import pg from "pg";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+import { loadLocalEnv, root } from "./env.mjs";
+
 const sqlDir = join(root, "src", "backend", "db");
 
-/**
- * A deliberately small `.env` parser: `KEY=value`, `#` comments, no quoting
- * rules and no interpolation. Anything more belongs in a dependency, and this
- * file only ever holds a connection string and a store name.
- *
- * Real environment variables win, so `DATABASE_URL=... npm run db:seed` behaves
- * the way anyone would expect.
- */
-function loadEnv(file) {
-  let contents;
-
-  try {
-    contents = readFileSync(join(root, file), "utf8");
-  } catch {
-    return;
-  }
-
-  for (const line of contents.split("\n")) {
-    if (line.trimStart().startsWith("#")) {
-      continue;
-    }
-
-    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
-
-    if (match && process.env[match[1]] === undefined) {
-      process.env[match[1]] = match[2];
-    }
-  }
-}
-
-loadEnv(".env.local");
-loadEnv(".env");
+loadLocalEnv();
 
 const url = process.env.DATABASE_URL;
 
