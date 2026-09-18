@@ -413,6 +413,131 @@ control. Check the existing Node/Oryx/TLS/F1 settings separately; identity and
 configuration changes can restart the app and need a maintenance decision.
 Do not supply operator credentials or overwrite the sign-in credential.
 
+## Repeatable infrastructure deployment
+
+For dev, use the short entry point from the repository root:
+
+```powershell
+# Local validation; no Azure calls.
+pwsh -NoProfile -File infrastructure/scripts/Deploy-DevInfrastructure.ps1
+# Read-only Azure preview.
+pwsh -NoProfile -File infrastructure/scripts/Deploy-DevInfrastructure.ps1 -Preview
+# Azure writes, only after explicit authorization.
+pwsh -NoProfile -File infrastructure/scripts/Deploy-DevInfrastructure.ps1 -Apply
+```
+
+All values come from ignored `.azure/dev/deployment.json`; no target, hash or path
+arguments are required. Configure it once from
+[`deployment.dev.example.json`](../templates/deployment.dev.example.json), using
+the actual approved dev target and artifact hashes. Relative artifact paths are
+resolved from `.azure/dev`, independently of the current terminal directory.
+The entry script itself can also be called by absolute path from another folder.
+Missing configuration, placeholders and unknown fields fail locally; there is no
+fallback target. Configuration cannot enable apply, and no hashes or approvals are
+generated automatically. The file is operator-controlled configuration, not an
+independent authorization source. Keep it with the reviewed artifacts; refresh
+it after a separately reviewed input change. Actual environment/identity values
+remain local, while the committed example is deliberately nondeployable.
+
+This dev-only loader delegates all snapshot, approval and what-if checks to the
+command below. It introduces no environment selector or new environment hierarchy.
+The generic command remains available for explicit calls and future automation.
+
+Use `scripts/Deploy-Infrastructure.ps1` for an explicitly reviewed create/update
+deployment of template-owned resources. `Provision-Infrastructure.ps1` remains
+first-time-only and retains its collision checks. The repeatable command does
+not adopt resources automatically, select templates, change database contracts,
+upload application code or run SQL migrations. Review ownership before using
+either App Service template on an existing app.
+
+Compile the intended Bicep entry point into a self-contained JSON snapshot with
+inline modules. Keep it and the matching ARM parameters in ignored `.azure/`
+configuration. External template/parameter links and nested Complete-mode
+deployments are rejected. The caller supplies the resource group and a stable
+deployment name; all operations use Incremental mode. No environment-specific
+resource names are built into this command.
+
+Record the template and parameter SHA-256 digests during review. Create a separate
+approval JSON with exactly these fields (placeholders are not deployable):
+
+```json
+{
+  "operation": "DeployInfrastructure",
+  "subscriptionId": "<subscription-uuid>",
+  "resourceGroupName": "<existing-resource-group>",
+  "deploymentName": "<stable-deployment-name>",
+  "templateSha256": "<reviewed-compiled-template-sha256>",
+  "parametersSha256": "<reviewed-parameters-sha256>",
+  "approvalReference": "<infrastructure-and-budget-review>",
+  "resourceIds": [
+    "/subscriptions/<subscription-uuid>/resourceGroups/<existing-resource-group>/providers/Microsoft.Storage/storageAccounts/<account-name>"
+  ]
+}
+```
+
+`resourceIds` is the full reviewed set of resources managed by this particular
+template/parameter combination, including child resources such as containers and
+publishing policies. Do not copy the single-resource example for a multi-resource
+template. IDs must be unique, literal and within the explicit resource group;
+wildcards and deployment-history resources are not allowed. Existing references
+that the template does not write belong outside this set. Review the scope against
+the compiled resource declarations, not just against a potentially partial preview.
+Keep secrets out of the template, parameter files and approval record.
+
+From the repository root, after separately authorizing tool setup if needed:
+
+```powershell
+az bicep build --file infrastructure/templates/resources.bicep --outfile .azure/dev/resources.compiled.json
+# Review the compiled file, parameters, resource scope and costs; retain their hashes.
+$deployment = @{
+  SubscriptionId = $env:AZURE_SUBSCRIPTION_ID
+  ResourceGroupName = $env:AZURE_RESOURCE_GROUP
+  DeploymentName = 'sunsum-dev-foundation'
+  TemplatePath = '.azure/dev/resources.compiled.json'
+  TemplateSha256 = '<reviewed-template-sha256>'
+  ParametersPath = '.azure/dev/resources.parameters.json'
+  ParametersSha256 = '<reviewed-parameters-sha256>'
+  ApprovalPath = '.azure/dev/deployment-approval.json'
+  ApprovalSha256 = '<reviewed-approval-sha256>'
+  ApprovalReference = '<infrastructure-and-budget-review>'
+}
+& ./infrastructure/scripts/Deploy-Infrastructure.ps1 @deployment
+& ./infrastructure/scripts/Deploy-Infrastructure.ps1 @deployment -Preview
+# Future WRITE, only after explicit apply authorization:
+& ./infrastructure/scripts/Deploy-Infrastructure.ps1 @deployment -Apply
+```
+
+Default execution validates locally without Azure calls. `-Preview` performs a
+read-only what-if; `-Apply` repeats that what-if immediately before deployment.
+Both consume the same hash-verified template/parameter snapshots. The approval
+binds their hashes, target, deployment name and resource scope. Modified inputs
+need a new review, not blindly refreshed hashes. Summary output contains resource
+IDs/change types, not raw payloads that could disclose app settings.
+
+All approved resources must be present in the preview as `Create`, `Modify` or
+`NoChange`, so repeated and fully unchanged runs are accepted. Unresolved/missing
+resources, diagnostics, duplicate IDs, resource deletions and out-of-scope writes
+are blocked. Property removals within an approved `Modify` are allowed: declared
+settings are authoritative and manual drift may be overwritten. What-if may
+report provider defaults as changes on every run; empty output is not required
+for repeatability. A successful preview is not an atomic lock or a guarantee that
+apply will succeed. On failure, inspect deployment state before retrying; the
+command neither retries nor deletes partial resources automatically.
+
+App Service plan changes must expose F1/Free in the preview. Web apps must expose
+their plan reference; existing plans outside the write scope are read-checked for
+F1/Free. A paid or unreadable plan is not a fallback. These checks do not replace
+template/code review, Azure Policy, RBAC, budget approval or separate network and
+identity approvals. Azure can mask settings in what-if; verify them in the compiled
+snapshot and again through read-only resource checks after apply. Keep operator
+files controlled and serialize deployments; what-if and apply are not transactional.
+
+Do not reapply fixture-only hosting over a database-activated app accidentally:
+the template may restore `SUNSUM_STORE=mock`, replace the settings collection or
+close Storage networking. Review those as intended changes, or choose the template
+that owns the desired configuration. No hardcoded existing-resource test overrides
+are included in this workflow.
+
 ## 3. Review exact network allowances
 
 F1 **does not support VNet integration**. A private-only database would not be

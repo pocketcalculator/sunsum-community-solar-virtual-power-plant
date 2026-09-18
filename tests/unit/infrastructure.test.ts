@@ -136,6 +136,14 @@ describe("the bounded Azure preparation contract", () => {
     expect(result).toContain("checks passed");
   }, 50_000);
 
+  it("supports repeatable reviewed infrastructure deployment without Azure calls", () => {
+    const result = execFileSync("pwsh", [
+      "-NoProfile", "-NonInteractive", "-Command",
+      runnerCommand("repeatable-deployment"),
+    ], { cwd: root, encoding: "utf8", timeout: 45_000 });
+    expect(result).toContain("Repeatable deployment checks passed");
+  }, 50_000);
+
   it.each(["firewall-template", "deployment-safety", "mvp-access"])("propagates real %s failures through the CI shell wrapper", (suite) => {
     const missingCompiler = "./.validation/nonexistent-bicep-executable";
     expect(existsSync(join(root, missingCompiler))).toBe(false);
