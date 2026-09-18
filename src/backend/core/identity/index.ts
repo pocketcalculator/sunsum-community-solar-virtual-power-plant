@@ -11,7 +11,13 @@
  * downstream already takes a `Viewer` and does not care where it came from.
  */
 
-export { ROLES, type InvestorProfile, type Role, type Viewer } from "./viewer";
+export {
+  ROLES,
+  type InvestorProfile,
+  type Role,
+  type Viewer,
+  type ViewerIdentity,
+} from "./viewer";
 export {
   MIN_SESSION_SECRET_LENGTH,
   SESSION_MAX_AGE_MS,

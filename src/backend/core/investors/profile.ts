@@ -1,8 +1,8 @@
-import type { InvestorProfile, Viewer } from "../identity";
+import { randomUUID } from "node:crypto";
+import type { InvestorProfile, Viewer, ViewerIdentity } from "../identity";
 import { FUNDING_STAGES, type FundingStage } from "../projects";
 import { failure, ok, type Result } from "../shared";
 import { demoBackendStore, type BackendStore } from "../store";
-import { DEMO_INVESTOR_ID } from "../../demo-principals";
 
 // Mirrors PR #11's src/backend/db/enums.ts until that branch merges.
 export const INVESTOR_TYPES = [
@@ -74,8 +74,15 @@ export async function getMyInvestorProfile(
   return ok(toInvestorProfilePayload(stored ?? viewer.investor));
 }
 
+/**
+ * Create or replace the calling investor's profile.
+ *
+ * Takes a {@link ViewerIdentity} rather than a {@link Viewer} because this is
+ * the endpoint that brings a profile into existence: requiring one here would
+ * make onboarding unreachable for the account it exists to onboard.
+ */
 export async function upsertMyInvestorProfile(
-  viewer: Viewer,
+  viewer: ViewerIdentity,
   input: InvestorProfileInput,
   store: BackendStore = demoBackendStore,
 ): Promise<Result<InvestorProfilePayload>> {
@@ -97,7 +104,7 @@ export async function upsertMyInvestorProfile(
   const existing = await store.getInvestorProfileByUserId(viewer.userId);
   const now = new Date().toISOString();
   const profile: InvestorProfile = {
-    id: existing?.id ?? viewer.investor.id ?? DEMO_INVESTOR_ID,
+    id: existing?.id ?? randomUUID(),
     userId: viewer.userId,
     organizationName: input.organizationName,
     investorType: input.investorType,

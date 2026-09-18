@@ -40,26 +40,35 @@ const DEMO_OPERATOR_VIEWER = {
 } satisfies Viewer;
 
 /**
- * Resolving who is calling.
+ * A fixture builder for the seeded demo site owner.
  *
- * **This is a placeholder and has no security value.** There is no session, no
- * token and no sign-in behind it: it returns the same demo investor for every
- * request.
+ * **This has no security value and is not on the request path.** It answers
+ * with a fixed demo identity without consulting the request at all.
  *
- * @deprecated Removed from the request path. Identity now comes from
- * `resolveViewer` in `./session`, which refuses a request carrying no session
- * instead of inventing an onboarded investor for it. Kept only as a fixture
- * builder for tests and seeding, where the caller already decided who they are
- * pretending to be.
+ * @deprecated Identity now comes from `resolveViewer` in `./session`, which
+ * refuses a request carrying no session instead of inventing a viewer for it.
+ * Kept only for tests and seeding, where the caller has already decided who
+ * they are pretending to be.
  */
 export function resolveDemoSiteOwner(): Viewer {
   return DEMO_SITE_OWNER_VIEWER;
 }
 
+/**
+ * A fixture builder for the seeded demo operator.
+ *
+ * @deprecated See {@link resolveDemoSiteOwner}.
+ */
 export function resolveDemoOperator(): Viewer {
   return DEMO_OPERATOR_VIEWER;
 }
 
+/**
+ * A fixture builder for the seeded demo investor, hydrated from the store so
+ * the mandate matches whatever the test seeded.
+ *
+ * @deprecated See {@link resolveDemoSiteOwner}.
+ */
 export async function resolveDemoInvestor(
   store: BackendStore = demoBackendStore,
 ): Promise<Viewer> {

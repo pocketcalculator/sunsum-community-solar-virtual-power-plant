@@ -15,7 +15,11 @@
  * downstream.
  */
 
-import type { Role, Viewer } from "../../core/identity";
+import type {
+  InvestorProfile,
+  Role,
+  ViewerIdentity,
+} from "../../core/identity";
 import { failure, ok, type Result } from "../../core/shared";
 import { backendStore, type BackendStore } from "../../core/store";
 import {
@@ -26,7 +30,7 @@ import {
 import {
   clearedSessionCookie,
   issueSessionCookie,
-  resolveViewer,
+  resolveIdentity,
 } from "./session";
 import {
   failureResponse,
@@ -46,13 +50,14 @@ const DEMO_USER_ID_BY_ROLE: Record<Role, string> = {
 /**
  * Whether the demo sign-in is reachable.
  *
- * Enabled unless explicitly turned off, because on this deployment it is the
- * only way in and a disabled default would present as a site where every
- * request is refused. Setting `SUNSUM_DEMO_AUTH=disabled` is what a deployment
- * does once a real identity provider is wired up.
+ * Opt-in, and deliberately so. `/auth/demo-switch` hands out a seeded
+ * `site_owner` or `operator` session to anyone who asks, so a deployment that
+ * leaves this unset while serving real records would be no better protected
+ * than one with no sign-in at all. The demo deployment turns it on explicitly,
+ * which makes that exposure a recorded decision rather than a default.
  */
 export function isDemoAuthEnabled(): boolean {
-  return process.env.SUNSUM_DEMO_AUTH !== "disabled";
+  return process.env.SUNSUM_DEMO_AUTH === "enabled";
 }
 
 function isRole(value: unknown): value is Role {
@@ -73,21 +78,48 @@ function parseDemoSwitch(body: JsonObject): Result<Role> {
   return ok(role);
 }
 
-/** The identity payload `/me` and `/auth/demo-switch` both answer with. */
-function identityBody(viewer: Viewer): Record<string, unknown> {
+/**
+ * The identity payload `/me` and `/auth/demo-switch` both answer with.
+ *
+ * Takes the profile separately because an investor may not have one yet. That
+ * case is reported as `onboarded: false` rather than as a refusal, so a client
+ * can tell "you need to onboard" apart from "you may not be here" and send the
+ * caller to the profile form.
+ */
+function identityBody(
+  identity: ViewerIdentity,
+  investor: InvestorProfile | null,
+): Record<string, unknown> {
+  if (identity.role !== "investor") {
+    return { user_id: identity.userId, role: identity.role };
+  }
+
   return {
-    user_id: viewer.userId,
-    role: viewer.role,
-    ...(viewer.role === "investor"
+    user_id: identity.userId,
+    role: identity.role,
+    onboarded: investor !== null,
+    ...(investor !== null
       ? {
           investor: {
-            id: viewer.investor.id,
-            organization_name: viewer.investor.organizationName,
-            onboarding_completed_at: viewer.investor.onboardingCompletedAt,
+            id: investor.id,
+            organization_name: investor.organizationName,
+            onboarding_completed_at: investor.onboardingCompletedAt,
           },
         }
       : {}),
   };
+}
+
+/** Load whatever the payload needs beyond the identity itself. */
+async function describeIdentity(
+  identity: ViewerIdentity,
+  store: BackendStore,
+): Promise<Record<string, unknown>> {
+  const investor =
+    identity.role === "investor"
+      ? await store.getInvestorProfileByUserId(identity.userId)
+      : null;
+  return identityBody(identity, investor);
 }
 
 export async function handlePostDemoSwitch(
@@ -124,32 +156,36 @@ export async function handlePostDemoSwitch(
   const cookie = issueSessionCookie(userId);
   if (!cookie.ok) return failureResponse(cookie.failure);
 
-  const viewer = await resolveViewerForUser(request, cookie.value, store);
-  if (!viewer.ok) return failureResponse(viewer.failure);
+  const identity = await resolveIdentityForUser(request, cookie.value, store);
+  if (!identity.ok) return failureResponse(identity.failure);
 
-  const response = jsonResponse(identityBody(viewer.value));
+  const response = jsonResponse(await describeIdentity(identity.value, store));
   response.headers.append("set-cookie", cookie.value);
   return response;
 }
 
 /**
- * Resolve the viewer for a cookie we just minted.
+ * Resolve the identity for a cookie we just minted.
  *
  * The freshly issued cookie is not on the incoming request, so it is replayed
- * through the same `resolveViewer` the next request will use. That keeps one
+ * through the same `resolveIdentity` the next request will use. That keeps one
  * code path deciding what a session means, and makes the response to
  * `demo-switch` identical to the `/me` that follows it.
+ *
+ * Deliberately `resolveIdentity` and not `resolveViewer`: an investor who has
+ * not onboarded has no profile, and refusing them here would make the profile
+ * they need to create unreachable.
  */
-async function resolveViewerForUser(
+async function resolveIdentityForUser(
   request: Request,
   cookie: string,
   store: BackendStore,
-): Promise<Result<Viewer>> {
+): Promise<Result<ViewerIdentity>> {
   const replay = new Request(request.url, {
     method: "GET",
     headers: { cookie: cookie.split(";")[0] ?? "" },
   });
-  return resolveViewer(replay, store);
+  return resolveIdentity(replay, store);
 }
 
 export function handlePostLogout(): Response {
@@ -162,9 +198,9 @@ export async function handleGetMe(
   request: Request,
   store: BackendStore = backendStore,
 ): Promise<Response> {
-  const viewer = await resolveViewer(request, store);
-  if (!viewer.ok) return failureResponse(viewer.failure);
-  return jsonResponse(identityBody(viewer.value));
+  const identity = await resolveIdentity(request, store);
+  if (!identity.ok) return failureResponse(identity.failure);
+  return jsonResponse(await describeIdentity(identity.value, store));
 }
 
 /*

@@ -1,4 +1,4 @@
-import type { Viewer } from "../../core/identity";
+import type { Viewer, ViewerIdentity } from "../../core/identity";
 import {
   DEFAULT_PORTFOLIO_QUERY,
   getMyInvestorProfile,
@@ -13,7 +13,7 @@ import {
 import { isProjectStage, isViabilityStatus } from "../../core/projects";
 import { failure, ok, type Result } from "../../core/shared";
 import { demoBackendStore, type BackendStore } from "../../core/store";
-import { requireRole } from "../identity";
+import { requireInvestorIdentity, requireRole } from "../identity";
 import {
   failureResponse,
   jsonResponse,
@@ -77,7 +77,7 @@ export async function getInvestorProfileRoute(request: Request): Promise<Respons
 
 export async function handlePostInvestorProfile(
   request: Request,
-  viewer: Viewer,
+  viewer: ViewerIdentity,
   store: BackendStore = demoBackendStore,
 ): Promise<Response> {
   const body = await readJsonObject(request);
@@ -88,8 +88,13 @@ export async function handlePostInvestorProfile(
   return result.ok ? jsonResponse(result.value, 201) : failureResponse(result.failure);
 }
 
+/**
+ * Onboarding, so this authenticates the investor without demanding the
+ * profile it is about to create. `requireRole` would refuse the very account
+ * this endpoint exists to set up.
+ */
 export async function postInvestorProfileRoute(request: Request): Promise<Response> {
-  const viewer = await requireRole(request, "investor");
+  const viewer = await requireInvestorIdentity(request);
   if (!viewer.ok) return failureResponse(viewer.failure);
   return handlePostInvestorProfile(request, viewer.value, demoBackendStore);
 }

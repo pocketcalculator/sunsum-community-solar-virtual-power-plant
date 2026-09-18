@@ -19,6 +19,7 @@ import {
   SESSION_MAX_AGE_MS,
   type Role,
   type Viewer,
+  type ViewerIdentity,
 } from "../../core/identity";
 import { failure, ok, type Result } from "../../core/shared";
 import { backendStore, type BackendStore } from "../../core/store";
@@ -140,17 +141,17 @@ export function issueSessionCookie(userId: string): Result<string> {
 }
 
 /**
- * Turn a request into the identity behind it.
+ * Turn a request into the identity behind it, without loading an investor
+ * profile.
  *
  * The role is read from the user row rather than the token, so a role that
- * changes in the database takes effect on the next request. An investor also
- * carries their mandate, because every investor rule in core needs it and
- * loading it here keeps those rules synchronous.
+ * changes in the database takes effect on the next request and a stolen
+ * cookie cannot claim a role its owner was never granted.
  */
-export async function resolveViewer(
+export async function resolveIdentity(
   request: Request,
   store: BackendStore = backendStore,
-): Promise<Result<Viewer>> {
+): Promise<Result<ViewerIdentity>> {
   const token = readCookie(request, SESSION_COOKIE_NAME);
   if (token === undefined) {
     return failure("unauthenticated", "Sign in to continue.");
@@ -171,18 +172,58 @@ export async function resolveViewer(
     return failure("unauthenticated", "Sign in to continue.");
   }
 
-  if (user.role === "investor") {
-    const investor = await store.getInvestorProfileByUserId(user.id);
+  return ok({ role: user.role, userId: user.id });
+}
+
+/**
+ * Turn a request into the identity behind it.
+ *
+ * An investor also carries their mandate, because every investor rule in core
+ * needs it and loading it here keeps those rules synchronous. An investor who
+ * has not onboarded yet therefore cannot be resolved into a `Viewer` at all;
+ * {@link requireInvestorIdentity} is how the onboarding write gets in.
+ */
+export async function resolveViewer(
+  request: Request,
+  store: BackendStore = backendStore,
+): Promise<Result<Viewer>> {
+  const identity = await resolveIdentity(request, store);
+  if (!identity.ok) return identity;
+
+  if (identity.value.role === "investor") {
+    const investor = await store.getInvestorProfileByUserId(
+      identity.value.userId,
+    );
     if (investor === null) {
       return failure(
         "forbidden_role",
         "This investor account has no profile yet.",
       );
     }
-    return ok({ role: "investor", userId: user.id, investor });
+    return ok({ role: "investor", userId: identity.value.userId, investor });
   }
 
-  return ok({ role: user.role, userId: user.id });
+  return ok(identity.value);
+}
+
+/**
+ * Resolve an authenticated investor who may not have onboarded yet.
+ *
+ * Only the profile write should use this. Every other investor endpoint wants
+ * {@link requireRole}, which refuses a caller whose mandate cannot be loaded.
+ */
+export async function requireInvestorIdentity(
+  request: Request,
+  store: BackendStore = backendStore,
+): Promise<Result<Extract<ViewerIdentity, { role: "investor" }>>> {
+  const identity = await resolveIdentity(request, store);
+  if (!identity.ok) return identity;
+
+  if (identity.value.role !== "investor") {
+    return failure("forbidden_role", "This endpoint is for the investor role.");
+  }
+
+  return ok(identity.value);
 }
 
 /**

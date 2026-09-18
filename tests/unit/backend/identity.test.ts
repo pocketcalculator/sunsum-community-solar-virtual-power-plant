@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   SESSION_MAX_AGE_MS,
   signSession,
@@ -20,6 +20,7 @@ import {
   handleGetMe,
   handlePostDemoSwitch,
   handlePostLogout,
+  requireInvestorIdentity,
   requireRole,
   resolveViewer,
 } from "@/backend/handlers/identity";
@@ -118,12 +119,15 @@ describe("signing in and out", () => {
   let previous: BackendStore;
 
   beforeEach(() => {
+    // The demo sign-in is opt-in, so a test that signs in has to ask for it.
+    vi.stubEnv("SUNSUM_DEMO_AUTH", "enabled");
     store = createMemoryBackendStore({ seedDemoProjects: true });
     previous = setActiveStore(store);
   });
 
   afterEach(() => {
     setActiveStore(previous);
+    vi.unstubAllEnvs();
   });
 
   function switchTo(role: string): Promise<Response> {
@@ -194,13 +198,28 @@ describe("signing in and out", () => {
     expect(cookie).toContain("Max-Age=0");
   });
 
-  // The role rides on the user row, not the token, so a role that changes in
-  // the database takes effect on the very next request.
+  /*
+   * The role rides on the user row, not the token, so a role that changes in
+   * the database takes effect on the very next request. The store answers with
+   * a different role than the one signed in as; a resolver that trusted the
+   * token would still say "operator" here.
+   */
   it("follows a role that changed in the database", async () => {
     const signedIn = await switchTo("operator");
-    const viewer = await resolveViewer(withCookie(signedIn), store);
+    const demoted = new Proxy(store, {
+      get(target, property) {
+        if (property === "getUser") {
+          return (id: string) =>
+            Promise.resolve({ id, role: "site_owner" as const });
+        }
+        const member = Reflect.get(target, property, target) as unknown;
+        return typeof member === "function" ? member.bind(target) : member;
+      },
+    });
 
-    expect(viewer.ok && viewer.value.role).toBe("operator");
+    const viewer = await resolveViewer(withCookie(signedIn), demoted);
+
+    expect(viewer.ok && viewer.value.role).toBe("site_owner");
   });
 
   it("refuses the wrong role with 403, not 401", async () => {
@@ -229,9 +248,10 @@ describe("signing in and out", () => {
   /*
    * The fallback this replaced returned a hardcoded profile when the store had
    * none, so an investor account that was never onboarded still read as fully
-   * onboarded. It is refused now.
+   * onboarded. Sign-in now succeeds and says so plainly, but no profile is
+   * invented: a profile-gated read is still refused.
    */
-  it("refuses an investor whose profile is missing rather than inventing one", async () => {
+  it("reports an investor with no profile as not onboarded", async () => {
     const unonboarded = createMemoryBackendStore({ seedDemoProjects: false });
     const response = await handlePostDemoSwitch(
       new Request("https://sunsum.test/api/auth/demo-switch", {
@@ -242,7 +262,28 @@ describe("signing in and out", () => {
       unonboarded,
     );
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      role: "investor",
+      onboarded: false,
+    });
+  });
+
+  it("refuses a profile-gated read for an investor who has not onboarded", async () => {
+    const unonboarded = createMemoryBackendStore({ seedDemoProjects: false });
+    const signedIn = await handlePostDemoSwitch(
+      new Request("https://sunsum.test/api/auth/demo-switch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: "investor" }),
+      }),
+      unonboarded,
+    );
+
+    const viewer = await resolveViewer(withCookie(signedIn), unonboarded);
+
+    expect(viewer.ok).toBe(false);
+    if (!viewer.ok) expect(viewer.failure.code).toBe("forbidden_role");
   });
 
   // An unseeded database is a setup problem, and it is much cheaper to find it
@@ -265,5 +306,45 @@ describe("signing in and out", () => {
     );
 
     expect(response.status).toBe(503);
+  });
+
+  /*
+   * The demo sign-in hands out an operator session to anyone who asks for one,
+   * so leaving it on by default would have reopened, through the front door,
+   * exactly the anonymous access the session layer exists to close.
+   */
+  it("refuses the demo sign-in unless a deployment opts in", async () => {
+    vi.stubEnv("SUNSUM_DEMO_AUTH", "");
+
+    const response = await switchTo("operator");
+
+    expect(response.status).toBe(404);
+  });
+
+  /*
+   * Onboarding has to be reachable by the account it onboards: sign-in must
+   * work without a profile, and the profile write must accept that session.
+   * `requireRole` resolves a full viewer, which needs the very profile the
+   * request is about to create.
+   */
+  it("lets an investor with no profile create one", async () => {
+    const fresh = createMemoryBackendStore({ seedDemoProjects: false });
+    const signedIn = await handlePostDemoSwitch(
+      new Request("https://sunsum.test/api/auth/demo-switch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: "investor" }),
+      }),
+      fresh,
+    );
+    expect(signedIn.status).toBe(200);
+
+    const identity = await requireInvestorIdentity(
+      withCookie(signedIn),
+      fresh,
+    );
+
+    expect(identity.ok).toBe(true);
+    if (identity.ok) expect(identity.value.role).toBe("investor");
   });
 });

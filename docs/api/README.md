@@ -17,24 +17,30 @@ the proposed internal S-VIA contract.
 | Operator | `GET /projects/{id}/engagements` |
 | Investor | `GET /investors/me/profile`, `POST /investors/me/profile`, `GET /portfolio` |
 | Investor | `POST /projects/{id}/engagements`, `GET /me/engagements`, `GET /projects/{id}/funding-needs`, `GET /projects/{id}/deal-room` |
+| Any signed-in role | `POST /auth/demo-switch`, `POST /auth/logout`, `GET /me` |
 
 ## Section 10 paths not in the MVP slice
 
-`/auth/*`, `/me`, `/sites/{id}/acknowledgements`, `/sites/{id}/assessments/override`, `/engagements/{id}/state`, `/engagements/{id}`, `/projects/{id}/funding-needs` `POST`, `/engagements/{id}/diligence-requests`, `/diligence-requests/{id}/assign`, `/diligence-requests/{id}/resolve`, and `/projects/{id}/activity` are not in the MVP slice.
+`/sites/{id}/acknowledgements`, `/sites/{id}/assessments/override`, `/engagements/{id}/state`, `/engagements/{id}`, `/projects/{id}/funding-needs` `POST`, `/engagements/{id}/diligence-requests`, `/diligence-requests/{id}/assign`, `/diligence-requests/{id}/resolve`, and `/projects/{id}/activity` are not in the MVP slice.
 
 Wire properties use `snake_case`. Role ids crossing between the UI charter
 vocabulary and backend wire vocabulary go through the `@/backend` adapter.
 Handlers reject unknown input; core services authorize and enforce workflow
 rules.
 
-> **Demo identity only — not authentication.** Every implemented route currently
-> runs under a fixed, role-specific demo principal selected by server code. No
-> route reads a caller identity or role from a cookie, bearer token, header,
-> query parameter, or request body. This deliberately preserves PR #10's demo
-> seam and prevents caller-selectable roles, but it does not authenticate anyone.
-> Real authenticated request-viewer resolution is WS3/outside this contract.
-> Cookie-session CSRF protection or bearer-token protection is likewise future
-> work, not an implemented MVP guarantee.
+> **Sessions, but demo sign-in.** Every implemented route resolves its caller
+> from a signed `sunsum_session` cookie and answers `401 unauthenticated` when
+> there is none. The role is read from the user row on each request, not from
+> the token, so a caller cannot select their own role and a role changed in the
+> database takes effect immediately.
+>
+> What is *not* authentication is how a session starts. `POST /auth/demo-switch`
+> hands out one of three **seeded** identities so the three roles can be shown
+> without an identity provider; it verifies no credential, so anyone who can
+> reach it can become any of the three demo users. It is therefore opt-in per
+> deployment (`SUNSUM_DEMO_AUTH=enabled`) and is the one endpoint a real
+> identity provider replaces. Cookies are `HttpOnly`, `SameSite=Lax`, and
+> `Secure` in production; `SameSite=Lax` is the CSRF defence for writes.
 
 The in-memory store is shared across routes so accepted projects can become
 visible in `GET /portfolio`. It is a demo persistence seam, not production

@@ -514,18 +514,32 @@ post cannot spend it, and `Secure` in production.
 
 Every other endpoint resolves the session first and answers `401
 unauthenticated` when there is none, before any handler runs. Single-role
-endpoints additionally answer `403 forbidden_role` for the wrong role; the
-three endpoints that serve more than one role (site documents, project funding
-needs, project stage) only authenticate here and let §8.2 in `core` decide.
+endpoints additionally answer `403 forbidden_role` for the wrong role. Two
+endpoints serve more than one role — site documents (site owner or operator)
+and project funding needs (investor or operator) — so they only authenticate
+here and let §8.2 in `core` decide. Applying a single-role gate to those would
+silently narrow access below what the matrix grants.
+
+Resolving a session yields an investor's mandate along with their identity,
+because every investor rule in §8.2 is a question about that mandate. Profile
+creation is the one exception: `POST /api/investors/me/profile` authenticates
+the investor without it, since requiring a profile there would make the profile
+unreachable for the account the endpoint exists to onboard. `GET /api/me`
+likewise reports an investor who has not onboarded as `onboarded: false` rather
+than refusing them, so a client can tell "finish signing up" apart from "you may
+not be here". Every other investor endpoint still requires the mandate and
+answers `403` without it.
 
 `demo-switch` is the sign-in for a hackathon build and is **not a credential
 check**. It hands out one of three *seeded* identities — never a real user's —
 so the three roles can be demonstrated without an identity provider. Anyone who
-can reach it can become any of the three demo users, which is why it is
-disabled by `SUNSUM_DEMO_AUTH=disabled` the moment a real provider exists.
-Replacing it with Entra changes how the cookie is minted and touches nothing
-downstream: the session, the role lookup, and the whole authorization matrix
-stay exactly as they are.
+can reach it can become any of the three demo users, including the operator, so
+it is **opt-in**: it is reachable only where a deployment sets
+`SUNSUM_DEMO_AUTH=enabled`, and answers `404` everywhere else. Leaving it on by
+default would have reopened, through the front door, the anonymous access this
+section exists to close. Replacing it with Entra changes how the cookie is
+minted and touches nothing downstream: the session, the role lookup, and the
+whole authorization matrix stay exactly as they are.
 
 Passwords are not stored. `users.password_hash` remains nullable and unused,
 reserved for whatever replaces this.
