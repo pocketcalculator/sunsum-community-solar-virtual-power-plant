@@ -58,16 +58,17 @@ SunSum Solar is intended to help bridge these two gaps through aggregation and a
 |---|---|---|
 | Frontend | Next.js, TypeScript | Retain the proposed UI and shared types. |
 | UI and forms | Tailwind; shadcn/ui or Material UI; consider TanStack Form | Reuse components and validation. |
-| Backend | Next.js/Node.js server endpoints; Drizzle ORM with a PostgreSQL driver | Keep workflow logic and typed database access in the same TypeScript codebase. |
+| Backend | Next.js/Node.js server endpoints; Drizzle ORM with node-postgres (`pg`) | Keep workflow logic and typed database access in the same TypeScript codebase. |
 | Database | Azure Database for PostgreSQL Flexible Server | Selected transactional source of truth for the MVP; Fabric mirroring is optional and tier-dependent. |
 | Schema and migrations | Drizzle Kit | Generate versioned SQL migrations from the TypeScript schema for review and application. |
 | Documents | Private Azure Blob Storage | Controlled file access with linked site/project metadata. |
 | Identity | Entra ID demo accounts; External ID for public signup | Microsoft sign-in; application-enforced roles. |
-| Local orchestration | Aspire AppHost, when added | Coordinate local dependencies without coupling development to the Azure hosting choice. |
+| Local database validation | Optional PostgreSQL Docker container | Exercise the shared server-only connection contract without an orchestration framework. |
 | Hosting | Azure App Service, Linux code deployment | Host the Next.js application; the F1 smoke test does not require a container registry. |
+| Infrastructure and delivery | Bicep and Azure CLI | Keep privileged provisioning, SQL bootstrap, migrations, and routine code deployment separate. |
 | Secrets | Key Vault + managed identities | Protect remaining secrets; avoid stored service credentials where supported. |
 | CI/CD | GitHub Actions for CI; employee-authenticated App Service deployment for the smoke test | Validate changes without assuming GitHub-to-Azure federation is configured. |
-| Monitoring | Application Insights/OpenTelemetry; Aspire Dashboard locally | Health, logs, and traces. |
+| Monitoring | Application Insights/OpenTelemetry, when separately added | Health, logs, and traces; no paid logging service is provisioned by this foundation. |
 | Analytics | Fabric Mirroring, OneLake, optional Power BI | Reporting without coupling the live app to analytics. |
 | Design / planning | Figma/FigJam; GitHub Issues or Linear | Clear handoffs and a lightweight backlog. |
 
@@ -76,20 +77,29 @@ SunSum Solar is intended to help bridge these two gaps through aggregation and a
 **Decision, September 16, 2026: use Azure Database for PostgreSQL Flexible
 Server with Drizzle ORM.** Use Drizzle's PostgreSQL integration for server-side
 data access and Drizzle Kit for schema and migration tooling. The underlying
-PostgreSQL driver and connection/authentication configuration remain to be
-selected during implementation.
+PostgreSQL driver is **node-postgres (`pg`)**, using an asynchronous password
+callback for Entra token authentication. The application client and store in
+[`backend/db`](../src/backend/db/README.md) use `DATABASE_URL` and `SUNSUM_DB_AUTH`.
+The separate [connection foundation](../src/backend/infrastructure/database/README.md)
+provides a bounded pool and operator tools using `PG*` and `SUNSUM_DATABASE_AUTH`.
+These are distinct implementations and configuration contracts; setting `PG*`
+does not configure the application store.
 
 PostgreSQL will hold the relational application records and document metadata.
 Original PDFs, spreadsheets, photos, and other uploaded files belong in private
 Blob Storage, not in a separate document database.
 
-This is a technology decision, not a claim that persistence is implemented.
-The current backend still uses in-memory fixtures. PostgreSQL provisioning,
-Drizzle dependencies, schema definitions, migrations, seed data, and database
-authentication remain to be added. Keep generated SQL migrations under version
-control and review them before applying them to a shared environment. The App
-Service F1 smoke test does not include a database or make database hosting free;
-confirm the PostgreSQL compute/storage budget separately.
+The application persistence adapter is implemented: `PostgresBackendStore`
+implements `BackendStore`, and the composition root selects it for
+`SUNSUM_STORE=db`. Unset or `mock` uses explicit in-memory fixtures. The canonical
+schema, migrations and seed live in `backend/db`. The
+[development deployment guide](../infrastructure/docs/deployment.md) records
+PostgreSQL-backed Azure operation; new environments still require reviewed
+provisioning, configuration and identity/table grants. Fixed demo endpoint
+identities remain separate from real application-user authentication.
+Keep generated SQL migrations under version control and review them before
+applying them to a shared environment. F1 applies only to web hosting; confirm
+the PostgreSQL compute/storage budget separately.
 
 Fabric is optional downstream analytics. The application reads and writes
 PostgreSQL, not the mirrored analytics endpoint.

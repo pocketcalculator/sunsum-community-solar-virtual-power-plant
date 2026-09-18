@@ -49,6 +49,8 @@ src/backend/
     engagements/        S-ENG   interest and operator engagement reads
     views/              S-VIEW  composed reads
   db/                   schema, migrations, driver, store. Imports core; core never imports it
+  infrastructure/
+    database/           server-only PostgreSQL/Drizzle connection and tooling seam
 ```
 
 Each directory's `index.ts` is its public face. A sibling imports
@@ -220,12 +222,14 @@ of the separate boundary.
 
 [The technical design](../../docs/sunsum_technical_design_doc.md) selects
 **Azure Database for PostgreSQL Flexible Server with Drizzle ORM** for
-persistence and private Blob Storage for document files. Drizzle Kit is the
-selected schema/migration tooling. None of the database packages, schema,
-migrations, provisioning, or authentication is implemented yet; the PostgreSQL
-driver and connection configuration remain to be selected. The proposed Entra
-integration and the broader WS2 deployment topology also remain separate from
-this scaffold.
+persistence and private Blob Storage for document files. Drizzle Kit is the selected schema/migration tooling.
+[The connection foundation](infrastructure/database/README.md) now provides
+validated server-only configuration, a pooled `pg`/Drizzle client, managed-identity
+token refresh and a read-only connectivity command. It reuses the canonical
+`db/` schema and migrations from main rather than maintaining a second schema.
+The `db/` directory also provides the PostgreSQL-backed `BackendStore` selected
+by the composition root. Application-user mapping remains separate from
+database access and Azure provisioning.
 
 Two seams allow those integrations without changing the workflow rules:
 
@@ -237,18 +241,30 @@ Two seams allow those integrations without changing the workflow rules:
 
   A schema now exists in [`db/`](./db/README.md) and
   [ADR 0001](../../infrastructure/docs/adr-0001-database-and-persistence.md)
-  records the decision, but **nothing is wired up yet**: the running endpoints
-  are still served by the in-memory store. Adopting it means adding a
-  Drizzle-backed implementation behind `BackendStore`, not moving persistence
-  into the handlers.
+  records the decision. `composition.ts` selects the Drizzle-backed
+  `BackendStore` with `SUNSUM_STORE=db`; the default remains the explicit
+  in-memory fixture. Persistence stays outside the handlers.
 - **Identity.** `handlers/identity/viewer.ts` exposes fixed demo owner, operator
   and investor resolvers. **They have no security value.** They read nothing
   from the request, so a caller cannot choose a role. Before production, replace
   them with authenticated request-to-viewer resolution and add CSRF protection
   for cookie sessions or suitable bearer-token protection.
 
-Neither is production ready. The App Service smoke test exercises the
-in-memory-backed API, not a real database, data set, or identity provider.
+Neither is production ready. The App Service smoke test exercises the existing
+fixture-backed API, not a real database, data set, or identity provider.
+
+Infrastructure clients must not be constructed in `core/`, `handlers/`, routes,
+or presentation. The composition boundary supplies dependencies to adapters
+behind core interfaces; ESLint and the boundary tests enforce this separation.
+Database configuration is never a `NEXT_PUBLIC_*` value.
+
+The application `db/` client must not import the separate
+`infrastructure/database` operator client. ESLint rejects this direction,
+including re-exports, so the `DATABASE_URL`/`SUNSUM_DB_AUTH` application contract
+does not silently adopt `PG*`/`SUNSUM_DATABASE_AUTH` configuration. The composition
+and operator boundaries remain allowed to construct their own dependencies;
+operator tooling may import `db/schema` to reuse tables without importing the
+application client or store.
 
 ### Reconciling with the database schema
 

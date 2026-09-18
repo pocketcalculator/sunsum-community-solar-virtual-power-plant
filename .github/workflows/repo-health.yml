@@ -34,6 +34,50 @@ jobs:
       - name: Validate YAML and JSON formatting
         run: npx --yes prettier@3.6.2 --check "**/*.{json,yml,yaml}"
 
+  bicep-templates:
+    name: Bicep templates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify pinned Bicep compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            https://github.com/Azure/bicep/releases/download/v0.42.1/bicep-linux-x64 \
+            --output "$RUNNER_TEMP/bicep"
+          printf '%s  %s\n' aed90eb2c69a6ee2bd70dc0d4354408ac4d04fd9911d3ec8e0cd74ad173e7139 "$RUNNER_TEMP/bicep" | sha256sum --check -
+          chmod +x "$RUNNER_TEMP/bicep"
+          "$RUNNER_TEMP/bicep" --version
+
+      - name: Compile every template without Azure credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/compiled-bicep"
+          for template in infrastructure/templates/*.bicep; do
+            "$RUNNER_TEMP/bicep" build "$template" --no-restore \
+              --outfile "$RUNNER_TEMP/compiled-bicep/$(basename "$template" .bicep).json"
+          done
+
+      - name: Evaluate firewall template input guards without Azure
+        shell: pwsh
+        run: |
+          & ./infrastructure/scripts/tests/firewall-template.test.ps1 -BicepPath "$env:RUNNER_TEMP/bicep"
+
+      - name: Validate deployment and runtime role guards without Azure
+        shell: pwsh
+        run: |
+          & ./infrastructure/scripts/tests/deployment-safety.test.ps1 -BicepPath "$env:RUNNER_TEMP/bicep"
+
+      - name: Validate access and Blob identity guards without Azure
+        shell: pwsh
+        run: |
+          & ./infrastructure/scripts/tests/mvp-access.test.ps1 -BicepPath "$env:RUNNER_TEMP/bicep"
+
   node-project:
     name: Node project
     runs-on: ubuntu-latest

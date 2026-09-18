@@ -1,0 +1,9 @@
+{
+  "subscriptionId": "<subscription-id>",
+  "resourceGroupName": "<existing-resource-group>",
+  "approvalReference": "<container-scoped-role-review>",
+  "storageAccountName": "<existing-storage-account>",
+  "webAppName": "<existing-web-app>",
+  "webPrincipalId": "<web-system-assigned-principal-object-id>",
+  "blobDataAccess": "Reader"
+}
