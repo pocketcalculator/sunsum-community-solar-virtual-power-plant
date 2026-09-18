@@ -52,7 +52,7 @@ jobs:
         shell: bash
         env:
           PARAMETERS_JSON: ${{ secrets.AZURE_RESOURCES_PARAMETERS_JSON }}
-          PARAMETERS_SHA256: ${{ vars.AZURE_RESOURCES_PARAMETERS_SHA256 }}
+          PARAMETERS_SHA256: ${{ github.event_name == 'workflow_dispatch' && inputs.parameters_sha256 || vars.AZURE_RESOURCES_PARAMETERS_SHA256 }}
         run: |
           set -euo pipefail
           if [ -z "$PARAMETERS_JSON" ] || [ -z "$PARAMETERS_SHA256" ]; then
