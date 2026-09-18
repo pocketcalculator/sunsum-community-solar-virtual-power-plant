@@ -86,11 +86,13 @@ jobs:
             --parameters "@$PARAMETER_FILE"
 
       - name: What-If
+        env:
+          RESOURCE_GROUP_NAME: ${{ secrets.RESOURCE_GROUP_NAME }}
         run: |
           az deployment group what-if \
-            --resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
-            --template-file $TEMPLATE_FILE \
-            --parameters @$PARAMETER_FILE
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --template-file "$TEMPLATE_FILE" \
+            --parameters "@$PARAMETER_FILE"
 
   deploy:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
