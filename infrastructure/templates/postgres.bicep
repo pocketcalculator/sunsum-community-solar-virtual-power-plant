@@ -39,6 +39,13 @@ param storageSizeGB int = 32
 param postgresVersion string = '17'
 param tags object = {}
 
+@export()
+func validateDatabaseName(name string) string => length(name) >= 1 && length(name) <= 63 && contains('abcdefghijklmnopqrstuvwxyz', substring(name, 0, min(length(name), 1))) && empty(filter(range(0, length(name)), index => !contains('abcdefghijklmnopqrstuvwxyz0123456789_', substring(name, index, 1)))) && !startsWith(name, 'pg_') && !startsWith(name, 'azure_') && !contains(['postgres', 'public', 'template0', 'template1'], name)
+  ? name
+  : fail('Database name must be 1-63 lowercase ASCII letters/digits/underscores, start with a letter, and exclude pg_/azure_ prefixes and postgres/public/template0/template1.')
+
+var validatedDatabaseName = validateDatabaseName(databaseName)
+
 resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: serverName
   location: location
@@ -84,7 +91,7 @@ resource entraAdmin 'Microsoft.DBforPostgreSQL/flexibleServers/administrators@20
 
 resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
   parent: server
-  name: databaseName
+  name: validatedDatabaseName
   properties: {
     charset: 'UTF8'
     collation: 'en_US.utf8'

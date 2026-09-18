@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import databaseNamePolicy from "./postgres-database-name-policy.json" with { type: "json" };
 
 export class BootstrapSafetyError extends Error {}
 
@@ -72,7 +73,7 @@ export const validateBootstrapConfig = (input) => {
   }
   const result = {
     host,
-    database: identifier(input.database, "Database name"),
+    database: requireText(input.database, "Database name"),
     tenantId: objectId(input.tenantId, "Tenant"),
     administratorRole: requireText(input.administratorRole, "Administrator role"),
     administratorObjectId: objectId(input.administratorObjectId, "Administrator"),
@@ -83,6 +84,11 @@ export const validateBootstrapConfig = (input) => {
     operatorPrincipalType: input.operatorPrincipalType ?? "user",
     approvalReference: requireText(input.approvalReference, "Approval reference", 200),
   };
+  if (!new RegExp(databaseNamePolicy.pattern, "u").test(result.database) ||
+      databaseNamePolicy.reservedNames.includes(result.database) ||
+      databaseNamePolicy.reservedPrefixes.some((prefix) => result.database.startsWith(prefix))) {
+    throw new BootstrapSafetyError("Database name must match the nonreserved lowercase application-database policy.");
+  }
   if (result.runtimeRole !== "sunsum_runtime" || result.operatorRole !== "sunsum_migrator") {
     throw new BootstrapSafetyError("Bootstrap requires runtimeRole=sunsum_runtime and operatorRole=sunsum_migrator to match deployment and migration tooling.");
   }

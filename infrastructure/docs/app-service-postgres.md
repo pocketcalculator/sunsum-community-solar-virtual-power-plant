@@ -277,8 +277,13 @@ the mandatory bootstrap contract: 1-63 lowercase ASCII letters, digits or
 underscores, starting with a letter. It rejects `pg_` and `azure_` prefixes and
 the reserved names `postgres`, `public`, `template0` and `template1`. An omitted
 name keeps the `sunsum` default; valid custom names such as `sunsum_prod` remain
-supported. Use the same name in bootstrap. Direct template deployment still
-bypasses this wrapper check; templates alone do not inspect SQL readiness.
+supported. Use the same name in bootstrap. The deployable `postgres.bicep`
+module also validates the name used by its database resource, including direct
+deployment; the Azure migration command rejects incompatible `PGDATABASE`
+values before client creation. Bootstrap and migration share
+`infrastructure/scripts/postgres-database-name-policy.json`, and compiler tests
+check parity with the Bicep guard. These name checks do not inspect SQL readiness,
+reserve resources or make provisioning transactional.
 
 `webAppMode=Existing` is the default: the entry point references the named
 existing app but does **not** change its code, plan, identity, settings or auth.
@@ -705,6 +710,14 @@ a database client; administrator, runtime and arbitrary role names are rejected.
 Use the same role in bootstrap. Custom names require a reviewed contract change,
 and the name restriction does not substitute for bootstrap's non-admin identity
 mapping and permission checks.
+
+The Azure migration target must also satisfy the application-database naming
+policy used by bootstrap and provisioning. `postgres`, `public`, `template0`,
+`template1`, `pg_`/`azure_` prefixes, uppercase and other unsupported names are
+rejected even when the approval matches. Use 1-63 lowercase ASCII letters,
+digits or underscores, starting with a letter. This guard applies to application
+migrations, not the general connection checker or bootstrap's intentional
+administrator connection to the `postgres` maintenance database.
 
 Review the journal and referenced SQL in `src/backend/db/migrations`, then obtain
 their content digest with this local-only command (no database configuration,

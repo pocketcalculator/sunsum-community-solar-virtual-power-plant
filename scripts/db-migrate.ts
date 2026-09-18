@@ -6,6 +6,7 @@ import {
 import { readDatabaseConfig } from "../src/backend/infrastructure/database/config";
 import { readMigrationApproval } from "./migration-approval";
 import { captureMigrationSnapshot, migrationDigest } from "./migration-snapshot";
+import databaseNamePolicy from "../infrastructure/scripts/postgres-database-name-policy.json" with { type: "json" };
 
 const migrationsFolder = fileURLToPath(
   new URL("../src/backend/db/migrations", import.meta.url),
@@ -31,6 +32,11 @@ const main = async () => {
   }
   if (config.user !== "sunsum_migrator") {
     throw new DatabaseConfigurationError("Azure migrations require PGUSER=sunsum_migrator, the separately approved operator role; bootstrap administrators and other roles are not permitted.");
+  }
+  if (!new RegExp(databaseNamePolicy.pattern, "u").test(config.database) ||
+      databaseNamePolicy.reservedNames.includes(config.database) ||
+      databaseNamePolicy.reservedPrefixes.some((prefix) => config.database.startsWith(prefix))) {
+    throw new DatabaseConfigurationError("Azure migrations require PGDATABASE to be a nonreserved application database: 1-63 lowercase ASCII letters/digits/underscores, starting with a letter, without pg_ or azure_ prefixes.");
   }
   const timeoutText = environment.SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS ?? "5000";
   const migrationStatementTimeoutMs = Number(timeoutText);

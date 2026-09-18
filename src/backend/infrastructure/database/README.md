@@ -159,6 +159,11 @@ before constructing a client. Use the same designated role in bootstrap;
 custom operator role names require a reviewed contract change. The role name
 does not prove non-admin privileges or identity mapping: those remain verified
 by the separate bootstrap and administrator review. Never run
+migrations against the maintenance database. Azure migration `PGDATABASE` must
+match the shared bootstrap policy: 1-63 lowercase ASCII letters/digits/underscores,
+starting with a letter, no `pg_`/`azure_` prefix, and not `postgres`, `public`,
+`template0` or `template1`. A reviewed approval cannot override this name guard.
+The read-only connectivity command retains its general connection contract. Never run
 migrations automatically at web startup or as part
 of routine app deployment. See the [canonical database guide](../../db/README.md)
 and [Azure permission window](../../../../infrastructure/docs/app-service-postgres.md#5-operator-connectivity-and-migrations).

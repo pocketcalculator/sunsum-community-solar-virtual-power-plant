@@ -53,6 +53,14 @@ not SQL privilege enforcement; the separate bootstrap must verify that the role
 maps to the runtime identity and is non-admin. Custom runtime names need a
 reviewed contract change rather than a parameter override.
 
+The deployable `postgres.bicep` module validates the database resource name:
+1-63 lowercase ASCII letters/digits/underscores, starting with a letter, no
+`pg_` or `azure_` prefix, and not `postgres`, `public`, `template0` or `template1`.
+This matches provisioning, bootstrap and Azure migration policy. Direct-template
+inputs are checked too; valid custom names and the `sunsum` default are preserved.
+Compiler-backed tests evaluate boundary inputs and verify that the database
+resource uses the validated expression. This is not a SQL permission check.
+
 Use the validating firewall script rather than passing raw IP input to the
 network template. Incremental deployment does not remove old allowances.
 The firewall template also validates the entire address list before generating

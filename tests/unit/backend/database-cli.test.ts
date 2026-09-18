@@ -269,6 +269,38 @@ describe("database CLI safety gates", () => {
     expect(result.stdout).not.toContain("applied");
   });
 
+  it.each(["postgres", "public", "template0", "template1", "pg_custom", "azure_custom", "SunSum", "sunsum-prod", "_sunsum", "1sunsum", "sunsum.prod", "sunsum prod", "db\u00e9"])("rejects unsupported migration database %s even with matching reviewed approval", (database) => {
+    const directory = mkdtempSync(join(tmpdir(), "sunsum-database-policy-"));
+    const path = join(directory, "approval.json");
+    const record = {
+      operation: "DatabaseMigration", host: "example-sunsum.postgres.database.azure.com", port: 5432,
+      database, user: "sunsum_migrator", authentication: "azure-cli", sslMode: "verify-full",
+      statementTimeoutMs: 5000, approvalReference: "review-123", migrationsSha256: migrationDigest(join(root, "src/backend/db/migrations")),
+    };
+    const text = JSON.stringify(record);
+    try {
+      writeFileSync(path, text);
+      const result = run([...operatorArgs, "scripts/db-migrate.ts", "--apply", "--approval", path, "--expected-sha256", createHash("sha256").update(text).digest("hex")], {
+        SUNSUM_DATABASE_AUTH: "azure-cli", PGHOST: record.host, PGPORT: "5432", PGDATABASE: database,
+        PGUSER: record.user, PGSSLMODE: "verify-full", SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS: "5000",
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("Azure migrations require PGDATABASE to be a nonreserved application database");
+      expect(result.stdout).not.toContain("applied");
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it.each(["a", "sunsum", "sunsum_prod", "app123", "a".repeat(63)])("preserves supported migration database %s", (database) => {
+    const result = run([...operatorArgs, "scripts/db-migrate.ts", "--apply"], {
+      SUNSUM_DATABASE_AUTH: "azure-cli", PGHOST: "example-sunsum.postgres.database.azure.com", PGPORT: "5432",
+      PGDATABASE: database, PGUSER: "sunsum_migrator", PGSSLMODE: "verify-full", SUNSUM_MIGRATION_STATEMENT_TIMEOUT_MS: "5000",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("requires a reviewed --approval");
+    expect(result.stderr).not.toContain("require PGDATABASE");
+  });
+
   it("keeps the real server-only import guard outside the test mock", () => {
     const result = run(
       [

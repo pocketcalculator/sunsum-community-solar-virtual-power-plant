@@ -258,6 +258,14 @@ or presentation. The composition boundary supplies dependencies to adapters
 behind core interfaces; ESLint and the boundary tests enforce this separation.
 Database configuration is never a `NEXT_PUBLIC_*` value.
 
+The application `db/` client must not import the separate
+`infrastructure/database` operator client. ESLint rejects this direction,
+including re-exports, so the `DATABASE_URL`/`SUNSUM_DB_AUTH` application contract
+does not silently adopt `PG*`/`SUNSUM_DATABASE_AUTH` configuration. The composition
+and operator boundaries remain allowed to construct their own dependencies;
+operator tooling may import `db/schema` to reuse tables without importing the
+application client or store.
+
 ### Reconciling with the database schema
 
 The schema landed on `main` in #19 and this branch has merged it. The two lines

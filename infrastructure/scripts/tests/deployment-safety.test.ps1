@@ -876,6 +876,50 @@ try {
             }
         }
         Write-Output 'Template guards passed: fixture-only web settings and nine root runtime-role parameter cases.'
+        $databaseTemplate = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\templates\postgres.bicep'))
+        $compiledJson = & $BicepPath build $databaseTemplate --no-restore --stdout
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot compile the PostgreSQL database-name guard.' }
+        $compiled = ($compiledJson -join "`n") | ConvertFrom-Json -AsHashtable
+        if ($compiled.variables.validatedDatabaseName -cne "[__bicep.validateDatabaseName(parameters('databaseName'))]" -or
+            -not $compiled.resources.database.name.Contains("variables('validatedDatabaseName')") -or
+            $compiled.parameters.databaseName.defaultValue -cne 'sunsum') {
+            throw 'PostgreSQL database creation must consume only the validated name and retain the default.'
+        }
+        $policy = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\postgres-database-name-policy.json') -Raw | ConvertFrom-Json -AsHashtable
+        $relativeDatabaseTemplate = [System.IO.Path]::GetRelativePath($fixture, $databaseTemplate).Replace('\', '/')
+        $databaseNames = @('a', 'sunsum', 'sunsum_prod', 'app123', ('a' * 63),
+            'postgres', 'public', 'template0', 'template1', 'pg_custom', 'azure_custom', 'SunSum', '_sunsum', '1sunsum',
+            'sunsum-prod', 'sunsum.prod', 'sunsum prod', ('a' * 64), ('db' + [char]0xe9), '', ' sunsum', 'sunsum ',
+            "sunsum`n", 'app;drop', "app'name", 'app\name')
+        foreach ($databaseName in $databaseNames) {
+            $allowed = $databaseName -cmatch $policy.pattern -and $databaseName -cnotmatch '[\x00-\x1f\x7f]' -and
+                $databaseName -cnotin $policy.reservedNames -and
+                @($policy.reservedPrefixes | Where-Object { $databaseName.StartsWith($_, [System.StringComparison]::Ordinal) }).Count -eq 0
+            $encoded = (ConvertTo-Json -InputObject $databaseName -Compress).Replace('\', '\\').Replace("'", "\'")
+            $inputPath = Join-Path $fixture 'database-name.bicepparam'
+            $outputPath = Join-Path $fixture 'database-name.json'
+            $lines = @(
+                "using '$relativeDatabaseTemplate'",
+                "import { validateDatabaseName } from '$relativeDatabaseTemplate'",
+                "param location = 'centralus'",
+                "param serverName = 'sample-postgres'",
+                "param tenantId = '22222222-2222-4222-8222-222222222222'",
+                "param adminObjectId = '33333333-3333-4333-8333-333333333333'",
+                "param adminPrincipalName = 'synthetic-administrator'",
+                "param databaseName = validateDatabaseName(json('$encoded'))"
+            )
+            Set-Content -LiteralPath $inputPath -Value $lines -Encoding utf8NoBOM
+            if (Test-Path -LiteralPath $outputPath) { Remove-Item -LiteralPath $outputPath }
+            $diagnostics = & $BicepPath build-params $inputPath --no-restore --outfile $outputPath 2>&1
+            if ($allowed) {
+                if ($LASTEXITCODE -ne 0) { throw "Valid database name failed Bicep evaluation: $diagnostics" }
+                $actual = Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json -AsHashtable
+                if ($actual.parameters.databaseName.value -cne $databaseName) { throw 'Database-name validation changed the reviewed value.' }
+            } elseif ($LASTEXITCODE -eq 0 -or ($diagnostics -join "`n") -notlike '*Database name must be*' -or (Test-Path -LiteralPath $outputPath)) {
+                throw "Unsupported database name did not fail template evaluation: $diagnostics"
+            }
+        }
+        Write-Output "PostgreSQL database-name guard passed: $($databaseNames.Count) Bicep evaluations, shared policy parity and compiled resource wiring."
     }
     $zip = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Update)
     try { $null = $zip.CreateEntry('.env') } finally { $zip.Dispose() }

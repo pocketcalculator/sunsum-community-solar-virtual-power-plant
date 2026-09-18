@@ -19,6 +19,7 @@ const infrastructureImports = {
   group: [
     "@/backend/infrastructure",
     "@/backend/infrastructure/**",
+    "**/infrastructure",
     "**/infrastructure/**",
     "../infrastructure",
   ],
@@ -342,6 +343,15 @@ export default defineConfig([
     files: ["src/backend/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": ["error", { patterns: [presentationImports] }],
+    },
+  },
+  {
+    files: ["src/backend/db/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [presentationImports, infrastructureImports] },
+      ],
     },
   },
   {
