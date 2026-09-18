@@ -33,7 +33,13 @@ export {
   type InvestorProfilePayload,
   type InvestorType,
 } from "./investors";
-export { ROLES, type InvestorProfile, type Role, type Viewer } from "./identity";
+export {
+  ROLES,
+  type InvestorProfile,
+  type Role,
+  type Viewer,
+  type ViewerIdentity,
+} from "./identity";
 export {
   isProjectStage,
   isViabilityStatus,
@@ -127,4 +133,26 @@ export {
   type MemoryStoreOptions,
 } from "./store";
 
-export { addSiteDocument, ALLOWED_DOCUMENT_CONTENT_TYPES, MAX_DOCUMENT_SIZE_BYTES, type DocumentCreateInput } from "./documents";
+export {
+  addSiteDocument,
+  ALLOWED_DOCUMENT_CONTENT_TYPES,
+  buildDocumentBlobLocation,
+  containerForDisclosure,
+  DEFAULT_DOCUMENT_TYPE,
+  DOCUMENT_CONTAINERS,
+  DOCUMENT_TYPES,
+  formatBlobPath,
+  isDocumentContainer,
+  MAX_DOCUMENT_SIZE_BYTES,
+  normalizeDocType,
+  parseBlobPath,
+  projectDocumentParent,
+  safeFilename,
+  siteDocumentParent,
+  type DocumentBlobLocation,
+  type DocumentContainer,
+  type DocumentCreateInput,
+  type DocumentParent,
+  type KnownDocumentType,
+} from "./documents";
+export { DOCUMENT_DISCLOSURE_CLASSES, type DocumentDisclosureClass } from "./sites";

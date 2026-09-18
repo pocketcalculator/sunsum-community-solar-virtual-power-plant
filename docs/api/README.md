@@ -11,30 +11,45 @@ the proposed internal S-VIA contract.
 | Role | Operation |
 | --- | --- |
 | Site owner | `POST /sites`, `PATCH /sites/{id}`, `POST /sites/{id}/submit`, `GET /me/sites`, `GET /me/outstanding` |
-| Site owner / Operator | `POST /sites/{id}/documents` |
+| Site owner / Operator | `POST /sites/{id}/documents`, `PUT` / `GET /sites/{id}/documents/{documentId}/content` |
 | Operator | `GET /submissions`, `GET /submissions/{id}`, `POST /submissions/{id}/decision` |
 | Operator | `GET /pipeline`, `PATCH /projects/{id}`, `POST /projects/{id}/stage`, `PATCH /projects/{id}/visibility` |
 | Operator | `GET /projects/{id}/engagements` |
 | Investor | `GET /investors/me/profile`, `POST /investors/me/profile`, `GET /portfolio` |
 | Investor | `POST /projects/{id}/engagements`, `GET /me/engagements`, `GET /projects/{id}/funding-needs`, `GET /projects/{id}/deal-room` |
+| Anonymous | `POST /auth/demo-switch`, `POST /auth/logout` |
+| Any signed-in role | `GET /me` |
 
 ## Section 10 paths not in the MVP slice
 
-`/auth/*`, `/me`, `/sites/{id}/acknowledgements`, `/sites/{id}/assessments/override`, `/engagements/{id}/state`, `/engagements/{id}`, `/projects/{id}/funding-needs` `POST`, `/engagements/{id}/diligence-requests`, `/diligence-requests/{id}/assign`, `/diligence-requests/{id}/resolve`, and `/projects/{id}/activity` are not in the MVP slice.
+`/sites/{id}/acknowledgements`, `/sites/{id}/assessments/override`, `/engagements/{id}/state`, `/engagements/{id}`, `/projects/{id}/funding-needs` `POST`, `/engagements/{id}/diligence-requests`, `/diligence-requests/{id}/assign`, `/diligence-requests/{id}/resolve`, and `/projects/{id}/activity` are not in the MVP slice.
 
 Wire properties use `snake_case`. Role ids crossing between the UI charter
 vocabulary and backend wire vocabulary go through the `@/backend` adapter.
 Handlers reject unknown input; core services authorize and enforce workflow
 rules.
 
-> **Demo identity only — not authentication.** Every implemented route currently
-> runs under a fixed, role-specific demo principal selected by server code. No
-> route reads a caller identity or role from a cookie, bearer token, header,
-> query parameter, or request body. This deliberately preserves PR #10's demo
-> seam and prevents caller-selectable roles, but it does not authenticate anyone.
-> Real authenticated request-viewer resolution is WS3/outside this contract.
-> Cookie-session CSRF protection or bearer-token protection is likewise future
-> work, not an implemented MVP guarantee.
+> **Sessions, but demo sign-in.** Every implemented route except
+> `POST /auth/demo-switch` and `POST /auth/logout` resolves its caller
+> from a signed `sunsum_session` cookie and answers `401 unauthenticated` when
+> there is none. Those two start and end a session, so requiring one would be
+> circular. The role is read from the user row on each request, not from
+> the token, so a caller cannot select their own role and a role changed in the
+> database takes effect immediately.
+>
+> What is *not* authentication is how a session starts. `POST /auth/demo-switch`
+> hands out one of three **seeded** identities so the three roles can be shown
+> without an identity provider; it verifies no credential, so anyone who can
+> reach it can become any of the three demo users. It is therefore opt-in per
+> deployment (`SUNSUM_DEMO_AUTH=enabled`) and is the one endpoint a real
+> identity provider replaces. Cookies are `HttpOnly`, `SameSite=Lax`, and
+> `Secure` in production. `SameSite=Lax` is only a partial CSRF mitigation:
+> it is scoped to the *site*, not the origin, so a sibling origin under the
+> same registrable domain still has the cookie attached to a forged write, and
+> it does not stop a cross-site POST from *starting* a session in the first
+> place. Cookie-authenticated writes are therefore also checked against
+> `Sec-Fetch-Site`, falling back to `Origin`; a cross-site write is refused
+> with `403` and `code: forbidden_origin`.
 
 The in-memory store is shared across routes so accepted projects can become
 visible in `GET /portfolio`. It is a demo persistence seam, not production
@@ -56,6 +71,17 @@ documents, raw blob paths, raw assessment inputs, and override notes remain
 omitted. Its timeline contains shared
 project stage/status events plus the current investor's own interest event,
 without other investors' activity or internal free-text notes.
+
+Document registration and document content are separate operations:
+`POST /sites/{id}/documents` records metadata, and
+`PUT`/`GET /sites/{id}/documents/{documentId}/content` moves the bytes. The blob
+location comes from the stored record rather than the request, the upload's
+`Content-Type` is ignored in favour of the type validated at registration, and
+the uploaded length must match the registered `size_bytes`. A registered
+document with nothing uploaded reads as `404`, which is a normal state. Content
+access is limited to the site owner and operators — investor content delivery is
+the §7.6 short-lived-SAS design and is not implemented, so tier 1 exposes
+document *metadata* only.
 
 `request_info` transitions a submission to `info_requested`, records the owner's outstanding item, and the owner can resubmit through `POST /sites/{id}/submit`.
 

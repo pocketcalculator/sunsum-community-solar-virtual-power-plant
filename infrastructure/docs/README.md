@@ -8,6 +8,16 @@ description: Architecture notes, deployment guidance, and infrastructure decisio
 Store infrastructure architecture notes, deployment guidance, operational
 procedures, and decision records in this directory.
 
+## Contents
+
+- [ADR 0001 — database and persistence](./adr-0001-database-and-persistence.md)
+- [Blob storage for site documents](./blob-storage.md) — the provisioned
+  `stsunsumsolardevcus` account, and the two access blockers that currently
+  keep it unreachable.
+- [Policy exemption request](./policy-exemption-request.md) — the decision
+  needed from a subscription Owner to make the deployed account usable, with
+  the evidence behind it and the costed alternative.
+
 ## Selected database and hosting
 
 As of September 16, 2026, the selected persistence stack is **Azure Database

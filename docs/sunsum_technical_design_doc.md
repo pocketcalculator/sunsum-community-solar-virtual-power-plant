@@ -507,6 +507,74 @@ Every document is classified as `owner_private` or `investor_tier_1`. Tier 1 ret
 
 ### 8.1 Authentication
 
+A session cookie names a user; the user row names a role; §8.2 decides what
+that role may do. The cookie holds only a user id and the time it was issued,
+signed with HMAC-SHA256 over `SUNSUM_SESSION_SECRET`. The role is deliberately
+**not** in the token: it is read from the user row on every request, so a role
+that changes in the database takes effect immediately and a stolen cookie
+cannot claim a role it was never given. Sessions last eight hours. The cookie
+is `HttpOnly` so script cannot read it, `Secure` in production, and
+`SameSite=Lax`.
+
+`SameSite=Lax` is a useful default but is not, on its own, the CSRF control,
+and the design does not treat it as one. It fails in two ways here. It is
+scoped to the *site* rather than the origin, so a sibling origin under the same
+registrable domain still has the cookie attached to a forged write. And it
+governs whether a cookie is *sent*, not whether one may be *set* — a cross-site
+form post to `/api/auth/demo-switch` still receives its `Set-Cookie`, which is
+login CSRF: an attacker can silently place a victim in a session of the
+attacker's choosing.
+
+Writes are therefore also checked at the origin. `Sec-Fetch-Site` is preferred,
+because a browser sets it and script cannot forge it; `same-origin` and `none`
+are allowed, anything else refused. Where that header is absent the `Origin`
+header is compared by host against `Host` — not against the request URL, since
+a reverse proxy need not agree with it on scheme or port. A request carrying
+*no* `Origin` is not a browser and is allowed, so server-to-server callers are
+unaffected; a literal `Origin: null`, which is what a sandboxed or
+`data:`-document request sends, is refused. Safe methods (`GET`, `HEAD`,
+`OPTIONS`) are exempt, and the two cookie-setting endpoints are checked even
+though no session exists yet, which is what closes the login-CSRF hole.
+A refusal is `403` with `code: forbidden_origin`.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/auth/demo-switch` | Sign in as one of the three seeded demo roles |
+| `POST /api/auth/logout` | Clear the session cookie |
+| `GET /api/me` | The identity behind the current session |
+
+Every other endpoint resolves the session first and answers `401
+unauthenticated` when there is none, before any handler runs. Single-role
+endpoints additionally answer `403 forbidden_role` for the wrong role. Two
+endpoints serve more than one role — site documents (site owner or operator)
+and project funding needs (investor or operator) — so they only authenticate
+here and let §8.2 in `core` decide. Applying a single-role gate to those would
+silently narrow access below what the matrix grants.
+
+Resolving a session yields an investor's mandate along with their identity,
+because every investor rule in §8.2 is a question about that mandate. Profile
+creation is the one exception: `POST /api/investors/me/profile` authenticates
+the investor without it, since requiring a profile there would make the profile
+unreachable for the account the endpoint exists to onboard. `GET /api/me`
+likewise reports an investor who has not onboarded as `onboarded: false` rather
+than refusing them, so a client can tell "finish signing up" apart from "you may
+not be here". Every other investor endpoint still requires the mandate and
+answers `403` without it.
+
+`demo-switch` is the sign-in for a hackathon build and is **not a credential
+check**. It hands out one of three *seeded* identities — never a real user's —
+so the three roles can be demonstrated without an identity provider. Anyone who
+can reach it can become any of the three demo users, including the operator, so
+it is **opt-in**: it is reachable only where a deployment sets
+`SUNSUM_DEMO_AUTH=enabled`, and answers `404` everywhere else. Leaving it on by
+default would have reopened, through the front door, the anonymous access this
+section exists to close. Replacing it with Entra changes how the cookie is
+minted and touches nothing downstream: the session, the role lookup, and the
+whole authorization matrix stay exactly as they are.
+
+Passwords are not stored. `users.password_hash` remains nullable and unused,
+reserved for whatever replaces this.
+
 ### 8.2 Authorization matrix
 
 `R` read · `W` write · `-` no access. Scope qualifiers: **own** = only their own records · **visible** = the project passes the investor-visibility rule · **tier** = limited by the disclosure tier their engagement unlocks (§7.7).

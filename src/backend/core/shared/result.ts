@@ -16,6 +16,7 @@ export type FailureCode =
   | "invalid_query"
   | "invalid_body"
   | "unauthenticated"
+  | "forbidden_origin"
   | "forbidden_role"
   | "forbidden_owner"
   | "forbidden_tier"

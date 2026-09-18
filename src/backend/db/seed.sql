@@ -184,20 +184,30 @@ ON CONFLICT (id) DO UPDATE
 -- Onboarded, so the portfolio guard in section 7.7 lets this viewer through.
 -- The stage focus includes `permanent`, which is exactly the value that cannot
 -- be expressed if funding stages and project stages are treated as one list.
+--
+-- `updated_at` is named explicitly and pinned to the same fixed timestamp the
+-- in-memory fixture uses. The column defaults to `now()`, so leaving it out
+-- would seed a moving value here while the mock stays at 2026-09-01, and the
+-- two stores would answer `GET /investors/me/profile` differently — the exact
+-- divergence the store-parity contract exists to prevent. It is also restored
+-- on re-seed, alongside every other field this statement resets, so a reseeded
+-- demo returns to a known state instead of carrying an edit's timestamp on
+-- otherwise-seed content.
 -- ---------------------------------------------------------------------------
 
 INSERT INTO investors (id, user_id, organization_name, investor_type, capital_type,
                        funding_stage_focus, ticket_size_min, ticket_size_max, geographies,
-                       onboarding_completed_at, created_at) VALUES
+                       onboarding_completed_at, created_at, updated_at) VALUES
   ('4d7a2c91-8e56-43bf-9a10-5c6d2f7b8e34', '91e3b7c4-2d65-4a08-bf19-7c5e0a6d3b82',
    'Southeast Community Solar Fund', 'impact_investor', 'concessionary_debt',
    '["pre_development","development","permanent"]', 25000, 1000000, '["GA","TN"]',
-   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
   SET organization_name = EXCLUDED.organization_name, investor_type = EXCLUDED.investor_type,
       capital_type = EXCLUDED.capital_type, funding_stage_focus = EXCLUDED.funding_stage_focus,
       ticket_size_min = EXCLUDED.ticket_size_min, ticket_size_max = EXCLUDED.ticket_size_max,
-      geographies = EXCLUDED.geographies, onboarding_completed_at = EXCLUDED.onboarding_completed_at;
+      geographies = EXCLUDED.geographies, onboarding_completed_at = EXCLUDED.onboarding_completed_at,
+      updated_at = EXCLUDED.updated_at;
 
 -- ---------------------------------------------------------------------------
 -- Documents
@@ -211,10 +221,18 @@ ON CONFLICT (id) DO UPDATE
 -- investor cannot see. The assertions below check that it did.
 -- ---------------------------------------------------------------------------
 
+-- `blob_path` is stored fully qualified as `{container}/{blob name}`, matching
+-- formatBlobPath() in src/backend/core/documents/storage.ts. The container is
+-- the one for the row's disclosure class, so a seeded row locates its own blob
+-- the same way an uploaded one does. The owner id leading the blob name is the
+-- site's `owner_user_id`, which is what groups every document belonging to one
+-- owner under a single prefix.
+
 INSERT INTO documents (id, site_id, blob_path, original_filename, content_type, size_bytes,
                        doc_type, uploaded_by_user_id, created_at) VALUES
   ('d0c00000-0000-4000-8000-000000000001', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01',
-   'seed/sites/c01/electricity-bill.pdf', 'electricity-bill.pdf', 'application/pdf', 184320,
+   'owner-private/owners/7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40/sites/8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01/electricity_bill/d0c00000-0000-4000-8000-000000000001/electricity-bill.pdf',
+   'electricity-bill.pdf', 'application/pdf', 184320,
    'electricity_bill', '7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
   SET blob_path = EXCLUDED.blob_path, original_filename = EXCLUDED.original_filename;
@@ -222,7 +240,8 @@ ON CONFLICT (id) DO UPDATE
 INSERT INTO documents (id, site_id, blob_path, original_filename, content_type, size_bytes,
                        doc_type, disclosure_class, uploaded_by_user_id, created_at) VALUES
   ('d0c00000-0000-4000-8000-000000000002', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01',
-   'seed/sites/c01/site-summary.pdf', 'site-summary.pdf', 'application/pdf', 96256,
+   'investor-tier-1/owners/7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40/sites/8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01/site_summary/d0c00000-0000-4000-8000-000000000002/site-summary.pdf',
+   'site-summary.pdf', 'application/pdf', 96256,
    'site_summary', 'investor_tier_1', '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
   SET blob_path = EXCLUDED.blob_path, original_filename = EXCLUDED.original_filename,

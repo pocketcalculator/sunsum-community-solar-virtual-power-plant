@@ -32,6 +32,9 @@ yarn-error.log*
 .env*.local
 .env
 
+# local Azurite blob emulator state
+/.azurite/
+
 # vercel
 .vercel
 

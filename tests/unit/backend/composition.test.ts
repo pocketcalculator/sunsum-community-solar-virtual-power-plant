@@ -16,6 +16,8 @@ import {
   type BackendStore,
 } from "@/backend/core/store";
 import type { InvestorProfile, Viewer } from "@/backend/core/identity";
+import { DEMO_INVESTOR_USER_ID } from "@/backend/demo-principals";
+import { issueSessionCookie } from "@/backend/handlers/identity";
 import {
   getPortfolioRoute,
   handleGetPortfolio,
@@ -93,7 +95,9 @@ function project(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
  * private state a derived object could not reach.
  */
 function storeOf(...projects: readonly ProjectRecord[]): BackendStore {
-  const base = createMemoryBackendStore();
+  // Seeded, because the route resolves its own viewer now and an investor
+  // without a profile is refused before the store seam under test is reached.
+  const base = createMemoryBackendStore({ seedDemoProjects: true });
   return new Proxy(base, {
     get(target, property, receiver) {
       void receiver;
@@ -184,6 +188,19 @@ describe("wiring a store into the endpoint", () => {
     "https://sunsum.test/api/portfolio?mandate_match=false",
   );
 
+  /**
+   * The route resolves its own viewer now, so a request that reaches it has to
+   * carry a session. `handleGetPortfolio` is still handed a viewer directly —
+   * the split is the point, and only the wrapper needs signing in.
+   */
+  function signedIn(): Request {
+    const cookie = issueSessionCookie(DEMO_INVESTOR_USER_ID);
+    if (!cookie.ok) throw new Error(cookie.failure.message);
+    return new Request(request.url, {
+      headers: { cookie: cookie.value.split(";")[0] ?? "" },
+    });
+  }
+
   it("reads from the store the handler is given", async () => {
     const response = await handleGetPortfolio(
       request,
@@ -201,7 +218,7 @@ describe("wiring a store into the endpoint", () => {
     const previous = setActiveStore(storeOf(project()));
 
     try {
-      expect(await namesFrom(await getPortfolioRoute(request))).toEqual([
+      expect(await namesFrom(await getPortfolioRoute(signedIn()))).toEqual([
         "Only in the injected store",
       ]);
     } finally {
@@ -212,8 +229,16 @@ describe("wiring a store into the endpoint", () => {
   // Nothing installed but the default fixtures still has to answer, because
   // that is `npm run dev` with no database.
   it("still answers on the store installed by default", async () => {
-    const response = await getPortfolioRoute(request);
+    const response = await getPortfolioRoute(signedIn());
 
     expect(response.status).toBe(200);
+  });
+
+  // The hole this replaced: the wrapper used to hand every caller the same
+  // onboarded investor, so an anonymous request read a real portfolio.
+  it("refuses a request that carries no session", async () => {
+    const response = await getPortfolioRoute(request);
+
+    expect(response.status).toBe(401);
   });
 });

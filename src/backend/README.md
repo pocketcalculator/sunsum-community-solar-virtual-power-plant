@@ -9,16 +9,23 @@ sections 9 and 10 of
 investor workflow endpoints now follow the same handler/core split. It runs
 against either an in-memory fixture or a real PostgreSQL database, chosen by
 one environment variable, so that later endpoints have a pattern to copy; see
-[Adding an endpoint](#adding-an-endpoint). Identity is still a demo seam: each
-route uses a fixed role-specific identity.
+[Adding an endpoint](#adding-an-endpoint). Identity is resolved per request
+from a signed `sunsum_session` cookie; only how a session *starts* is still a
+demo seam.
 
 > [!WARNING]
-> **Do not expose these privileged demo routes as a production API.** They do
-> not authenticate requests: each route always resolves to a fixed demo owner,
-> operator, or investor. The core authorization checks and role-specific route
-> wiring must remain in place, but production exposure additionally requires
-> authenticated request-to-viewer resolution plus CSRF protection for
-> cookie-based sessions or appropriate bearer-token protection.
+> **Requests are authenticated; sign-in is not.** Every implemented route
+> except `POST /auth/demo-switch` and `POST /auth/logout` resolves its caller
+> from a signed, `HttpOnly` `sunsum_session` cookie and answers
+> `401 unauthenticated` without one. Writes are additionally checked against
+> `Sec-Fetch-Site`, falling back to `Origin`, and a cross-site write is refused
+> `403 forbidden_origin`.
+>
+> What is not production-ready is the sign-in endpoint. `POST /auth/demo-switch`
+> hands out one of three **seeded** identities and verifies no credential, so
+> anyone who can reach it can become any demo user. It is opt-in per deployment
+> (`SUNSUM_DEMO_AUTH=enabled`) and is the one endpoint a real identity provider
+> replaces. Until it does, do not expose this API to untrusted callers.
 
 ## Layout
 
@@ -87,17 +94,21 @@ layers, each with an `index.ts`. An empty directory is not worth the import.
 
 | Directory   | Owns                                                                                                                                    | Must not                                                                       |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `handlers/` | The transport edge: selecting the fixed demo principal, validating the request into typed values, and turning a `Result` into a status code | Decide permission, accept caller-selectable roles, or hold workflow rules, stage transitions or solar math |
+| `handlers/` | The transport edge: authenticating the caller from the session cookie, refusing cross-site writes, validating the request into typed values, and turning a `Result` into a status code | Decide permission, accept caller-selectable roles, or hold workflow rules, stage transitions or solar math |
 | `core/`     | Authorization, workflow rules, visibility scoping and the response payload, written as ordinary functions over plain values              | Import `handlers/`, or reach for `next/server`, `next/headers` or `next/cache` |
 
-Core **authorizes**. In this MVP, handlers do **not authenticate**; each route
-selects its fixed role-specific demo principal and never accepts a
-caller-supplied role. Replacing that seam with authenticated request-to-viewer
-resolution is future WS3 work. Core still decides what the resolved identity
-may see, because a permission that lived only in the handler would be skipped
-the moment a scheduled job, seeding CLI or second route called the same
+Handlers **authenticate**; core **authorizes**. A handler resolves the viewer
+from the signed session cookie and never accepts a caller-supplied role — the
+role is read from the user row on each request, so a stale cookie cannot claim
+a role its owner was never granted. Core then decides what that resolved
+identity may see, because a permission that lived only in the handler would be
+skipped the moment a scheduled job, seeding CLI or second route called the same
 function. This is what "enforce authorization at service boundaries, not only
 in the user interface" means here.
+
+The remaining demo seam is how a session *starts*, not whether one is required:
+`POST /auth/demo-switch` issues a cookie for a seeded identity without checking
+a credential. Replacing it with a real identity provider is the future work.
 
 `index.ts` is the public entry point. Routes import `@/backend` and nothing
 deeper, which keeps handler and core module paths free to move.
@@ -244,14 +255,17 @@ Two seams allow those integrations without changing the workflow rules:
   records the decision. `composition.ts` selects the Drizzle-backed
   `BackendStore` with `SUNSUM_STORE=db`; the default remains the explicit
   in-memory fixture. Persistence stays outside the handlers.
-- **Identity.** `handlers/identity/viewer.ts` exposes fixed demo owner, operator
-  and investor resolvers. **They have no security value.** They read nothing
-  from the request, so a caller cannot choose a role. Before production, replace
-  them with authenticated request-to-viewer resolution and add CSRF protection
-  for cookie sessions or suitable bearer-token protection.
+- **Identity.** Routes resolve their viewer from the signed `sunsum_session`
+  cookie in `handlers/identity/session.ts`. The deprecated fixed resolvers in
+  `handlers/identity/viewer.ts` are no longer on any request path — they survive
+  only as fixtures for core tests that need a `Viewer` without a session, and
+  must not be reintroduced into a route. What is still not production ready is
+  `POST /auth/demo-switch`, which issues a session for a seeded identity without
+  checking a credential; it is opt-in per deployment and is what a real identity
+  provider replaces.
 
-Neither is production ready. The App Service smoke test exercises the existing
-fixture-backed API, not a real database, data set, or identity provider.
+The App Service smoke test exercises a fixture-backed API, not a real data set
+or identity provider.
 
 Infrastructure clients must not be constructed in `core/`, `handlers/`, routes,
 or presentation. The composition boundary supplies dependencies to adapters
