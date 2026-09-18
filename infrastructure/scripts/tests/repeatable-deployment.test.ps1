@@ -175,6 +175,59 @@ try {
             Assert-Blocked { & $runner @arguments -Apply } 'hash drift' $true
         } finally { [System.IO.File]::WriteAllBytes($path,$bytes) }
     }
+    $devScripts = Join-Path $fixture 'infrastructure/scripts'
+    $devDirectory = Join-Path $fixture '.azure/dev'
+    $null = New-Item -ItemType Directory -Path $devScripts, $devDirectory -Force
+    foreach ($name in @('Deploy-DevInfrastructure.ps1', 'Deploy-Infrastructure.ps1', 'DeploymentSafety.psm1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../$name") -Destination (Join-Path $devScripts $name)
+    }
+    $devRunner = Join-Path $devScripts 'Deploy-DevInfrastructure.ps1'
+    $devPath = Join-Path $devDirectory 'deployment.json'
+    $state.Mode='Create'
+    Assert-Blocked { & $devRunner } 'missing dev config' $true
+    $devConfig = @{}
+    foreach ($entry in $arguments.GetEnumerator()) {
+        $key = $entry.Key.Substring(0, 1).ToLowerInvariant() + $entry.Key.Substring(1)
+        $devConfig[$key] = $entry.Value
+    }
+    $devConfig.TemplatePath = '../../template.json'
+    $devConfig.ParametersPath = '../../parameters.json'
+    $devConfig.ApprovalPath = '../../approval.json'
+    $devConfig | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
+    Push-Location ([System.IO.Path]::GetTempPath())
+    try {
+        $state.Calls.Clear()
+        & $devRunner | Out-Null
+        if ($state.Calls.Count) { throw 'Default dev entry point called Azure.' }
+        & $devRunner -Preview | Out-Null
+        if (@($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count) { throw 'Dev preview performed a write.' }
+        $state.Calls.Clear()
+        & $devRunner -Apply | Out-Null
+        if (@($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count -ne 1) { throw 'Dev apply did not delegate exactly once.' }
+        Assert-Blocked { & $devRunner -Preview -Apply } 'conflicting dev switches' $true
+        foreach ($badConfig in @('{}', 'null', '[]', 'invalid-json')) {
+            Set-Content -LiteralPath $devPath -Value $badConfig -Encoding utf8NoBOM
+            Assert-Blocked { & $devRunner -Apply } 'malformed dev config' $true
+        }
+        foreach ($badValue in @('', '<reviewed-hash>', 123, $null)) {
+            $changed = $devConfig.Clone()
+            $changed.TemplateSha256 = $badValue
+            $changed | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
+            Assert-Blocked { & $devRunner -Apply } 'invalid dev config field' $true
+        }
+        $changed = $devConfig.Clone()
+        $changed.Apply = $true
+        $changed | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
+        Assert-Blocked { & $devRunner } 'config cannot enable apply' $true
+        $changed = $devConfig.Clone()
+        $changed.SubscriptionId = '22222222-2222-4222-8222-222222222222'
+        $changed | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
+        Assert-Blocked { & $devRunner -Apply } 'dev approval target binding' $true
+        $changed = $devConfig.Clone()
+        $changed.TemplateSha256 = '0' * 64
+        $changed | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
+        Assert-Blocked { & $devRunner -Apply } 'dev hash binding' $true
+    } finally { Pop-Location }
     $state.Mode='apply-failure'
     $state.Calls.Clear()
     $message=''

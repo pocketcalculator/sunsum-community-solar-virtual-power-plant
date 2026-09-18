@@ -415,6 +415,34 @@ Do not supply operator credentials or overwrite the sign-in credential.
 
 ## Repeatable infrastructure deployment
 
+For dev, use the short entry point from the repository root:
+
+```powershell
+# Local validation; no Azure calls.
+pwsh -NoProfile -File infrastructure/scripts/Deploy-DevInfrastructure.ps1
+# Read-only Azure preview.
+pwsh -NoProfile -File infrastructure/scripts/Deploy-DevInfrastructure.ps1 -Preview
+# Azure writes, only after explicit authorization.
+pwsh -NoProfile -File infrastructure/scripts/Deploy-DevInfrastructure.ps1 -Apply
+```
+
+All values come from ignored `.azure/dev/deployment.json`; no target, hash or path
+arguments are required. Configure it once from
+[`deployment.dev.example.json`](../templates/deployment.dev.example.json), using
+the actual approved dev target and artifact hashes. Relative artifact paths are
+resolved from `.azure/dev`, independently of the current terminal directory.
+The entry script itself can also be called by absolute path from another folder.
+Missing configuration, placeholders and unknown fields fail locally; there is no
+fallback target. Configuration cannot enable apply, and no hashes or approvals are
+generated automatically. The file is operator-controlled configuration, not an
+independent authorization source. Keep it with the reviewed artifacts; refresh
+it after a separately reviewed input change. Actual environment/identity values
+remain local, while the committed example is deliberately nondeployable.
+
+This dev-only loader delegates all snapshot, approval and what-if checks to the
+command below. It introduces no environment selector or new environment hierarchy.
+The generic command remains available for explicit calls and future automation.
+
 Use `scripts/Deploy-Infrastructure.ps1` for an explicitly reviewed create/update
 deployment of template-owned resources. `Provision-Infrastructure.ps1` remains
 first-time-only and retains its collision checks. The repeatable command does
