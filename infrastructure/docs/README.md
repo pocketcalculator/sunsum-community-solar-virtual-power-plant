@@ -22,6 +22,11 @@ the prepared Bicep/Azure CLI foundation, local checks, exact-IP approval and exp
 Entra SQL bootstrap. This preparation does not provision or connect a cloud
 database. No orchestration framework is required.
 
+For reviewed create/update reruns, see
+[repeatable infrastructure deployment](app-service-postgres.md#repeatable-infrastructure-deployment).
+That command accepts template-owned updates and no-change runs; the separate
+first-time provisioning command retains its resource-collision guards.
+
 The separate [development deployment guide](deployment.md) records the existing
 Azure environment and its verified PostgreSQL-backed application deployment.
 That path uses managed identity rather than a database password. It also records
