@@ -89,16 +89,17 @@ export function verifySession(
    * length through the exception. Both values are base64url of a SHA-256
    * digest, so an unequal length already means a forgery; reject it first and
    * compare the rest in constant time.
+   *
+   * Compare the *buffers*, not the strings: a string length counts UTF-16 code
+   * units while `timingSafeEqual` sees bytes, so a signature of the right
+   * character count containing any multi-byte character would pass a string
+   * comparison and then throw — turning a forged cookie into a 500 instead of
+   * the 401 it is.
    */
-  if (providedSignature.length !== expectedSignature.length) return rejected;
-  if (
-    !timingSafeEqual(
-      Buffer.from(providedSignature, "utf8"),
-      Buffer.from(expectedSignature, "utf8"),
-    )
-  ) {
-    return rejected;
-  }
+  const provided = Buffer.from(providedSignature, "utf8");
+  const expected = Buffer.from(expectedSignature, "utf8");
+  if (provided.length !== expected.length) return rejected;
+  if (!timingSafeEqual(provided, expected)) return rejected;
 
   let parsed: unknown;
   try {

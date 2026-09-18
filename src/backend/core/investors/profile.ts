@@ -123,7 +123,15 @@ export async function upsertMyInvestorProfile(
     updatedAt: now,
   };
   await store.upsertInvestorProfile(profile);
-  return ok(toInvestorProfilePayload(profile));
+  /**
+   * Answer with the row as stored, not the one just built. Two first-time
+   * profile posts can both see no existing profile and mint different ids; the
+   * upsert conflicts on `user_id` and keeps whichever row landed first, so the
+   * loser's freshly-minted id is never stored and a later read would disagree
+   * with its own 201. Re-reading costs one query and makes the response true.
+   */
+  const stored = await store.getInvestorProfileByUserId(viewer.userId);
+  return ok(toInvestorProfilePayload(stored ?? profile));
 }
 
 export function toInvestorProfilePayload(

@@ -85,6 +85,12 @@ function parseDemoSwitch(body: JsonObject): Result<Role> {
  * case is reported as `onboarded: false` rather than as a refusal, so a client
  * can tell "you need to onboard" apart from "you may not be here" and send the
  * caller to the profile form.
+ *
+ * `onboarded` follows `onboardingCompletedAt`, not the mere existence of a row,
+ * because that timestamp is what the investor rules in `core` actually gate on
+ * (§8.2 — portfolio, engagements, deal room). The column is nullable, so a row
+ * can exist while core still considers the investor unfinished; reporting that
+ * as onboarded would send a client past the form and into a 403.
  */
 function identityBody(
   identity: ViewerIdentity,
@@ -97,7 +103,7 @@ function identityBody(
   return {
     user_id: identity.userId,
     role: identity.role,
-    onboarded: investor !== null,
+    onboarded: investor?.onboardingCompletedAt != null,
     ...(investor !== null
       ? {
           investor: {

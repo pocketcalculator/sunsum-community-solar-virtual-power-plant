@@ -24,6 +24,7 @@ import {
   requireRole,
   resolveViewer,
 } from "@/backend/handlers/identity";
+import { handlePostInvestorProfile } from "@/backend/handlers/investors/portfolio";
 
 const SECRET = "a-test-secret-that-is-long-enough-to-pass";
 const NOW = Date.UTC(2026, 8, 18, 12, 0, 0);
@@ -369,6 +370,43 @@ describe("signing in and out", () => {
     );
 
     expect(identity.ok).toBe(true);
-    if (identity.ok) expect(identity.value.role).toBe("investor");
+    if (!identity.ok) return;
+    expect(identity.value.role).toBe("investor");
+
+    const created = await handlePostInvestorProfile(
+      new Request("https://sunsum.test/api/investors/me/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          organization_name: "First Light Fund",
+          investor_type: "impact_investor",
+          capital_type: "concessionary_debt",
+          funding_stage_focus: [],
+          ticket_size_min: null,
+          ticket_size_max: null,
+          geographies: [],
+          investment_objectives: [],
+          impact_priorities: [],
+          decision_criteria: [],
+        }),
+      }),
+      identity.value,
+      fresh,
+    );
+
+    expect(created.status).toBe(201);
+
+    /*
+     * The profile has to be readable afterwards, and by the id the response
+     * gave out: a 201 carrying an id that was never stored is the failure the
+     * concurrent-onboarding path can otherwise produce.
+     */
+    const payload = (await created.json()) as { id: string };
+    const stored = await fresh.getInvestorProfileByUserId(identity.value.userId);
+    expect(stored?.id).toBe(payload.id);
+    expect(stored?.organizationName).toBe("First Light Fund");
+
+    const me = await handleGetMe(withCookie(signedIn), fresh);
+    expect(await me.json()).toMatchObject({ onboarded: true });
   });
 });
