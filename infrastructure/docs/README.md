@@ -35,8 +35,10 @@ database. No orchestration framework is required.
 For reviewed create/update reruns, see
 [repeatable infrastructure deployment](app-service-postgres.md#repeatable-infrastructure-deployment).
 For dev, `pwsh -File infrastructure/scripts/Deploy-DevInfrastructure.ps1` reads
-all reviewed values from ignored `.azure/dev/deployment.json`; add `-Preview`
-for what-if or `-Apply` for separately authorized writes.
+the shared target from committed `infrastructure/templates/deployment.dev.json`
+and artifact paths, hashes and approval metadata from ignored
+`.azure/dev/deployment.json`; add `-Preview` for what-if or `-Apply` for separately
+authorized writes.
 That command accepts template-owned updates and no-change runs; the separate
 first-time provisioning command retains its resource-collision guards.
 

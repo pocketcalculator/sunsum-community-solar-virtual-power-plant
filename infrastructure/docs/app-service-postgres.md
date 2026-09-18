@@ -140,9 +140,10 @@ tenant-wide access or an elevated database runtime principal. Routine code
 deployment does **not** require an Owner to repeat these administrator steps.
 Approved application participants require no Azure subscription/RG roles.
 
-Keep subscription/tenant IDs, actual resource names, principal IDs, approval
-records and environment configuration in ignored `.azure\<environment>\`
-files. Do not commit them or use personal data as tags. Scripts do not switch
+The shared non-secret dev target is versioned in
+`infrastructure/templates/deployment.dev.json`. Keep generated artifacts, review
+hashes, approval records, principal IDs and secrets in ignored `.azure/` files;
+do not commit them or use personal data as tags. Scripts do not switch
 the active subscription or enable basic publishing. The separately approved
 `BlobRoles` operation is the only new role-grant path.
 
@@ -426,18 +427,27 @@ pwsh -NoProfile -File infrastructure/scripts/Deploy-DevInfrastructure.ps1 -Previ
 pwsh -NoProfile -File infrastructure/scripts/Deploy-DevInfrastructure.ps1 -Apply
 ```
 
-All values come from ignored `.azure/dev/deployment.json`; no target, hash or path
-arguments are required. Configure it once from
-[`deployment.dev.example.json`](../templates/deployment.dev.example.json), using
-the actual approved dev target and artifact hashes. Relative artifact paths are
-resolved from `.azure/dev`, independently of the current terminal directory.
-The entry script itself can also be called by absolute path from another folder.
-Missing configuration, placeholders and unknown fields fail locally; there is no
-fallback target. Configuration cannot enable apply, and no hashes or approvals are
-generated automatically. The file is operator-controlled configuration, not an
-independent authorization source. Keep it with the reviewed artifacts; refresh
-it after a separately reviewed input change. Actual environment/identity values
-remain local, while the committed example is deliberately nondeployable.
+No target, hash or path arguments are required. The loader combines two files:
+
+- Committed [`deployment.dev.json`](../templates/deployment.dev.json) supplies the
+  shared non-secret subscription ID, resource group and stable deployment name.
+  These values are included in a fresh clone and grant no Azure permissions.
+- Ignored `.azure/dev/deployment.json` supplies artifact paths, their reviewed
+  SHA-256 digests, and the approval path/digest/reference. Prepare this local file
+  from [`deployment.dev.example.json`](../templates/deployment.dev.example.json).
+  Do not put target fields here: local target overrides are rejected.
+
+Relative artifact paths resolve from `.azure/dev`, independently of the terminal
+directory. The entry script can also be called by absolute path. Missing files,
+placeholders and unknown fields fail locally; there is no fallback target.
+The approval must match the committed target as well as the reviewed artifacts.
+Configuration cannot enable apply, and no hashes or approvals are generated
+automatically. A fresh clone has the target, not permission or a reviewed deployment
+bundle: prepare local artifacts/approvals before use. Keep those files under
+operator control and refresh them only after separately reviewing changed inputs.
+The existing tracked `app-service.dev.bicepparam` remains the non-secret parameters
+for its separate App Service template; this target split does not change template
+ownership or publish the temporary existing-resource test overrides.
 
 This dev-only loader delegates all snapshot, approval and what-if checks to the
 command below. It introduces no environment selector or new environment hierarchy.

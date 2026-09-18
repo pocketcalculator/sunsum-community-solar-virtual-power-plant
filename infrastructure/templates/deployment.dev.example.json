@@ -1,7 +1,4 @@
 {
-  "subscriptionId": "<subscription-uuid>",
-  "resourceGroupName": "<existing-dev-resource-group>",
-  "deploymentName": "sunsum-dev-foundation",
   "templatePath": "resources.compiled.json",
   "templateSha256": "<reviewed-compiled-template-sha256>",
   "parametersPath": "resources.parameters.json",
