@@ -1,0 +1,32 @@
+{
+    "version": "screening-policy-1.0.0",
+    "status": "illustrative_pending_solar_sme_approval",
+    "thresholds": {
+        "minimum_roof_area_sqft": 500,
+        "minimum_land_area_acres": 0.25,
+        "shading_review_percent": 30,
+        "shading_high_risk_percent": 60,
+        "minimum_roof_life_years": 10,
+        "maximum_area_capacity_ratio": 1.2,
+        "minimum_specific_yield_kwh_per_kw": 900,
+        "maximum_specific_yield_kwh_per_kw": 2000,
+        "financial_review_breakeven_year": 20
+    },
+    "critical_evidence": [
+        "resolved_location",
+        "candidate_surface",
+        "ownership_or_site_control"
+    ],
+    "approved_hard_blockers": [
+        "human_confirmed_no_legal_site_control",
+        "human_confirmed_prohibition",
+        "human_confirmed_no_usable_surface"
+    ],
+    "rules": [
+        "Missing or unresolved location yields insufficient_information.",
+        "Missing critical property evidence never yields not_viable.",
+        "Provider failures are unavailable evidence, never negative evidence.",
+        "Shading, roof, permitting, interconnection, ownership, and land concerns normally yield potentially_viable or insufficient_information pending review.",
+        "Every recommendation requires human review; not_viable requires human confirmation."
+    ]
+}

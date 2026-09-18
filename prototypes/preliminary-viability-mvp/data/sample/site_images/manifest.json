@@ -1,0 +1,138 @@
+{
+  "dataset": "SunSum synthetic upload images",
+  "classification": "simulated_test_data",
+  "warning": "Generated images and observations are fictional and for local testing only.",
+  "images": [
+    {
+      "id": "viable-rooftop",
+      "filename": "01_viable_rooftop.png",
+      "label": "Low-shading commercial rooftop",
+      "expected_recommendation": "viable",
+      "expected_observations": [
+        {
+          "key": "visible_surface",
+          "value": "large low-slope rooftop",
+          "uncertainty": "low"
+        },
+        {
+          "key": "potential_shading",
+          "value": "low",
+          "uncertainty": "medium"
+        },
+        {
+          "key": "visible_obstructions",
+          "value": "limited rooftop equipment",
+          "uncertainty": "low"
+        },
+        {
+          "key": "possible_mount_type",
+          "value": "rooftop",
+          "uncertainty": "low"
+        },
+        {
+          "key": "image_quality",
+          "value": "clear synthetic test image",
+          "uncertainty": "low"
+        }
+      ],
+      "media_type": "image/png",
+      "sha256": "03b6cb2c39d6a490551d60c2bb344c8f1a1cbd019f9e2c3845715a6510ed0b65"
+    },
+    {
+      "id": "potentially-viable-canopy",
+      "filename": "02_shaded_canopy.png",
+      "label": "Parking canopy with tree shading",
+      "expected_recommendation": "potentially_viable",
+      "expected_observations": [
+        {
+          "key": "visible_surface",
+          "value": "parking area",
+          "uncertainty": "low"
+        },
+        {
+          "key": "trees",
+          "value": "mature trees along western edge",
+          "uncertainty": "low"
+        },
+        {
+          "key": "potential_shading",
+          "value": "moderate",
+          "uncertainty": "medium"
+        },
+        {
+          "key": "possible_mount_type",
+          "value": "canopy",
+          "uncertainty": "medium"
+        },
+        {
+          "key": "image_quality",
+          "value": "clear synthetic test image",
+          "uncertainty": "low"
+        }
+      ],
+      "media_type": "image/png",
+      "sha256": "38ea9ca3166f14d41f69b4e36f7a2d399ceff2d3e13df532875b6c17ea35521b"
+    },
+    {
+      "id": "not-viable-prohibited",
+      "filename": "03_open_land_prohibition.png",
+      "label": "Open land with a non-visual legal blocker",
+      "expected_recommendation": "not_viable",
+      "expected_observations": [
+        {
+          "key": "visible_surface",
+          "value": "open land",
+          "uncertainty": "low"
+        },
+        {
+          "key": "trees",
+          "value": "limited perimeter vegetation",
+          "uncertainty": "medium"
+        },
+        {
+          "key": "potential_shading",
+          "value": "low",
+          "uncertainty": "medium"
+        },
+        {
+          "key": "possible_mount_type",
+          "value": "ground mount",
+          "uncertainty": "medium"
+        },
+        {
+          "key": "image_quality",
+          "value": "clear synthetic test image",
+          "uncertainty": "low"
+        }
+      ],
+      "note": "The legal prohibition is intentionally not inferable from the image; it comes from simulated human-confirmed evidence.",
+      "media_type": "image/png",
+      "sha256": "b1e7ef1c47595a46376775b1e44880c3ebcc0385a6cc6eada24d8657ca40824c"
+    },
+    {
+      "id": "insufficient-evidence",
+      "filename": "04_low_quality_unknown.png",
+      "label": "Low-quality unresolved site image",
+      "expected_recommendation": "insufficient_information",
+      "expected_observations": [
+        {
+          "key": "visible_surface",
+          "value": "indeterminate",
+          "uncertainty": "high"
+        },
+        {
+          "key": "potential_shading",
+          "value": "indeterminate",
+          "uncertainty": "high"
+        },
+        {
+          "key": "image_quality",
+          "value": "low detail and partially obscured",
+          "uncertainty": "low"
+        }
+      ],
+      "media_type": "image/png",
+      "sha256": "e46c086e4ba13c18007224e92be4953b0ecc3b6b5debc07066e83d3a3224a8d8"
+    }
+  ]
+}

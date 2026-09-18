@@ -1,0 +1,1 @@
+"""External evidence providers. Provider absence or failure is never negative evidence."""

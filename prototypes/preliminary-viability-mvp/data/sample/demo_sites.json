@@ -1,0 +1,451 @@
+{
+    "dataset": {
+        "name": "SunSum end-to-end demo sites",
+        "version": "1.0.0",
+        "classification": "simulated_test_data",
+        "warning": "All people, sites, provider observations, and outcomes in this file are fictional and must not be used for real project decisions."
+    },
+    "scenarios": [
+        {
+            "id": "viable-rooftop",
+            "label": "Viable rooftop",
+            "description": "Complete evidence, low shading, verified control, and no identified policy concerns.",
+            "expected_recommendation": "viable",
+            "payload": {
+                "idempotency_key": "demo-viable-rooftop-reference",
+                "submitted_by": "Simulated demo dataset",
+                "site": {
+                    "site_id": "DEMO-VIABLE-ROOF",
+                    "street_address": "101 Demo Sunlight Way",
+                    "city": "Tunica",
+                    "state": "MS",
+                    "zip_code": "38676",
+                    "parcel_id": "SIM-VR-001",
+                    "latitude": 34.6845,
+                    "longitude": -90.3829,
+                    "property_description": "Fictional low-slope commercial roof with clear equipment setbacks.",
+                    "candidate_mount_type": "Rooftop",
+                    "usable_roof_area_sqft": 18500,
+                    "roof_condition": "Simulated recent inspection reported serviceable condition",
+                    "remaining_roof_life_years": 24,
+                    "estimated_shading_percent": 8,
+                    "ownership_verified": true,
+                    "site_control_verified": true,
+                    "utility_territory": "Simulated municipal utility",
+                    "feeder_or_substation": "SIM-FEEDER-01",
+                    "interconnection_status": "Simulated desktop review found preliminary hosting capacity",
+                    "zoning_concerns": "Simulated review found no identified concerns",
+                    "permitting_concerns": "Simulated review found no identified concerns",
+                    "wetlands_or_flood_zone": "Simulated review found no mapped constraint",
+                    "proposed_capacity_kw": 310,
+                    "annual_production_kwh": 465000,
+                    "evidence_status": {
+                        "location": "known",
+                        "surface": "known",
+                        "site_control": "known",
+                        "shading": "known",
+                        "interconnection": "known",
+                        "zoning": "known",
+                        "permitting": "known",
+                        "wetlands_or_flood_zone": "known"
+                    },
+                    "constraint_status": {
+                        "interconnection": "clear",
+                        "permitting": "clear",
+                        "zoning": "clear",
+                        "environmental": "clear"
+                    },
+                    "provenance": {
+                        "location": "simulated_demo_dataset_v1",
+                        "surface": "simulated_demo_dataset_v1",
+                        "site_control": "simulated_demo_dataset_v1",
+                        "shading": "simulated_demo_dataset_v1",
+                        "interconnection": "simulated_demo_dataset_v1",
+                        "zoning": "simulated_demo_dataset_v1",
+                        "permitting": "simulated_demo_dataset_v1",
+                        "wetlands_or_flood_zone": "simulated_demo_dataset_v1"
+                    },
+                    "observed_at": "2026-09-01T12:00:00Z"
+                },
+                "financial": {
+                    "project_cost": 775000,
+                    "annual_production_kwh": 465000,
+                    "ppa_rate": 0.12,
+                    "itc_rate_percent": 30,
+                    "production_loss_percent": 0.5,
+                    "ppa_escalator_percent": 1.5,
+                    "hurdle_rate_percent": 8,
+                    "incentives": 50000,
+                    "donations": 0,
+                    "analysis_period_years": 25
+                }
+            },
+            "provider_results": {
+                "geocoding": {
+                    "provider": "simulated_geocoding",
+                    "status": "simulated",
+                    "observations": {
+                        "resolved": true,
+                        "match_confidence": "simulated_high"
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    },
+                    "safe_message": "Simulated provider result for demonstration only."
+                },
+                "parcel_gis": {
+                    "provider": "simulated_parcel_gis",
+                    "status": "simulated",
+                    "observations": {
+                        "parcel_found": true,
+                        "surface_reviewed": true
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                },
+                "flood_wetlands_zoning": {
+                    "provider": "simulated_environmental_screen",
+                    "status": "simulated",
+                    "observations": {
+                        "review_complete": true,
+                        "identified_constraint": false
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                },
+                "utility_hosting_capacity": {
+                    "provider": "simulated_utility_screen",
+                    "status": "simulated",
+                    "observations": {
+                        "review_complete": true,
+                        "preliminary_capacity_kw": 350
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                }
+            }
+        },
+        {
+            "id": "potentially-viable-canopy",
+            "label": "Potentially viable canopy",
+            "description": "Complete core evidence with moderate shading that requires layout and production review.",
+            "expected_recommendation": "potentially_viable",
+            "payload": {
+                "idempotency_key": "demo-potential-canopy-reference",
+                "submitted_by": "Simulated demo dataset",
+                "site": {
+                    "site_id": "DEMO-POTENTIAL-CANOPY",
+                    "street_address": "202 Fictional Community Drive",
+                    "city": "Clarksdale",
+                    "state": "MS",
+                    "zip_code": "38614",
+                    "parcel_id": "SIM-PC-002",
+                    "latitude": 34.2001,
+                    "longitude": -90.5709,
+                    "property_description": "Fictional parking canopy candidate with mature trees along the western edge.",
+                    "candidate_mount_type": "Canopy",
+                    "usable_land_area_acres": 2.4,
+                    "estimated_shading_percent": 42,
+                    "ownership_verified": true,
+                    "site_control_verified": true,
+                    "utility_territory": "Simulated regional utility",
+                    "feeder_or_substation": "SIM-FEEDER-02",
+                    "interconnection_status": "Simulated preliminary utility intake accepted",
+                    "zoning_concerns": "Simulated review found no identified concerns",
+                    "permitting_concerns": "Simulated structural and traffic review remains routine",
+                    "wetlands_or_flood_zone": "Simulated review found no mapped constraint",
+                    "proposed_capacity_kw": 225,
+                    "annual_production_kwh": 303000,
+                    "evidence_status": {
+                        "location": "known",
+                        "surface": "known",
+                        "site_control": "known",
+                        "shading": "known",
+                        "interconnection": "known",
+                        "zoning": "known",
+                        "permitting": "known",
+                        "wetlands_or_flood_zone": "known"
+                    },
+                    "constraint_status": {
+                        "interconnection": "clear",
+                        "permitting": "clear",
+                        "zoning": "clear",
+                        "environmental": "clear"
+                    },
+                    "provenance": {
+                        "location": "simulated_demo_dataset_v1",
+                        "surface": "simulated_demo_dataset_v1",
+                        "site_control": "simulated_demo_dataset_v1",
+                        "shading": "simulated_demo_dataset_v1",
+                        "interconnection": "simulated_demo_dataset_v1",
+                        "zoning": "simulated_demo_dataset_v1",
+                        "permitting": "simulated_demo_dataset_v1",
+                        "wetlands_or_flood_zone": "simulated_demo_dataset_v1"
+                    },
+                    "observed_at": "2026-09-01T12:00:00Z"
+                },
+                "financial": {
+                    "project_cost": 675000,
+                    "annual_production_kwh": 303000,
+                    "ppa_rate": 0.13,
+                    "itc_rate_percent": 30,
+                    "production_loss_percent": 0.5,
+                    "ppa_escalator_percent": 1.5,
+                    "hurdle_rate_percent": 8,
+                    "incentives": 25000,
+                    "donations": 0,
+                    "analysis_period_years": 25
+                }
+            },
+            "provider_results": {
+                "geocoding": {
+                    "provider": "simulated_geocoding",
+                    "status": "simulated",
+                    "observations": {
+                        "resolved": true
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                },
+                "parcel_gis": {
+                    "provider": "simulated_parcel_gis",
+                    "status": "simulated",
+                    "observations": {
+                        "parcel_found": true
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                },
+                "flood_wetlands_zoning": {
+                    "provider": "simulated_environmental_screen",
+                    "status": "simulated",
+                    "observations": {
+                        "review_complete": true,
+                        "identified_constraint": false
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                },
+                "utility_hosting_capacity": {
+                    "provider": "simulated_utility_screen",
+                    "status": "simulated",
+                    "observations": {
+                        "review_complete": true,
+                        "preliminary_capacity_kw": 250
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                }
+            }
+        },
+        {
+            "id": "not-viable-prohibited",
+            "label": "Not viable: confirmed prohibition",
+            "description": "Illustrative hard blocker supported by an explicit simulated human confirmation.",
+            "expected_recommendation": "not_viable",
+            "trusted_hard_blockers": [
+                "human_confirmed_prohibition"
+            ],
+            "payload": {
+                "idempotency_key": "demo-not-viable-reference",
+                "submitted_by": "Simulated demo dataset",
+                "site": {
+                    "site_id": "DEMO-NOT-VIABLE",
+                    "street_address": "303 Example Conservation Road",
+                    "city": "Greenville",
+                    "state": "MS",
+                    "zip_code": "38701",
+                    "parcel_id": "SIM-NV-003",
+                    "latitude": 33.4101,
+                    "longitude": -91.0618,
+                    "property_description": "Fictional parcel used only to demonstrate a human-confirmed legal prohibition.",
+                    "candidate_mount_type": "Ground mount",
+                    "usable_land_area_acres": 8.2,
+                    "estimated_shading_percent": 12,
+                    "ownership_verified": true,
+                    "site_control_verified": true,
+                    "interconnection_status": "Simulated preliminary capacity identified",
+                    "zoning_concerns": "Simulated human review confirmed a legal prohibition",
+                    "permitting_concerns": "Simulated permit cannot proceed because of the confirmed prohibition",
+                    "wetlands_or_flood_zone": "Simulated review complete",
+                    "proposed_capacity_kw": 1200,
+                    "annual_production_kwh": 1800000,
+                    "evidence_status": {
+                        "human_confirmed_prohibition": "known",
+                        "location": "known",
+                        "surface": "known",
+                        "site_control": "known"
+                    },
+                    "constraint_status": {
+                        "interconnection": "clear",
+                        "permitting": "blocked",
+                        "zoning": "blocked",
+                        "environmental": "clear"
+                    },
+                    "provenance": {
+                        "human_confirmed_prohibition": "simulated_human_reviewer_demo_only",
+                        "location": "simulated_demo_dataset_v1",
+                        "surface": "simulated_demo_dataset_v1",
+                        "site_control": "simulated_demo_dataset_v1"
+                    },
+                    "observed_at": "2026-09-01T12:00:00Z"
+                },
+                "financial": {
+                    "project_cost": 2400000,
+                    "annual_production_kwh": 1800000,
+                    "ppa_rate": 0.105,
+                    "itc_rate_percent": 30,
+                    "production_loss_percent": 0.5,
+                    "ppa_escalator_percent": 1.5,
+                    "hurdle_rate_percent": 8,
+                    "incentives": 0,
+                    "donations": 0,
+                    "analysis_period_years": 25
+                }
+            },
+            "provider_results": {
+                "geocoding": {
+                    "provider": "simulated_geocoding",
+                    "status": "simulated",
+                    "observations": {
+                        "resolved": true
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                },
+                "parcel_gis": {
+                    "provider": "simulated_parcel_gis",
+                    "status": "simulated",
+                    "observations": {
+                        "parcel_found": true
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                },
+                "flood_wetlands_zoning": {
+                    "provider": "simulated_environmental_screen",
+                    "status": "simulated",
+                    "observations": {
+                        "review_complete": true,
+                        "human_confirmation_required": true
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                },
+                "utility_hosting_capacity": {
+                    "provider": "simulated_utility_screen",
+                    "status": "simulated",
+                    "observations": {
+                        "review_complete": true
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                }
+            }
+        },
+        {
+            "id": "insufficient-evidence",
+            "label": "Insufficient information",
+            "description": "A sparse intake showing the evidence requests and safe unavailable-provider behavior.",
+            "expected_recommendation": "insufficient_information",
+            "payload": {
+                "idempotency_key": "demo-insufficient-reference",
+                "submitted_by": "Simulated demo dataset",
+                "site": {
+                    "site_id": "DEMO-INSUFFICIENT",
+                    "street_address": "Address intentionally unresolved",
+                    "city": "Unknown",
+                    "state": "MS",
+                    "property_description": "Fictional incomplete intake with no verified coordinates, surface, or site control.",
+                    "candidate_mount_type": "Rooftop",
+                    "constraint_status": {
+                        "interconnection": "unknown",
+                        "permitting": "unknown",
+                        "zoning": "unknown",
+                        "environmental": "unknown"
+                    },
+                    "provenance": {
+                        "intake": "simulated_demo_dataset_v1"
+                    },
+                    "observed_at": "2026-09-01T12:00:00Z"
+                },
+                "financial": {
+                    "project_cost": 250000,
+                    "annual_production_kwh": 122582,
+                    "ppa_rate": 0.12,
+                    "itc_rate_percent": 30,
+                    "production_loss_percent": 0.5,
+                    "ppa_escalator_percent": 1.5,
+                    "hurdle_rate_percent": 8,
+                    "incentives": 0,
+                    "donations": 0,
+                    "analysis_period_years": 25
+                }
+            },
+            "provider_results": {
+                "geocoding": {
+                    "provider": "simulated_geocoding",
+                    "status": "unavailable",
+                    "observations": {
+                        "resolved": false
+                    },
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    },
+                    "safe_message": "Simulated unresolved address."
+                },
+                "parcel_gis": {
+                    "provider": "simulated_parcel_gis",
+                    "status": "unavailable",
+                    "observations": {},
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                },
+                "flood_wetlands_zoning": {
+                    "provider": "simulated_environmental_screen",
+                    "status": "unavailable",
+                    "observations": {},
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                },
+                "utility_hosting_capacity": {
+                    "provider": "simulated_utility_screen",
+                    "status": "unavailable",
+                    "observations": {},
+                    "provenance": {
+                        "source": "demo_sites.json",
+                        "classification": "simulated"
+                    }
+                }
+            }
+        }
+    ]
+}

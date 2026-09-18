@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SunSum Solar | Site Review</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/demo.css">
+    <link rel="stylesheet" href="/static/enhancements.css">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+
+<body>
+    <header class="topbar">
+        <a class="brand" href="/" aria-label="SunSum Solar home">
+            <span class="sunmark" aria-hidden="true">☀</span>
+            <span>SunSum</span>
+            <small>Viability workspace</small>
+        </a>
+        <nav class="primary-nav" aria-label="Product navigation">
+            <a href="#siteForm">Assessment journey</a>
+            <a href="#resultContent">Results</a>
+            <a href="/docs" target="_blank" rel="noreferrer">API</a>
+        </nav>
+        <div class="system-state">
+            <span class="status-dot"></span>
+            <span id="systemLabel">Checking local services</span>
+        </div>
+    </header>
+    <nav class="role-nav" aria-label="Experience views">
+        <a class="active" href="#siteForm">Site owner</a>
+        <a href="#resultContent">Platform operator</a>
+        <span aria-disabled="true">Investor experience</span>
+    </nav>
+
+    <main>
+        <section class="work-head">
+            <div>
+                <p class="eyebrow">Community solar assessment</p>
+                <h1>Move a site from address to opportunity.</h1>
+                <p>Capture a property, enrich the available site evidence, run an explainable assessment, and route
+                    the result through operator review.</p>
+            </div>
+            <div class="journey-status">
+                <span class="status-dot"></span>
+                <strong>Assessment service online</strong>
+                <small>Deterministic rules · human decision</small>
+            </div>
+        </section>
+
+        <section class="stage" aria-label="Project journey">
+            <span class="active" data-flow-stage="intake"><b>01</b> Property</span>
+            <span data-flow-stage="gis"><b>02</b> Site data</span>
+            <span data-flow-stage="assessment"><b>03</b> Assessment</span>
+            <span data-flow-stage="report"><b>04</b> Report</span>
+            <span data-flow-stage="review"><b>05</b> Review</span>
+            <span data-flow-stage="downstream"><b>06</b> Investor</span>
+        </section>
+
+        <div class="workspace">
+            <aside class="history-panel" aria-label="Existing assessments">
+                <div class="panel-title">
+                    <h2>Assessments</h2><button id="newBtn" class="icon-button" title="New assessment"
+                        aria-label="New assessment">+</button>
+                </div>
+                <div class="history-tools">
+                    <input id="historySearch" type="search" placeholder="Search site ID"
+                        aria-label="Search assessments">
+                    <select id="historyStatus" aria-label="Filter assessments by status">
+                        <option value="">All statuses</option>
+                        <option value="awaiting_review">Awaiting review</option>
+                        <option value="needs_information">Needs information</option>
+                        <option value="human_determined">Human determined</option>
+                    </select>
+                </div>
+                <div id="assessmentList" class="assessment-list">
+                    <p class="muted">No assessments yet.</p>
+                </div>
+            </aside>
+
+            <section class="entry-panel">
+                <form id="siteForm">
+                    <div class="panel-kicker">
+                        <span>Site owner intake</span>
+                        <strong>Property and assessment inputs</strong>
+                    </div>
+                    <section class="demo-scenarios" aria-labelledby="demoHeading">
+                        <div>
+                            <span class="tag sample">SIMULATED TEST DATA</span>
+                            <h2 id="demoHeading">Run a complete scenario</h2>
+                            <p id="demoWarning">Loading test scenarios...</p>
+                        </div>
+                        <div id="demoScenarioList" class="demo-scenario-list"></div>
+                        <p id="demoMessage" class="form-message" role="status"></p>
+                    </section>
+
+                    <div class="section-heading"><span>01</span>
+                        <div>
+                            <h2>Site and location</h2>
+                            <p>Fields marked optional remain visible as missing evidence.</p>
+                        </div>
+                    </div>
+                    <div class="field-grid">
+                        <label class="wide">Street address<input name="street_address" autocomplete="street-address"
+                                maxlength="250" placeholder="100 Solar Way"></label>
+                        <label>City<input name="city" autocomplete="address-level2" maxlength="100"
+                                placeholder="Tunica"></label>
+                        <label>State<input name="state" autocomplete="address-level1" maxlength="2"
+                                placeholder="MS"></label>
+                        <label>ZIP code<input name="zip_code" autocomplete="postal-code" inputmode="numeric"
+                                pattern="[0-9]{5}(-[0-9]{4})?" placeholder="38676"></label>
+                        <label>Parcel ID<input name="parcel_id" maxlength="100" placeholder="Optional"></label>
+                        <label>Latitude<input name="latitude" type="number" step="any" min="-90" max="90"
+                                placeholder="Unknown"></label>
+                        <label>Longitude<input name="longitude" type="number" step="any" min="-180" max="180"
+                                placeholder="Unknown"></label>
+                    </div>
+                    <div class="integration-status">
+                        <span class="integration-icon" aria-hidden="true">◎</span>
+                        <div><strong>GIS enrichment boundary</strong><small>Address and coordinates are sent to the
+                                assessment API. Live parcel and GeoJSON adapters can replace unavailable provider
+                                states without changing this form.</small></div>
+                        <span class="tag">API READY</span>
+                    </div>
+
+                    <div class="section-heading"><span>02</span>
+                        <div>
+                            <h2>Candidate surface</h2>
+                            <p>Enter measured or observed facts; leave unknown values blank.</p>
+                        </div>
+                    </div>
+                    <div class="field-grid">
+                        <label>Mount type<select name="candidate_mount_type">
+                                <option value="">Unknown</option>
+                                <option>Rooftop</option>
+                                <option>Canopy</option>
+                                <option>Ground mount</option>
+                                <option>Hybrid</option>
+                            </select></label>
+                        <label>Capacity (kW)<input name="proposed_capacity_kw" type="number" min="0" step="0.1"
+                                placeholder="Unknown"></label>
+                        <label>Usable roof (sq ft)<input name="usable_roof_area_sqft" type="number" min="0" step="1"
+                                placeholder="Unknown"></label>
+                        <label>Usable land (acres)<input name="usable_land_area_acres" type="number" min="0" step="0.01"
+                                placeholder="Unknown"></label>
+                        <label>Shading (%)<input name="estimated_shading_percent" type="number" min="0" max="100"
+                                step="1" placeholder="Unknown"></label>
+                        <label>Remaining roof life (years)<input name="remaining_roof_life_years" type="number" min="0"
+                                max="100" placeholder="N/A or unknown"></label>
+                        <label>Ownership verified<select name="ownership_verified">
+                                <option value="">Unknown</option>
+                                <option value="true">Yes</option>
+                                <option value="false">No / unresolved</option>
+                            </select></label>
+                        <label>Site control verified<select name="site_control_verified">
+                                <option value="">Unknown</option>
+                                <option value="true">Yes</option>
+                                <option value="false">No / unresolved</option>
+                            </select></label>
+                        <label class="wide">Interconnection status<input name="interconnection_status" maxlength="250"
+                                placeholder="Unknown; utility review required"></label>
+                        <label>Interconnection assessment<select name="constraint_interconnection">
+                                <option value="unknown">Unknown</option>
+                                <option value="clear">Clear</option>
+                                <option value="concern">Concern</option>
+                                <option value="blocked">Blocked, needs confirmation</option>
+                                <option value="not_applicable">Not applicable</option>
+                            </select></label>
+                        <label>Permitting assessment<select name="constraint_permitting">
+                                <option value="unknown">Unknown</option>
+                                <option value="clear">Clear</option>
+                                <option value="concern">Concern</option>
+                                <option value="blocked">Blocked, needs confirmation</option>
+                                <option value="not_applicable">Not applicable</option>
+                            </select></label>
+                        <label>Zoning assessment<select name="constraint_zoning">
+                                <option value="unknown">Unknown</option>
+                                <option value="clear">Clear</option>
+                                <option value="concern">Concern</option>
+                                <option value="blocked">Blocked, needs confirmation</option>
+                                <option value="not_applicable">Not applicable</option>
+                            </select></label>
+                        <label>Environmental assessment<select name="constraint_environmental">
+                                <option value="unknown">Unknown</option>
+                                <option value="clear">Clear</option>
+                                <option value="concern">Concern</option>
+                                <option value="blocked">Blocked, needs confirmation</option>
+                                <option value="not_applicable">Not applicable</option>
+                            </select></label>
+                        <label class="wide">Permitting concerns<textarea name="permitting_concerns" maxlength="1000"
+                                rows="2"
+                                placeholder="Optional narrative; status above controls screening"></textarea></label>
+                        <label class="wide">Zoning concerns<textarea name="zoning_concerns" maxlength="1000" rows="2"
+                                placeholder="Optional narrative; status above controls screening"></textarea></label>
+                        <label class="wide">Environmental or flood/wetland concerns<textarea
+                                name="wetlands_or_flood_zone" maxlength="500" rows="2"
+                                placeholder="Optional narrative; status above controls screening"></textarea></label>
+                        <label class="wide">Property description<textarea name="property_description" maxlength="2000"
+                                rows="2" placeholder="Observable property details"></textarea></label>
+                    </div>
+
+                    <div class="section-heading"><span>03</span>
+                        <div>
+                            <h2>Financial assumptions</h2>
+                            <p>Defaults match the Excel workbook. The supplied HTML uses 40% ITC instead.</p>
+                        </div>
+                    </div>
+                    <div class="field-grid financial-fields">
+                        <label>Project cost ($)<input name="project_cost" type="number" min="0" step="0.01"
+                                value="250000"></label>
+                        <label>Annual production (kWh)<input name="annual_production_kwh" type="number" min="0" step="1"
+                                value="122582"></label>
+                        <label>PPA rate ($/kWh)<input name="ppa_rate" type="number" min="0" max="10" step="0.001"
+                                value="0.12"></label>
+                        <label>ITC rate (%)<input name="itc_rate_percent" type="number" min="0" max="100" step="0.1"
+                                value="30"></label>
+                        <label>Production loss (%)<input name="production_loss_percent" type="number" min="0" max="100"
+                                step="0.1" value="0.5"></label>
+                        <label>PPA escalator (%)<input name="ppa_escalator_percent" type="number" min="-100" max="100"
+                                step="0.1" value="1.5"></label>
+                        <label>Hurdle rate (%)<input name="hurdle_rate_percent" type="number" min="-100" max="100"
+                                step="0.1" value="8"></label>
+                        <label>Incentives ($)<input name="incentives" type="number" min="0" value="0"></label>
+                        <label>Donations ($)<input name="donations" type="number" min="0" value="0"></label>
+                        <label>Analysis years<input name="analysis_period_years" type="number" min="1" max="50"
+                                value="25"></label>
+                    </div>
+
+                    <div class="upload-row">
+                        <label>Site image <span class="tag sample">OPTIONAL</span><input id="siteImage" type="file"
+                                accept="image/jpeg,image/png,image/webp"></label>
+                        <span>JPEG, PNG, or WebP; 10 MB local limit.</span>
+                    </div>
+                    <section class="demo-image-picker" aria-labelledby="demoImageHeading">
+                        <div>
+                            <strong id="demoImageHeading">Synthetic upload dataset</strong>
+                            <span>Select a file here for a manual form test. Scenario buttons select and upload their
+                                matching image automatically.</span>
+                        </div>
+                        <div id="demoImageList" class="demo-image-list"></div>
+                        <p id="imageSelectionMessage" class="form-message" role="status"></p>
+                    </section>
+                    <button class="primary-button" type="submit">Run preliminary assessment <span
+                            aria-hidden="true">→</span></button>
+                    <p id="formMessage" class="form-message" role="status"></p>
+                </form>
+            </section>
+
+            <section class="result-panel" aria-live="polite">
+                <div id="emptyResult" class="empty-state"><span>+</span>
+                    <h2>Your assessment will appear here</h2>
+                    <p>Enter a property or run a simulated scenario to generate the viability result, report, and
+                        operator workflow.</p>
+                    <div class="empty-steps"><span>Site evidence</span><span>Rules + calculations</span><span>Human
+                            review</span></div>
+                </div>
+                <div id="resultContent" hidden>
+                    <div class="panel-kicker">
+                        <span>Assessment layer</span>
+                        <strong>Result and operator decision</strong>
+                    </div>
+                    <div class="result-topline">
+                        <div><span id="recommendationTag" class="recommendation">Awaiting</span><span id="reviewTag"
+                                class="tag">AWAITING REVIEW</span></div>
+                        <a id="downloadReport" class="report-button" href="#" download>Download report</a>
+                    </div>
+                    <h2 id="resultTitle">Preliminary recommendation</h2>
+                    <p id="explanation" class="lead"></p>
+                    <section id="changeComparison" class="change-comparison" hidden>
+                        <h3>What changed after new evidence</h3>
+                        <div id="changeSummary"></div>
+                    </section>
+                    <div class="score-block">
+                        <div><span>Evidence completeness</span><strong id="completeness">0%</strong></div>
+                        <div class="meter"><span id="meterFill"></span></div>
+                        <p id="confidence"></p>
+                    </div>
+
+                    <div class="evidence-columns">
+                        <section>
+                            <h3>Supporting evidence</h3>
+                            <ul id="supporting"></ul>
+                        </section>
+                        <section>
+                            <h3>Constraints and risks</h3>
+                            <ul id="risks"></ul>
+                        </section>
+                    </div>
+                    <section class="missing-block">
+                        <h3>Missing information</h3>
+                        <ul id="missing"></ul>
+                    </section>
+                    <section>
+                        <h3>Required next actions</h3>
+                        <ol id="actions"></ol>
+                    </section>
+
+                    <section class="provider-block">
+                        <h3>Provider status</h3>
+                        <div id="providers" class="provider-grid"></div>
+                    </section>
+                    <section id="imageAnalysis" class="image-analysis" hidden>
+                        <h3>Uploaded image observations <span id="imageProviderStatus" class="tag sample"></span></h3>
+                        <div id="imageObservations" class="provider-grid"></div>
+                        <ul id="imageWarnings"></ul>
+                    </section>
+                    <section>
+                        <h3>Similar historical sites <span class="tag sample">WORKBOOK-DERIVED</span></h3>
+                        <div id="similarSites"></div>
+                    </section>
+
+                    <section id="financialLocked" class="downstream-gate">
+                        <span class="gate-number">06</span>
+                        <div>
+                            <h3>Financial projections</h3>
+                            <p>Available after the operator marks this project feasible.</p>
+                        </div>
+                        <span class="tag">LOCKED</span>
+                    </section>
+                    <section id="financialResult">
+                        <h3>Breakeven schedule</h3>
+                        <div class="financial-summary" id="financialSummary"></div>
+                        <div class="table-scroll">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Year</th>
+                                        <th>Production</th>
+                                        <th>Rate</th>
+                                        <th>Revenue</th>
+                                        <th>Balance</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="schedule"></tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="review-block">
+                        <span class="section-label">05 · Operator workflow</span>
+                        <h3>Human feasibility decision</h3>
+                        <p>The preliminary recommendation remains preserved. Accepting releases the project to the
+                            downstream financial and investor experience.</p>
+                        <form id="reviewForm">
+                            <label>Demo reviewer identity<input name="reviewer_identity" value="Hackathon reviewer"
+                                    required minlength="2"></label>
+                            <label>Operator disposition<select name="disposition" required>
+                                    <option value="">Select</option>
+                                    <option value="accept">Mark feasible</option>
+                                    <option value="request_information">Request more information</option>
+                                    <option value="reject">Mark not feasible</option>
+                                </select></label>
+                            <label>Recommendation correction <span class="tag sample">OPTIONAL</span><select
+                                    name="recommendation_override">
+                                    <option value="">No correction</option>
+                                    <option value="viable">Viable</option>
+                                    <option value="potentially_viable">Potentially viable</option>
+                                    <option value="not_viable">Not viable</option>
+                                    <option value="insufficient_information">Insufficient information</option>
+                                </select></label>
+                            <label>Required rationale<textarea name="rationale" required minlength="10" maxlength="4000"
+                                    rows="3"></textarea></label>
+                            <button class="secondary-button" type="submit">Record human determination</button>
+                            <p id="reviewMessage" class="form-message" role="status"></p>
+                        </form>
+                    </section>
+                    <section id="investorGate" class="investor-gate">
+                        <span class="section-label">06 · Downstream</span>
+                        <div>
+                            <h3 id="investorTitle">Investor experience locked</h3>
+                            <p id="investorMessage">A project becomes visible to investors after a feasible operator
+                                decision.</p>
+                        </div>
+                        <span id="investorTag" class="tag">PENDING REVIEW</span>
+                    </section>
+                    <section>
+                        <h3>Audit history</h3>
+                        <div id="auditHistory" class="timeline"></div>
+                    </section>
+                </div>
+            </section>
+        </div>
+    </main>
+    <script src="/static/app.js"></script>
+</body>
+
+</html>

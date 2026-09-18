@@ -1,0 +1,142 @@
+.result-panel [hidden] {
+    display: none !important;
+}
+
+.demo-scenarios {
+    margin: 0 0 26px;
+    padding: 16px;
+    border: 1px solid var(--amber);
+    background: #fff9e8;
+}
+
+.demo-scenarios h2 {
+    margin: 7px 0 3px;
+    font-size: 18px;
+}
+
+.demo-scenarios p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.demo-scenario-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 13px;
+}
+
+.demo-scenario {
+    min-width: 0;
+    padding: 10px;
+    text-align: left;
+    border: 1px solid var(--line);
+    background: var(--white);
+    color: var(--ink);
+    cursor: pointer;
+}
+
+.demo-scenario:hover,
+.demo-scenario:focus-visible {
+    border-color: var(--green);
+    outline: 2px solid transparent;
+}
+
+.demo-scenario:disabled {
+    opacity: 0.55;
+    cursor: wait;
+}
+
+.demo-scenario strong,
+.demo-scenario span,
+.demo-scenario small {
+    display: block;
+}
+
+.demo-scenario strong {
+    font-size: 12px;
+}
+
+.demo-scenario span {
+    margin: 3px 0 7px;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.demo-scenario small {
+    color: var(--green);
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.demo-scenarios .form-message {
+    margin-top: 10px;
+}
+
+.demo-image-picker {
+    margin: 0 0 18px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    background: var(--soft);
+}
+
+.demo-image-picker>div:first-child strong,
+.demo-image-picker>div:first-child span {
+    display: block;
+}
+
+.demo-image-picker>div:first-child span {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.demo-image-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.demo-image-button {
+    padding: 8px;
+    text-align: left;
+    border: 1px solid var(--line);
+    background: var(--white);
+    color: var(--ink);
+    cursor: pointer;
+}
+
+.demo-image-button:hover,
+.demo-image-button:focus-visible {
+    border-color: var(--green);
+}
+
+.demo-image-button strong,
+.demo-image-button span {
+    display: block;
+    font-size: 10px;
+}
+
+.demo-image-button span {
+    margin-top: 2px;
+    color: var(--muted);
+}
+
+.image-analysis {
+    margin-top: 20px;
+    padding: 14px;
+    border-left: 3px solid var(--amber);
+    background: #fff9e8;
+}
+
+@media (max-width: 700px) {
+    .demo-scenario-list {
+        grid-template-columns: 1fr;
+    }
+
+    .demo-image-list {
+        grid-template-columns: 1fr;
+    }
+}
