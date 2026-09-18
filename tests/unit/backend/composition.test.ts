@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   installSelectedStore,
   selectBackendStore,
@@ -240,5 +240,42 @@ describe("wiring a store into the endpoint", () => {
     const response = await getPortfolioRoute(request);
 
     expect(response.status).toBe(401);
+  });
+});
+
+describe("the in-memory store is one instance per process", () => {
+  /**
+   * Next.js compiles server components and route handlers into separate
+   * bundler layers with their own module registries, so a module-level `const`
+   * is constructed once per layer. That put two copies of the demo fixtures in
+   * one process: a site submitted through `POST /api/sites` landed in the route
+   * handler's copy, and the dashboard server component rendered the other and
+   * showed nothing new. `vi.resetModules` reproduces exactly that — a second
+   * evaluation of the same module — which is why the store is pinned to
+   * `globalThis` rather than held in module scope.
+   */
+  it("survives a second evaluation of the module", async () => {
+    const first = await import("@/backend/core/store");
+    vi.resetModules();
+    const second = await import("@/backend/core/store");
+
+    expect(second.memoryBackendStore).toBe(first.memoryBackendStore);
+  });
+
+  it("shows a write made through one module instance in the other", async () => {
+    const first = await import("@/backend/core/store");
+    vi.resetModules();
+    const second = await import("@/backend/core/store");
+
+    // Clone a seeded record rather than construct one, so this test does not
+    // have to track the shape of SiteRecord.
+    const [existing] = await first.memoryBackendStore.listSites();
+    expect(existing).toBeDefined();
+    const id = "00000000-0000-4000-8000-00000000beef";
+    await first.memoryBackendStore.addSite({ ...existing!, id });
+
+    await expect(second.memoryBackendStore.getSite(id)).resolves.toEqual(
+      expect.objectContaining({ id }),
+    );
   });
 });
