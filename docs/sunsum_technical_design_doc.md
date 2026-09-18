@@ -513,8 +513,29 @@ signed with HMAC-SHA256 over `SUNSUM_SESSION_SECRET`. The role is deliberately
 **not** in the token: it is read from the user row on every request, so a role
 that changes in the database takes effect immediately and a stolen cookie
 cannot claim a role it was never given. Sessions last eight hours. The cookie
-is `HttpOnly` so script cannot read it, `SameSite=Lax` so a cross-site form
-post cannot spend it, and `Secure` in production.
+is `HttpOnly` so script cannot read it, `Secure` in production, and
+`SameSite=Lax`.
+
+`SameSite=Lax` is a useful default but is not, on its own, the CSRF control,
+and the design does not treat it as one. It fails in two ways here. It is
+scoped to the *site* rather than the origin, so a sibling origin under the same
+registrable domain still has the cookie attached to a forged write. And it
+governs whether a cookie is *sent*, not whether one may be *set* — a cross-site
+form post to `/api/auth/demo-switch` still receives its `Set-Cookie`, which is
+login CSRF: an attacker can silently place a victim in a session of the
+attacker's choosing.
+
+Writes are therefore also checked at the origin. `Sec-Fetch-Site` is preferred,
+because a browser sets it and script cannot forge it; `same-origin` and `none`
+are allowed, anything else refused. Where that header is absent the `Origin`
+header is compared by host against `Host` — not against the request URL, since
+a reverse proxy need not agree with it on scheme or port. A request carrying
+*no* `Origin` is not a browser and is allowed, so server-to-server callers are
+unaffected; a literal `Origin: null`, which is what a sandboxed or
+`data:`-document request sends, is refused. Safe methods (`GET`, `HEAD`,
+`OPTIONS`) are exempt, and the two cookie-setting endpoints are checked even
+though no session exists yet, which is what closes the login-CSRF hole.
+A refusal is `403` with `code: forbidden_origin`.
 
 | Endpoint | Purpose |
 |---|---|

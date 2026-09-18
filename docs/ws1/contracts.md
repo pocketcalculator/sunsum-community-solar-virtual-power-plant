@@ -50,12 +50,17 @@ on WS1's behalf; flipping these rows to accepted is WS1's call.
 | ------------------------ | ------------------------------------------------------------------ | ------- |
 | Wire contract            | `docs/api/openapi.yaml` (21 operations) with `docs/api/README.md`   | 0.1.0   |
 | Demo data                | `src/backend/core/store` seed — five Atlanta/Chattanooga pilot sites, deterministic on process start | 0.1.0   |
-| Identity and permissions | `src/backend/README.md` role/disclosure model; `src/backend/handlers/identity` demo principals | 0.1.0   |
+| Identity and permissions | `src/backend/README.md` role/disclosure model; `src/backend/handlers/identity` session resolution | 0.1.0   |
 
-Known limitation carried by the identity gate: the MVP resolves a fixed demo
-principal per role and performs no authentication. Roles are chosen by route,
-never by caller-supplied input, so the disclosure tiers are still enforced —
-but this is a demo-role switch, not sign-in, and WS3 owns replacing it.
+Known limitation carried by the identity gate: every route now requires a
+signed `sunsum_session` cookie and answers `401 unauthenticated` without one,
+and cookie-authenticated writes are refused across sites, so the limitation is
+no longer "no authentication". What remains is that a session *starts* without
+a credential — `POST /auth/demo-switch` hands out one of three seeded
+identities to anyone who can reach it, gated only by `SUNSUM_DEMO_AUTH`. Roles
+are read from the user row, never from caller-supplied input, so the disclosure
+tiers are enforced; but this is still a demo sign-in, and WS3 owns replacing it
+with a real identity provider.
 
 Vocabulary translation between the WS1 charter ids (`site-owner`, `operator`,
 `financier`, and the seven journey stage ids) and the backend wire vocabulary

@@ -650,9 +650,11 @@ const SITE_ID = "11111111-2222-4333-8444-555555555555";
     investor: "operator",
   };
 
-  const ROUTES: ReadonlyArray<readonly [string, Route, Gate, "POST" | "GET"]> = [
+  const ROUTES: ReadonlyArray<
+    readonly [string, Route, Gate, "POST" | "PATCH" | "GET"]
+  > = [
     ["postSite", routes.postSiteRoute as Route, "site_owner", "POST"],
-    ["patchSite", routes.patchSiteRoute as Route, "site_owner", "POST"],
+    ["patchSite", routes.patchSiteRoute as Route, "site_owner", "PATCH"],
     ["postSiteSubmit", routes.postSiteSubmitRoute as Route, "site_owner", "POST"],
     ["getOwnerSites", routes.getOwnerSitesRoute as Route, "site_owner", "GET"],
     [
@@ -679,9 +681,9 @@ const SITE_ID = "11111111-2222-4333-8444-555555555555";
       "patchProjectVisibility",
       routes.patchProjectVisibilityRoute as Route,
       "operator",
-      "POST",
+      "PATCH",
     ],
-    ["patchProject", routes.patchProjectRoute as Route, "operator", "POST"],
+    ["patchProject", routes.patchProjectRoute as Route, "operator", "PATCH"],
     ["getPipeline", routes.getPipelineRoute as Route, "operator", "GET"],
     [
       "getProjectEngagements",
@@ -740,9 +742,14 @@ const SITE_ID = "11111111-2222-4333-8444-555555555555";
     return (response.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
   }
 
+  /**
+   * The method here is the route's real method, not a stand-in, so that each
+   * route is exercised the way it is actually dispatched. The cross-site guard
+   * is checked separately, against a real PATCH, further down.
+   */
   function call(
     route: Route,
-    method: "POST" | "GET",
+    method: "POST" | "PATCH" | "GET",
     cookie?: string,
   ): Promise<Response> {
     const request = new Request("https://sunsum.test/api/whatever", {
@@ -751,7 +758,7 @@ const SITE_ID = "11111111-2222-4333-8444-555555555555";
         "content-type": "application/json",
         ...(cookie === undefined ? {} : { cookie }),
       },
-      ...(method === "POST" ? { body: "{}" } : {}),
+      ...(method === "GET" ? {} : { body: "{}" }),
     });
     return Promise.resolve(
       route(request, { params: Promise.resolve({ id: SITE_ID }) }),
@@ -843,6 +850,7 @@ const SITE_ID = "11111111-2222-4333-8444-555555555555";
  * through, so a route cannot be added without it.
  */
 describe("a cookie-authenticated write from another site", () => {
+  const CROSS_SITE_ID = "11111111-2222-4333-8444-555555555555";
   let store: BackendStore;
   let previous: BackendStore;
   let cookie: string;
@@ -917,6 +925,31 @@ describe("a cookie-authenticated write from another site", () => {
     );
 
     expect(response.status).not.toBe(403);
+  });
+
+  /*
+   * PATCH, not POST, and deliberately so. The exemption in
+   * `rejectCrossSiteWrite` is expressed as a set of safe methods, so every
+   * unsafe method it does not name has to be proven guarded by an actual
+   * request. With only POST covered, adding PATCH to that set would keep this
+   * entire file green while leaving three endpoints open to a forged write.
+   */
+  it("is refused on a PATCH as well as a POST", async () => {
+    const response = (await routes.patchSiteRoute(
+      new Request(`https://sunsum.test/api/sites/${CROSS_SITE_ID}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "sec-fetch-site": "cross-site",
+        },
+        body: JSON.stringify({ name: "Renamed from elsewhere" }),
+      }),
+      { params: Promise.resolve({ id: CROSS_SITE_ID }) },
+    )) as Response;
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "forbidden_origin" });
   });
 
   /*

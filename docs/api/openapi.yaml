@@ -725,9 +725,14 @@ components:
         is configured but shorter than 32 characters — refused in every
         environment — or it is unset while running in production. Always
         `code: service_unavailable`. This is a deployment fault, not a caller
-        fault: retrying or signing in again will not clear it, and every
-        operation that requires a session answers this way until the secret is
-        configured.
+        fault: retrying will not clear it.
+
+        Only two kinds of request reach it. A request that *carries* a session
+        cookie, because the secret is needed to verify the signature; and
+        sign-in, because the secret is needed to mint one. A protected request
+        with no cookie is answered `401 unauthenticated` first and never
+        observes this condition, so a missing secret presents as "nobody can
+        sign in", not as "every endpoint is down".
       content:
         application/json:
           schema:
