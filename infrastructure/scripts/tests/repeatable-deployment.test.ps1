@@ -4,25 +4,45 @@ $PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
 $fixture = Join-Path ([System.IO.Path]::GetTempPath()) "sunsum-repeatable-$([guid]::NewGuid().ToString('N'))"
 $null = New-Item -ItemType Directory -Path $fixture
-$runner = Join-Path $PSScriptRoot '..\Deploy-Infrastructure.ps1'
+$scripts = Join-Path $fixture 'infrastructure/scripts'
+$configDirectory = Join-Path $fixture 'infrastructure/config'
+$templates = Join-Path $fixture 'infrastructure/templates'
+$null = New-Item -ItemType Directory -Path $scripts, $configDirectory, $templates -Force
+foreach ($name in @('Deploy-Infrastructure.ps1', 'DeploymentSafety.psm1', 'InfrastructureValidation.psm1')) {
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../$name") -Destination (Join-Path $scripts $name)
+}
+$runner = Join-Path $scripts 'Deploy-Infrastructure.ps1'
 $subscription = '11111111-1111-4111-8111-111111111111'
 $prefix = "/subscriptions/$subscription/resourceGroups/sample-group/providers/"
 $planId = "${prefix}Microsoft.Web/serverfarms/sample-plan"
 $siteId = "${prefix}Microsoft.Web/sites/sample-web"
 $storageId = "${prefix}Microsoft.Storage/storageAccounts/samplestorage"
-$arguments = @{
-    SubscriptionId = $subscription; ResourceGroupName = 'sample-group'; DeploymentName = 'repeatable-test'
-    TemplatePath = Join-Path $fixture 'template.json'; ParametersPath = Join-Path $fixture 'parameters.json'
-    ApprovalPath = Join-Path $fixture 'approval.json'; ApprovalReference = 'synthetic-review'
+$configPath = Join-Path $configDirectory 'dev.json'
+$runnerOptions = @{ BicepPath = 'Invoke-RepeatableTestCompiler' }
+$configuration = @{
+    subscriptionId=$subscription; resourceGroupName='sample-group'; deploymentName='repeatable-test'
+    templatePath='../templates/main.bicep'; parametersPath='../templates/main.bicepparam'
 }
-$state = @{ Mode = 'Create'; Calls = [System.Collections.Generic.List[string]]::new(); Snapshots = [System.Collections.Generic.List[string]]::new() }
+$state = @{
+    Mode='Create'; Calls=[System.Collections.Generic.List[string]]::new(); Snapshots=[System.Collections.Generic.List[string]]::new()
+    Compilations=0; TemplateJson='{"resources":[]}'; ParametersJson='{"parameters":{}}'
+}
 $global:RepeatableDeploymentTestContext = @{
-    State=$state; Arguments=$arguments; Subscription=$subscription; Prefix=$prefix
+    State=$state; Subscription=$subscription; Prefix=$prefix; Templates=$templates
     PlanId=$planId; SiteId=$siteId; StorageId=$storageId
 }
-function Write-Approval {
-    $record | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $arguments.ApprovalPath -Encoding utf8NoBOM
-    $arguments.ApprovalSha256 = (Get-FileHash -LiteralPath $arguments.ApprovalPath).Hash
+function global:Invoke-RepeatableTestCompiler {
+    $context=$global:RepeatableDeploymentTestContext
+    $state=$context.State
+    $state.Compilations++
+    $global:LASTEXITCODE=0
+    if ($args[0] -cne 'build-params' -or $args[1] -cne (Join-Path $context.Templates 'main.bicepparam') -or
+        $args[[array]::IndexOf($args, '--bicep-file') + 1] -cne (Join-Path $context.Templates 'main.bicep') -or
+        '--no-restore' -notin $args -or '--stdout' -notin $args) { throw 'Compiler must bind source and parameters without downloading modules.' }
+    if ($state.Mode -ceq 'compile-failure') { $global:LASTEXITCODE=1; return '' }
+    if ($state.Mode -ceq 'bad-compile-json') { return 'invalid-json' }
+    if ($state.Mode -ceq 'missing-compile-output') { return '{}' }
+    return (@{templateJson=$state.TemplateJson;parametersJson=$state.ParametersJson;templateSpecId=$null} | ConvertTo-Json -Compress)
 }
 function Assert-Blocked([scriptblock] $Action, [string] $Scenario, [bool] $NoCalls = $false) {
     $state.Calls.Clear()
@@ -34,7 +54,6 @@ function Assert-Blocked([scriptblock] $Action, [string] $Scenario, [bool] $NoCal
 function global:az {
     $context = $global:RepeatableDeploymentTestContext
     $state = $context.State
-    $arguments = $context.Arguments
     $subscription = $context.Subscription
     $prefix = $context.Prefix
     $planId = $context.PlanId
@@ -44,7 +63,19 @@ function global:az {
     $global:LASTEXITCODE = 0
     if ($args[0] -ceq 'appservice') {
         if ($state.Mode -ceq 'plan-read-failure') { $global:LASTEXITCODE = 1; return '' }
-        return (@{id=$planId;sku=@{name=$(if ($state.Mode -ceq 'existing-paid') {'B1'} else {'F1'});tier='Free'}} | ConvertTo-Json -Depth 4)
+        if ($args[[array]::IndexOf($args, '--ids') + 1] -cne $planId -or
+            $args[[array]::IndexOf($args, '--subscription') + 1] -cne $subscription) { throw 'Existing plan read used the wrong target.' }
+        $plan = @{id=$planId;sku=@{name='B1';tier='Basic'}}
+        switch ($state.Mode) {
+            'existing-wrong-sku' { $plan.sku.name='B2' }
+            'existing-free' { $plan.sku.name='F1';$plan.sku.tier='Free' }
+            'existing-wrong-tier' { $plan.sku.tier='Free' }
+            'existing-wrong-id' { $plan.id="$planId-other" }
+            'existing-boolean-sku' { $plan.sku.name=$true }
+            'existing-missing-sku' { $null=$plan.Remove('sku') }
+            'existing-malformed' { return 'invalid-json' }
+        }
+        return ($plan | ConvertTo-Json -Depth 4)
     }
     if (($args[0..1] -join ' ') -cne 'deployment group') { throw 'Unexpected Azure command in mock.' }
     foreach ($pair in @{ '--subscription'=$subscription; '--resource-group'='sample-group'; '--name'='repeatable-test'; '--mode'='Incremental' }.GetEnumerator()) {
@@ -52,9 +83,8 @@ function global:az {
     }
     foreach ($option in @('--template-file', '--parameters')) {
         $path = $args[[array]::IndexOf($args, $option) + 1].TrimStart('@')
-        $original = if ($option -ceq '--template-file') { $arguments.TemplatePath } else { $arguments.ParametersPath }
-        $expectedHash = if ($option -ceq '--template-file') { $arguments.TemplateSha256 } else { $arguments.ParametersSha256 }
-        if ($path -ceq $original -or (Get-FileHash -LiteralPath $path).Hash -cne $expectedHash) { throw 'Azure must consume the protected reviewed copy.' }
+        $expected = if ($option -ceq '--template-file') { $state.TemplateJson } else { $state.ParametersJson }
+        if ([System.IO.File]::ReadAllText($path) -cne $expected) { throw 'Azure must consume the same compiled bytes for preview and apply.' }
         $state.Snapshots.Add($path)
     }
     if ($args[2] -ceq 'create') {
@@ -78,9 +108,9 @@ function global:az {
         'Delete' { $changes[1].changeType='Delete' }
         'Ignore' { $changes[1].changeType='Ignore' }
         'Deploy' { $changes[1].changeType='Deploy' }
-        'missing' { $result.changes=@($changes[0],$changes[2],$changes[3]) }
+        'empty' { $result.changes=@() }
         'duplicate' { $changes[2].resourceId=$planId.ToUpperInvariant() }
-        'outside' { $changes[3].changeType='Modify' }
+        'outside' { $changes[3].changeType='Modify';$changes[3].resourceId=$changes[3].resourceId.Replace('sample-group','other-group') }
         'outside-delete' { $changes[3].changeType='Delete' }
         'outside-nochange' { $changes[3].changeType='NoChange' }
         'malformed' { $result.changes=@(@{changeType='NoChange'}) }
@@ -94,172 +124,94 @@ function global:az {
         'bad-plan-id' { $changes[1].after.properties.serverFarmId=$storageId }
         'masked-site' { $changes[1].after.properties='*******' }
         'cross-subscription' { $changes[1].after.properties.serverFarmId=$planId.Replace($subscription,'22222222-2222-4222-8222-222222222222') }
-        'snapshot-drift' { [System.IO.File]::WriteAllText($arguments.ApprovalPath, '{}') }
+        'snapshot-drift' { [System.IO.File]::WriteAllText($state.Snapshots[$state.Snapshots.Count - 1], '{}') }
+        'source-drift' { [System.IO.File]::WriteAllText((Join-Path $context.Templates 'main.bicep'), 'changed after compilation') }
     }
-    if ($state.Mode -in @('existing-plan','existing-paid','plan-read-failure')) { $changes[0].changeType='Ignore' }
+    if ($state.Mode.StartsWith('existing-') -or $state.Mode -ceq 'plan-read-failure') { $changes[0].changeType='Ignore' }
     return ($result | ConvertTo-Json -Depth 12 -Compress)
 }
 try {
-    '{"resources":[]}' | Set-Content -LiteralPath $arguments.TemplatePath -Encoding utf8NoBOM
-    '{"parameters":{}}' | Set-Content -LiteralPath $arguments.ParametersPath -Encoding utf8NoBOM
-    $arguments.TemplateSha256 = (Get-FileHash -LiteralPath $arguments.TemplatePath).Hash
-    $arguments.ParametersSha256 = (Get-FileHash -LiteralPath $arguments.ParametersPath).Hash
-    $record = @{
-        operation='DeployInfrastructure';subscriptionId=$subscription;resourceGroupName='sample-group';deploymentName='repeatable-test'
-        templateSha256=$arguments.TemplateSha256;parametersSha256=$arguments.ParametersSha256;approvalReference='synthetic-review'
-        resourceIds=@($planId,$siteId,$storageId)
-    }
-    Write-Approval
-    & $runner @arguments | Out-Null
-    if ($state.Calls.Count) { throw 'Default validation called Azure.' }
-    Assert-Blocked { & $runner @arguments -Preview -Apply } 'conflicting switches' $true
-    foreach ($mode in @('Create','Modify','mixed','NoChange','NoChange','outside-nochange')) {
+    $configuration | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+    Set-Content -LiteralPath (Join-Path $templates 'main.bicep') -Value "targetScope = 'resourceGroup'"
+    Set-Content -LiteralPath (Join-Path $templates 'main.bicepparam') -Value "using './main.bicep'"
+    if (Test-Path -LiteralPath (Join-Path $fixture '.azure')) { throw 'Fresh checkout test must start without generated files.' }
+    & $runner @runnerOptions | Out-Null
+    if ($state.Calls.Count -or $state.Compilations -ne 1) { throw 'Default must compile once without Azure.' }
+    $artifactRoot=Join-Path $fixture '.azure/dev/deployments'
+    if (@(Get-ChildItem -LiteralPath $artifactRoot -Recurse -Filter 'manifest.json').Count -ne 1) { throw 'Default did not generate artifacts.' }
+    Assert-Blocked { & $runner @runnerOptions -Preview -Apply } 'conflicting switches' $true
+    foreach ($mode in @('Create','Modify','mixed','NoChange','NoChange','outside-nochange','empty','existing-plan','source-drift')) {
         $state.Mode=$mode
         $state.Calls.Clear()
-        & $runner @arguments -Preview | Out-Null
+        & $runner @runnerOptions -Preview | Out-Null
         if (@($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count) { throw 'Preview performed a write.' }
         $state.Calls.Clear()
-        & $runner @arguments -Apply | Out-Null
+        $beforeApplyCompilation = $state.Compilations
+        & $runner @runnerOptions -Apply | Out-Null
+        if ($state.Compilations -ne $beforeApplyCompilation + 1) { throw 'Apply must compile once and deploy the exact previewed build.' }
         if (@($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count -ne 1) { throw "Repeatable scenario rejected: $mode" }
+        if ($state.Calls[$state.Calls.Count - 1] -notlike 'deployment group create *') { throw 'Apply must not add post-deployment Azure checks.' }
         foreach ($path in $state.Snapshots) { if (Test-Path -LiteralPath $path) { throw 'Snapshot was not cleaned up.' } }
     }
-    foreach ($mode in @('Delete','Ignore','Deploy','missing','duplicate','outside','outside-delete','malformed','no-changes','failed-status','diagnostics','error','paid-plan','boolean-plan','unknown-plan','bad-plan-id','masked-site','cross-subscription','read-failure','invalid-json','snapshot-drift')) {
+    foreach ($mode in @('Delete','Deploy','duplicate','outside','outside-delete','malformed','no-changes','failed-status','diagnostics','error','paid-plan','boolean-plan','unknown-plan','bad-plan-id','masked-site','cross-subscription','read-failure','invalid-json','snapshot-drift','existing-wrong-sku','existing-free','existing-wrong-tier','existing-wrong-id','existing-boolean-sku','existing-missing-sku','existing-malformed','plan-read-failure')) {
         $state.Mode=$mode
-        Assert-Blocked { & $runner @arguments -Apply } $mode
-        Write-Approval
+        Assert-Blocked { & $runner @runnerOptions -Apply } $mode
     }
-    $record.resourceIds=@($siteId,$storageId)
-    Write-Approval
-    $state.Mode='existing-plan'
-    & $runner @arguments -Apply | Out-Null
-    foreach ($mode in @('existing-paid','plan-read-failure')) {
+    foreach ($mode in @('compile-failure','bad-compile-json','missing-compile-output')) {
         $state.Mode=$mode
-        Assert-Blocked { & $runner @arguments -Apply } $mode
+        Assert-Blocked { & $runner @runnerOptions -Apply } $mode $true
     }
-    $record.resourceIds=@($planId,$siteId,$storageId)
-    $savedRecord=$record | ConvertTo-Json -Depth 8
-    foreach ($key in @('operation','subscriptionId','resourceGroupName','deploymentName','templateSha256','parametersSha256','approvalReference')) {
-        $record=$savedRecord | ConvertFrom-Json -AsHashtable
-        $record[$key]='different'
-        Write-Approval
-        Assert-Blocked { & $runner @arguments -Apply } "approval $key" $true
-    }
-    foreach ($scope in @(@(),@($planId,$planId.ToUpperInvariant()),@('*'),@("${prefix}Microsoft.Resources/deployments/nested"),@('/subscriptions/other/resourceGroups/other/providers/Microsoft.Web/sites/other'))) {
-        $record=$savedRecord | ConvertFrom-Json -AsHashtable
-        $record.resourceIds=$scope
-        Write-Approval
-        Assert-Blocked { & $runner @arguments -Apply } 'invalid scope' $true
-    }
-    $record=$savedRecord | ConvertFrom-Json -AsHashtable
-    Write-Approval
-    $originalTemplate = [System.IO.File]::ReadAllBytes($arguments.TemplatePath)
+    $state.Mode='Create'
     foreach ($nested in @(
         @{ mode='Incremental'; templateLink=@{uri='https://example.invalid/template.json'} },
         @{ mode='Incremental'; parametersLink=@{uri='https://example.invalid/parameters.json'}; template=@{resources=@()} },
         @{ mode='Complete'; template=@{resources=@()} }
     )) {
-        @{ resources=@(@{type='Microsoft.Resources/deployments';properties=$nested}) } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $arguments.TemplatePath -Encoding utf8NoBOM
-        $arguments.TemplateSha256=(Get-FileHash -LiteralPath $arguments.TemplatePath).Hash
-        $record.templateSha256=$arguments.TemplateSha256
-        Write-Approval
-        Assert-Blocked { & $runner @arguments -Apply } 'linked or complete nested template' $true
+        $state.TemplateJson=@{ resources=@(@{type='Microsoft.Resources/deployments';properties=$nested}) } | ConvertTo-Json -Depth 10
+        Assert-Blocked { & $runner @runnerOptions -Apply } 'linked or complete nested template' $true
     }
-    [System.IO.File]::WriteAllBytes($arguments.TemplatePath,$originalTemplate)
-    $arguments.TemplateSha256=(Get-FileHash -LiteralPath $arguments.TemplatePath).Hash
-    $record.templateSha256=$arguments.TemplateSha256
-    Write-Approval
-    foreach ($path in @($arguments.TemplatePath,$arguments.ParametersPath,$arguments.ApprovalPath)) {
-        $bytes=[System.IO.File]::ReadAllBytes($path)
-        try {
-            [System.IO.File]::AppendAllText($path,"`n")
-            Assert-Blocked { & $runner @arguments -Apply } 'hash drift' $true
-        } finally { [System.IO.File]::WriteAllBytes($path,$bytes) }
-    }
-    $devScripts = Join-Path $fixture 'infrastructure/scripts'
-    $devDirectory = Join-Path $fixture '.azure/dev'
-    $null = New-Item -ItemType Directory -Path $devScripts, $devDirectory -Force
-    foreach ($name in @('Deploy-DevInfrastructure.ps1', 'Deploy-Infrastructure.ps1', 'DeploymentSafety.psm1')) {
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../$name") -Destination (Join-Path $devScripts $name)
-    }
-    $devRunner = Join-Path $devScripts 'Deploy-DevInfrastructure.ps1'
-    $devPath = Join-Path $devDirectory 'deployment.json'
-    $state.Mode='Create'
-    Assert-Blocked { & $devRunner } 'missing dev config' $true
-    $devConfig = @{}
-    foreach ($entry in $arguments.GetEnumerator()) {
-        $key = $entry.Key.Substring(0, 1).ToLowerInvariant() + $entry.Key.Substring(1)
-        $devConfig[$key] = $entry.Value
-    }
-    $devConfig.TemplatePath = '../../template.json'
-    $devConfig.ParametersPath = '../../parameters.json'
-    $devConfig.ApprovalPath = '../../approval.json'
-    $devTarget = @{}
-    foreach ($key in @('subscriptionId', 'resourceGroupName', 'deploymentName')) {
-        $devTarget[$key] = $devConfig[$key]
-        $devConfig.Remove($key)
-    }
-    $targetDirectory = Join-Path $fixture 'infrastructure/templates'
-    $null = New-Item -ItemType Directory -Path $targetDirectory -Force
-    $targetPath = Join-Path $targetDirectory 'deployment.dev.json'
-    $devConfig | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
-    Assert-Blocked { & $devRunner } 'missing shared dev target' $true
-    $devTarget | ConvertTo-Json | Set-Content -LiteralPath $targetPath -Encoding utf8NoBOM
+    $state.TemplateJson='{"resources":[]}'
     Push-Location ([System.IO.Path]::GetTempPath())
     try {
         $state.Calls.Clear()
-        & $devRunner | Out-Null
-        if ($state.Calls.Count) { throw 'Default dev entry point called Azure.' }
-        & $devRunner -Preview | Out-Null
-        if (@($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count) { throw 'Dev preview performed a write.' }
-        $state.Calls.Clear()
-        & $devRunner -Apply | Out-Null
-        if (@($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count -ne 1) { throw 'Dev apply did not delegate exactly once.' }
-        Assert-Blocked { & $devRunner -Preview -Apply } 'conflicting dev switches' $true
+        & $runner @runnerOptions | Out-Null
+        if ($state.Calls.Count) { throw 'Default from another directory called Azure.' }
+        Remove-Item -LiteralPath $configPath
+        Assert-Blocked { & $runner @runnerOptions } 'missing dev config' $true
         foreach ($badConfig in @('{}', 'null', '[]', 'invalid-json')) {
-            Set-Content -LiteralPath $devPath -Value $badConfig -Encoding utf8NoBOM
-            Assert-Blocked { & $devRunner -Apply } 'malformed dev config' $true
+            Set-Content -LiteralPath $configPath -Value $badConfig -Encoding utf8NoBOM
+            Assert-Blocked { & $runner @runnerOptions -Apply } 'malformed dev config' $true
         }
-        foreach ($badValue in @('', '<reviewed-hash>', 123, $null)) {
-            $changed = $devConfig.Clone()
-            $changed.TemplateSha256 = $badValue
-            $changed | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
-            Assert-Blocked { & $devRunner -Apply } 'invalid dev config field' $true
+        foreach ($badValue in @('', '<source>', 123, $null, 'missing.bicep', 'compiled.json')) {
+            $changed = $configuration.Clone()
+            $changed.templatePath = $badValue
+            $changed | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+            Assert-Blocked { & $runner @runnerOptions -Apply } 'invalid dev config field' $true
         }
-        $changed = $devConfig.Clone()
+        $changed = $configuration.Clone()
         $changed.Apply = $true
-        $changed | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
-        Assert-Blocked { & $devRunner } 'config cannot enable apply' $true
-        $changed = $devConfig.Clone()
-        $changed.SubscriptionId = '22222222-2222-4222-8222-222222222222'
-        $changed | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
-        Assert-Blocked { & $devRunner -Apply } 'local dev target override' $true
-        $devConfig | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
+        $changed | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+        Assert-Blocked { & $runner @runnerOptions } 'config cannot enable apply' $true
         foreach ($key in @('subscriptionId', 'resourceGroupName', 'deploymentName')) {
-            $changedTarget = $devTarget.Clone()
-            $changedTarget[$key] = if ($key -ceq 'subscriptionId') { '22222222-2222-4222-8222-222222222222' } else { 'other-target' }
-            $changedTarget | ConvertTo-Json | Set-Content -LiteralPath $targetPath -Encoding utf8NoBOM
-            Assert-Blocked { & $devRunner -Apply } "shared target approval binding: $key" $true
+            $changedTarget = $configuration.Clone()
+            $changedTarget[$key] = 'invalid/value'
+            $changedTarget | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+            Assert-Blocked { & $runner @runnerOptions -Apply } "invalid target: $key" $true
         }
-        foreach ($badTarget in @('{}', '[]', 'null', 'invalid-json', '{"subscriptionId":true,"resourceGroupName":"sample-group","deploymentName":"repeatable-test"}')) {
-            Set-Content -LiteralPath $targetPath -Value $badTarget -Encoding utf8NoBOM
-            Assert-Blocked { & $devRunner -Apply } 'malformed shared target' $true
-        }
-        $devTarget | ConvertTo-Json | Set-Content -LiteralPath $targetPath -Encoding utf8NoBOM
-        $changed = $devConfig.Clone()
-        $changed.TemplateSha256 = '0' * 64
-        $changed | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
-        Assert-Blocked { & $devRunner -Apply } 'dev hash binding' $true
+        $configuration | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
     } finally { Pop-Location }
     $state.Mode='apply-failure'
     $state.Calls.Clear()
     $message=''
-    try { & $runner @arguments -Apply | Out-Null } catch { $message=$_.Exception.Message }
+    try { & $runner @runnerOptions -Apply | Out-Null } catch { $message=$_.Exception.Message }
     if ($message -notlike '*partial resources may exist*' -or @($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count -ne 1) {
         throw 'Failed apply did not stop without retry.'
     }
-    Write-Output 'Repeatable deployment checks passed: create/update/no-change, explicit scope, approval hashes, F1 checks and no retry.'
+    if ($state.Calls[$state.Calls.Count - 1] -notlike 'deployment group create *') { throw 'Failed apply must not add Azure calls after deployment.' }
+    Write-Output 'Repeatable deployment checks passed: source compilation, fresh checkout, create/update/no-change, snapshots, F1 creation and existing B1 checks, and no retry.'
 } finally {
     Remove-Item -LiteralPath Function:\az -Force
+    Remove-Item -LiteralPath Function:\Invoke-RepeatableTestCompiler -Force
     Remove-Variable -Name RepeatableDeploymentTestContext -Scope Global
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }

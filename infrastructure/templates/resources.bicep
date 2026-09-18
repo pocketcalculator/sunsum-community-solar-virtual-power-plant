@@ -8,12 +8,6 @@ param environmentName string
 param location string
 param appServicePlanName string
 param webAppName string
-@description('Existing is nonmutating: identity/settings/sign-in on an existing app are explicit separate steps. Create deploys the F1 plan and fixture-only web app; database activation is separate.')
-@allowed([
-  'Existing'
-  'Create'
-])
-param webAppMode string = 'Existing'
 param postgresServerName string
 @minLength(3)
 @maxLength(24)
@@ -24,6 +18,9 @@ param databaseName string = 'sunsum'
   'sunsum_runtime'
 ])
 param runtimeRoleName string = 'sunsum_runtime'
+
+/*
+Creation-only inputs are retained for restoring PostgreSQL provisioning later.
 @minLength(36)
 @maxLength(36)
 param tenantId string
@@ -52,13 +49,15 @@ param postgresStorageSizeGB int = 32
   '17'
 ])
 param postgresVersion string = '17'
+*/
 
 var tags = {
   environment: environmentName
   application: 'sunsum'
 }
 
-module postgres './postgres.bicep' = {
+/*
+module postgres './modules/postgres.bicep' = {
   name: 'postgres-${uniqueString(deployment().name)}'
   params: {
     location: location
@@ -75,8 +74,13 @@ module postgres './postgres.bicep' = {
     tags: tags
   }
 }
+*/
 
-module storage './storage.bicep' = {
+resource existingPostgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' existing = {
+  name: postgresServerName
+}
+
+module storage './modules/storage.bicep' = {
   name: 'storage-${uniqueString(deployment().name)}'
   params: {
     location: location
@@ -85,11 +89,7 @@ module storage './storage.bicep' = {
   }
 }
 
-resource existingWeb 'Microsoft.Web/sites@2024-04-01' existing = if (webAppMode == 'Existing') {
-  name: webAppName
-}
-
-module web './web.bicep' = if (webAppMode == 'Create') {
+module web './modules/web.bicep' = {
   name: 'web-${uniqueString(deployment().name)}'
   params: {
     location: location
@@ -101,14 +101,16 @@ module web './web.bicep' = if (webAppMode == 'Create') {
 }
 
 output AZURE_WEB_APP_NAME string = webAppName
-output AZURE_WEB_APP_URL string = webAppMode == 'Create' ? web!.outputs.url : 'https://${existingWeb!.properties.defaultHostName}'
-output AZURE_WEB_APP_PRINCIPAL_ID string = webAppMode == 'Create' ? web!.outputs.principalId : (existingWeb!.identity.?principalId ?? '')
-output AZURE_POSTGRES_SERVER_NAME string = postgres.outputs.name
+output AZURE_WEB_APP_URL string = web.outputs.url
+output AZURE_WEB_APP_PRINCIPAL_ID string = web.outputs.principalId
+// output AZURE_POSTGRES_SERVER_NAME string = postgres.outputs.name
+output AZURE_POSTGRES_SERVER_NAME string = existingPostgres.name
 output AZURE_STORAGE_ACCOUNT_NAME string = storageAccountName
 output AZURE_STORAGE_BLOB_ENDPOINT string = storage.outputs.blobEndpoint
 output SITE_DOCUMENTS_CONTAINER string = 'site-documents'
 output PROJECT_DOCUMENTS_CONTAINER string = 'project-documents'
-output PGHOST string = postgres.outputs.fqdn
+// output PGHOST string = postgres.outputs.fqdn
+output PGHOST string = existingPostgres.properties.fullyQualifiedDomainName
 output PGPORT string = '5432'
 output PGDATABASE string = databaseName
 output PGUSER string = runtimeRoleName

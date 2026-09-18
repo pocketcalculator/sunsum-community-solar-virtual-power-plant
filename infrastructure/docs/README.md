@@ -34,13 +34,13 @@ database. No orchestration framework is required.
 
 For reviewed create/update reruns, see
 [repeatable infrastructure deployment](app-service-postgres.md#repeatable-infrastructure-deployment).
-For dev, `pwsh -File infrastructure/scripts/Deploy-DevInfrastructure.ps1` reads
-the shared target from committed `infrastructure/templates/deployment.dev.json`
-and artifact paths, hashes and approval metadata from ignored
-`.azure/dev/deployment.json`; add `-Preview` for what-if or `-Apply` for separately
-authorized writes.
-That command accepts template-owned updates and no-change runs; the separate
-first-time provisioning command retains its resource-collision guards.
+`pwsh -File infrastructure/scripts/Deploy-Infrastructure.ps1` reads the single
+committed `infrastructure/config/dev.json` config by default and compiles its
+versioned Bicep and native parameter file. No prebuilt artifacts are required. Add `-Preview`
+for what-if or `-Apply` for separately authorized writes; no dev wrapper is needed.
+That command accepts template-owned updates and no-change runs. PostgreSQL and
+the plan are existing references for now; first-time creation is not part of this
+dev entry point.
 
 The separate [development deployment guide](deployment.md) records the existing
 Azure environment and its verified PostgreSQL-backed application deployment.
