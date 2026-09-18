@@ -169,6 +169,16 @@ export async function listMyEngagements(
   if (viewer.role !== "investor") {
     return failure("forbidden_role", "Only an investor can read their engagements.");
   }
+  /**
+   * The same completion gate the portfolio, funding-needs and deal-room reads
+   * apply. Without it `/me` reports `onboarded: false` while this endpoint
+   * still returns the caller's pipeline, and an investor whose onboarding was
+   * revoked would keep reading project names and stage transitions after
+   * every other investor-facing read had closed to them.
+   */
+  if (viewer.investor.onboardingCompletedAt === null) {
+    return failure("forbidden_tier", "Complete investor onboarding to read your engagements.");
+  }
   const projects = await store.listProjects();
   const items: EngagementPipelineItem[] = [];
   for (const project of projects) {

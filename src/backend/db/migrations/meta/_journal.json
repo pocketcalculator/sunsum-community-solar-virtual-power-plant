@@ -29,6 +29,13 @@
       "when": 1789664251863,
       "tag": "0003_project_site_accepted",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789751987481,
+      "tag": "0004_investor_updated_at",
+      "breakpoints": true
     }
   ]
 }

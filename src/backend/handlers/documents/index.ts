@@ -8,7 +8,7 @@ import {
 } from "../../core/documents";
 import { failure, ok, type Result } from "../../core/shared";
 import { demoBackendStore, type BackendStore } from "../../core/store";
-import { resolveDemoSiteOwner } from "../identity";
+import { resolveViewer } from "../identity";
 import {
   failureResponse,
   jsonResponse,
@@ -42,7 +42,9 @@ export async function postSiteDocumentRoute(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
-  return handlePostSiteDocument(request, resolveDemoSiteOwner(), (await context.params).id);
+  const viewer = await resolveViewer(request);
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handlePostSiteDocument(request, viewer.value, (await context.params).id);
 }
 
 export function parseDocumentCreate(body: JsonObject): Result<DocumentCreateInput> {

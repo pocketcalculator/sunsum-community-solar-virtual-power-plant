@@ -460,6 +460,14 @@ export const investors = pgTable(
      */
     onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
     createdAt: createdAt(),
+    /**
+     * A profile is upserted, not append-only: re-posting it rewrites the row
+     * in place. Without this column the store had to answer `updated_at` from
+     * `created_at`, so an edit reported the original creation time and the
+     * PostgreSQL store disagreed with the in-memory one. The two must stay
+     * indistinguishable.
+     */
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     check("investors_investor_type_check", oneOf(t.investorType, INVESTOR_TYPES)),
