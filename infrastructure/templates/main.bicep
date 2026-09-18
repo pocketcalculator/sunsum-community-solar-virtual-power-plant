@@ -54,7 +54,7 @@ param tags object = {
   env: 'dev'
 }
 
-module network 'network.bicep' = if (enablePrivateBlobAccess) {
+module network './modules/network.bicep' = if (enablePrivateBlobAccess) {
   name: 'sunsum-network'
   params: {
     location: location
@@ -70,7 +70,7 @@ module network 'network.bicep' = if (enablePrivateBlobAccess) {
   is declared below, against an existing reference, so neither template
   redefines what the other owns.
 */
-module storage 'storage.bicep' = {
+module storage './modules/storage.bicep' = {
   name: 'sunsum-storage'
   params: {
     storageAccountName: storageAccountName

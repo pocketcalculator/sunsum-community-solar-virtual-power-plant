@@ -21,16 +21,20 @@ describe("the bounded Azure preparation contract", () => {
     expect(read("package.json")).toContain('"db:migrate:azure"');
   });
 
-  it("leaves existing web resources and authentication unchanged by default", () => {
-    const core = read("infrastructure/templates/resources.bicep");
-    expect(core).toContain("param webAppMode string = 'Existing'");
-    expect(core).toContain("if (webAppMode == 'Create')");
+  it("always manages the dev web app while referencing PostgreSQL and the plan", () => {
+    const source = read("infrastructure/templates/resources.bicep");
+    const core = source.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+    expect(core).not.toMatch(/webAppMode|postgresMode|postgresAdminObjectId/u);
+    expect(core).toContain("module web './modules/web.bicep' = {");
+    expect(core).toContain("resource existingPostgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' existing = {");
+    expect(core).not.toContain("module postgres");
+    expect(source).toContain("module postgres './modules/postgres.bicep' = {");
     expect(core).not.toContain("web-sign-in.bicep");
     expect(core).not.toContain("storage-role-grants.bicep");
   });
 
   it("provides private LRS containers and an explicit policy-approved public-network choice", () => {
-    const storage = read("infrastructure/templates/storage.bicep");
+    const storage = read("infrastructure/templates/modules/storage.bicep");
     expect(storage).toContain("name: 'Standard_LRS'");
     expect(storage).toContain("accessTier: 'Hot'");
     expect(storage).toContain("allowSharedKeyAccess: false");
@@ -75,11 +79,20 @@ describe("the bounded Azure preparation contract", () => {
     ], { cwd: root, encoding: "utf8", timeout: 45_000 });
     expect(result).toContain("MVP access safety checks passed");
   }, 50_000);
-  it("keeps the root application on code-based F1 with no paid web fallback", () => {
-    const web = read("infrastructure/templates/web.bicep");
-    expect(web).toContain("name: 'F1'");
-    expect(web).toContain("tier: 'Free'");
-    expect(web).toContain("reserved: true");
+  it("reuses B1 for the temporary dev test without changing the F1 creation guard", () => {
+    const web = read("infrastructure/templates/modules/web.bicep");
+    expect(web).toContain("resource existingPlan 'Microsoft.Web/serverfarms@2024-04-01' existing = {");
+    expect(web).toContain("serverFarmId: existingPlan.id");
+    const deploy = read("infrastructure/scripts/Deploy-Infrastructure.ps1");
+    const validation = read("infrastructure/scripts/InfrastructureValidation.psm1");
+    expect(deploy).toContain("Assert-InfrastructureConfig $config");
+    expect(deploy).toContain("Assert-InfrastructureTemplate -Compiled $compiled -Inputs $inputs");
+    expect(deploy).toContain("Get-ValidatedInfrastructureChanges -Result $result");
+    expect(validation).toContain("$plan.sku.name -ine 'B1'");
+    expect(validation).toContain("$plan.sku.tier -ine 'Basic'");
+    expect(read("infrastructure/scripts/Deploy-AppServiceCode.ps1")).toContain("Assert-AppServiceFreePlan");
+    expect(validation).toContain("'F1'");
+    expect(validation).toContain("'Free'");
     expect(web).toContain("alwaysOn: false");
     expect(web).toContain("linuxFxVersion: 'NODE|22-lts'");
     expect(web).toContain("npm run start -- --hostname 0.0.0.0");
@@ -95,7 +108,7 @@ describe("the bounded Azure preparation contract", () => {
   });
 
   it("declares a fixture-only web host with database configuration kept in operator outputs", () => {
-    const web = read("infrastructure/templates/web.bicep");
+    const web = read("infrastructure/templates/modules/web.bicep");
     expect(web).toContain("httpsOnly: true");
     expect(web).toContain("ftpsState: 'Disabled'");
     expect(web).toContain("minTlsVersion: '1.2'");
@@ -113,7 +126,7 @@ describe("the bounded Azure preparation contract", () => {
   });
 
   it("keeps network approval separate from Entra-only PostgreSQL provisioning", () => {
-    const postgres = read("infrastructure/templates/postgres.bicep");
+    const postgres = read("infrastructure/templates/modules/postgres.bicep");
     expect(postgres).toContain("activeDirectoryAuth: 'Enabled'");
     expect(postgres).toContain("passwordAuth: 'Disabled'");
     expect(postgres).toContain("publicNetworkAccess: 'Enabled'");
@@ -136,7 +149,15 @@ describe("the bounded Azure preparation contract", () => {
     expect(result).toContain("checks passed");
   }, 50_000);
 
-  it("supports repeatable reviewed infrastructure deployment without Azure calls", () => {
+  it("compiles versioned dev sources and supports repeat deployments without Azure calls", () => {
+    const config = JSON.parse(read("infrastructure/config/dev.json"));
+    expect(config.templatePath).toBe("../templates/resources.bicep");
+    expect(config.parametersPath).toBe("../templates/resources.dev.bicepparam");
+    expect(Object.keys(config).sort()).toEqual([
+      "deploymentName", "parametersPath", "resourceGroupName", "subscriptionId", "templatePath",
+    ]);
+    expect(read("infrastructure/templates/resources.dev.bicepparam")).toContain("using './resources.bicep'");
+    expect(existsSync(join(root, "infrastructure/scripts/Deploy-DevInfrastructure.ps1"))).toBe(false);
     const result = execFileSync("pwsh", [
       "-NoProfile", "-NonInteractive", "-Command",
       runnerCommand("repeatable-deployment"),

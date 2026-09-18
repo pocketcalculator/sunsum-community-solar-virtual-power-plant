@@ -1,9 +1,0 @@
-{
-  "templatePath": "resources.compiled.json",
-  "templateSha256": "<reviewed-compiled-template-sha256>",
-  "parametersPath": "resources.parameters.json",
-  "parametersSha256": "<reviewed-parameters-sha256>",
-  "approvalPath": "deployment-approval.json",
-  "approvalSha256": "<reviewed-approval-sha256>",
-  "approvalReference": "<infrastructure-and-budget-review>"
-}

@@ -836,7 +836,8 @@ try {
     } elseif ($global:AzureCodeWrites -ne 1 -or $message -notlike 'Deployment did not report success*') { throw 'A denied ZIP replacement must leave only the verified snapshot for upload.' }
     if ($BicepPath) {
         foreach ($templateName in @('resources', 'web')) {
-            $templatePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\templates\$templateName.bicep"))
+            $relativePath = if ($templateName -ceq 'web') { 'modules/web.bicep' } else { 'resources.bicep' }
+            $templatePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../templates/$relativePath"))
             $compiledJson = & $BicepPath build $templatePath --no-restore --stdout
             if ($LASTEXITCODE -ne 0) { throw "Cannot compile $templateName." }
             $compiled = ($compiledJson -join "`n") | ConvertFrom-Json -AsHashtable
@@ -857,7 +858,9 @@ try {
             if ($roleParameter.allowedValues.Count -ne 1 -or $roleParameter.allowedValues[0] -cne 'sunsum_runtime' -or
                 $roleParameter.defaultValue -cne 'sunsum_runtime') { throw 'Compiled runtime-role allowlist must contain only sunsum_runtime.' }
             $templateParameters = @{}
-            foreach ($entry in $provisionParameters.parameters.GetEnumerator()) { $templateParameters[$entry.Key] = $entry.Value.value }
+            foreach ($entry in $provisionParameters.parameters.GetEnumerator()) {
+                if ($compiled.parameters.Contains($entry.Key)) { $templateParameters[$entry.Key] = $entry.Value.value }
+            }
             $relativeTemplate = [System.IO.Path]::GetRelativePath($fixture, $templatePath).Replace('\', '/')
             foreach ($roleName in @('omitted', 'sunsum_runtime', '') + $rejectedRoles) {
                 $null = $templateParameters.Remove('runtimeRoleName')
@@ -876,7 +879,7 @@ try {
             }
         }
         Write-Output 'Template guards passed: fixture-only web settings and nine root runtime-role parameter cases.'
-        $databaseTemplate = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\templates\postgres.bicep'))
+        $databaseTemplate = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\templates\modules\postgres.bicep'))
         $compiledJson = & $BicepPath build $databaseTemplate --no-restore --stdout
         if ($LASTEXITCODE -ne 0) { throw 'Cannot compile the PostgreSQL database-name guard.' }
         $compiled = ($compiledJson -join "`n") | ConvertFrom-Json -AsHashtable

@@ -8,8 +8,8 @@ are files. The row in `documents` is metadata; this is where the bytes go.
 - **Resource group** `rg-sunsum-solar-dev-centralus` (centralus)
 - **Subscription** `f941228c-d6df-4b2f-93e0-2221773d2ba1`
 - **Template** [`../templates/main.bicep`](../templates/main.bicep), which
-  composes [`storage.bicep`](../templates/storage.bicep) and
-  [`network.bicep`](../templates/network.bicep)
+  composes [`storage.bicep`](../templates/modules/storage.bicep) and
+  [`network.bicep`](../templates/modules/network.bicep)
 
 `storage.bicep` is shared with the App Service deployment workstream and owns
 the account itself. The document containers, the blob private endpoint and the

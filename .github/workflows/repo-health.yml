@@ -58,10 +58,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/compiled-bicep"
-          for template in infrastructure/templates/*.bicep; do
+          shopt -s globstar
+          for template in infrastructure/templates/**/*.bicep; do
+            relative="${template#infrastructure/templates/}"
+            mkdir -p "$RUNNER_TEMP/compiled-bicep/$(dirname "$relative")"
             "$RUNNER_TEMP/bicep" build "$template" --no-restore \
-              --outfile "$RUNNER_TEMP/compiled-bicep/$(basename "$template" .bicep).json"
+              --outfile "$RUNNER_TEMP/compiled-bicep/${relative%.bicep}.json"
           done
+          "$RUNNER_TEMP/bicep" build-params infrastructure/templates/resources.dev.bicepparam \
+            --bicep-file infrastructure/templates/resources.bicep --no-restore \
+            --outfile "$RUNNER_TEMP/compiled-bicep/resources.dev.parameters.json"
 
       - name: Evaluate firewall template input guards without Azure
         shell: pwsh

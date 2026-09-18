@@ -10,6 +10,20 @@ this directory. Keep environment-specific values outside committed templates.
 
 ## Development environment
 
+- `resources.bicep` is the dev infrastructure entry, with versioned inputs in
+  `resources.dev.bicepparam` and the Azure target in `../config/dev.json`.
+  It always manages the fixture-only web app and private Storage. PostgreSQL and
+  the App Service plan are existing references; no create/existing modes are used.
+- `modules/` holds `web.bicep`, `storage.bicep`, `network.bicep` and `postgres.bicep`.
+  These are invoked by parent templates rather than used as deployment entry points.
+  The PostgreSQL creation module is retained but is not called by the dev entry.
+- `resources.bicep` retains PostgreSQL creation-only parameters, its module call
+  and original output expressions as comments beside the active `existingPostgres`
+  reference. Restoring creation requires switching those blocks and supplying
+  the corresponding parameters, not toggling a deployment mode.
+- `modules/web.bicep` keeps the original plan-creation block commented out next
+  to `existingPlan`. To later enable creation, restore the block and update the
+  web resource's `serverFarmId` reference through a separately reviewed change.
 - `app-service.bicep` declares the App Service plan, web app, managed identity
   and application settings for the existing development environment.
 - `app-service.dev.bicepparam` contains the non-secret shared development values
@@ -25,23 +39,23 @@ identity details for the preparation workflow in ignored local configuration.
 
 | Template | Scope | Use |
 | --- | --- | --- |
-| `resources.bicep` | Resource group | Fixture-only Linux F1 App Service and separately billable Entra-only PostgreSQL in an existing group; database activation is separate. |
+| `resources.bicep` | Resource group | Fixture-only web app on an existing plan, private Storage and read-only reference to existing PostgreSQL. |
 | `postgres-firewall.bicep` | Resource group | Only approved individual IPv4 rules for an existing PostgreSQL server; no rules by default. |
-| `storage.bicep` | Resource group | Standard LRS Hot private containers, shared keys disabled; closed by default with explicit policy-approved authenticated-public mode. |
+| `main.bicep` | Resource group | Separate document-storage entry using Storage/network modules; its optional network path is not selected by dev config. |
 | `storage-role-grants.bicep` | Resource group | Separate administrator grant to the web identity at the two container scopes only. |
 | `web-sign-in.bicep` | Resource group | Explicit opt-in Easy Auth on an existing app; precreated workforce registration and nonempty approved-user/guest allowlist. |
 
-`web.bicep` and `postgres.bicep` are reusable core modules. The
-`resources.parameters.example.json` placeholders are intentionally not
-deployable. Copy them into ignored local configuration; never replace
-them with real environment/identity details in source control.
+`modules/web.bicep` and `modules/postgres.bicep` are reusable core modules. The
+`resources.parameters.example.json` is the preserved legacy creation example,
+not an input to the current dev root. Its placeholders are intentionally not
+deployable. The dev command uses `resources.dev.bicepparam` instead.
 
 Compile locally with `az bicep build --file <entry-point> --outfile <local-json>`.
 Use an ignored `.azure\artifacts\` output directory. Compilation makes no cloud
 changes and does not validate quotas, cost, directory membership or Azure
 policy. The web module has no implicit paid-tier fallback.
 
-`web.bicep` explicitly sets `SUNSUM_STORE=mock` and has no database parameters or
+`modules/web.bicep` explicitly sets `SUNSUM_STORE=mock` and has no database parameters or
 database app settings. The root retains `PG*` outputs for separate operator setup;
 app activation requires reviewed `DATABASE_URL`/`SUNSUM_DB_AUTH` settings and grants.
 Do not reapply the preparation template over an activated app to deploy code.
@@ -71,9 +85,10 @@ These exclusions implement this repository's policy, not an assertion that every
 accepted address is routable or approved. The wrapper still binds input to the
 reviewed target and approval record.
 
-The core template does not enforce first-time creation; that guard remains in
-the supported `Provision-Infrastructure.ps1` entry point, together with provider
-name-availability checks and exact existing-web target validation. Preflights
+The dev entry is reapplied using `Deploy-Infrastructure.ps1`; it generates local
+artifacts and uses Incremental mode rather than a first-time collision guard.
+The legacy `Provision-Infrastructure.ps1` expects a creation-capable root and
+is not an entry point for the current existing-resource dev composition. Preflights
 do not reserve names or make an ARM deployment transactional. A caller with direct
 Azure write permissions can submit a different template or direct resource write;
 enforcing restrictions against that caller requires separately managed Azure

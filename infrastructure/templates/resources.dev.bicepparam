@@ -1,0 +1,10 @@
+using './resources.bicep'
+
+param environmentName = 'dev'
+param location = 'centralus'
+param appServicePlanName = 'asp-sunsum-smoke-free'
+param webAppName = 'app-sunsum-dev-928e5e28'
+param storageAccountName = 'stsunsumdev928e5e28'
+param postgresServerName = 'db-sunsum-dev-centralus'
+param databaseName = 'sunsumsolardb'
+param runtimeRoleName = 'sunsum_runtime'

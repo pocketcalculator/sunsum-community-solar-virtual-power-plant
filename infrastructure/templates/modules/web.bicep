@@ -10,6 +10,8 @@ param webAppName string
 param blobEndpoint string
 param tags object = {}
 
+/*
+Plan creation is retained for a later change; dev currently reuses an existing plan.
 resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {
   name: planName
   location: location
@@ -24,6 +26,11 @@ resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {
     reserved: true
   }
 }
+*/
+
+resource existingPlan 'Microsoft.Web/serverfarms@2024-04-01' existing = {
+  name: planName
+}
 
 resource web 'Microsoft.Web/sites@2024-04-01' = {
   name: webAppName
@@ -34,7 +41,8 @@ resource web 'Microsoft.Web/sites@2024-04-01' = {
     type: 'SystemAssigned'
   }
   properties: {
-    serverFarmId: plan.id
+    // serverFarmId: plan.id
+    serverFarmId: existingPlan.id
     httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'NODE|22-lts'
