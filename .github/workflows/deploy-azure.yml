@@ -5,12 +5,10 @@ on:
     branches:
       - main
     paths:
-      - "infrastructure/**"
+      - "infrastructure/templates/**"
+      - ".github/workflows/deploy-azure.yml"
   workflow_dispatch:
     inputs:
-      approval_file:
-        description: "Path to the reviewed provisioning approval record"
-        required: true
       parameters_sha256:
         description: "SHA-256 of the reviewed parameter file recorded in the approval"
         required: true
@@ -31,19 +29,43 @@ permissions:
   id-token: write
   contents: read
 
+# Queue infrastructure runs so concurrent pushes cannot issue racing ARM
+# operations against the same resource group.
+concurrency:
+  group: deploy-azure-${{ github.workflow }}
+  cancel-in-progress: false
+
 env:
   TEMPLATE_FILE: infrastructure/templates/resources.bicep
-  PARAMETER_FILE: infrastructure/templates/resources.parameters.json
 
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The environment-specific parameter document is never committed; it is
+      # supplied as a reviewed secret and bound to the reviewed digest.
+      - name: Materialize reviewed parameter file
+        shell: bash
+        env:
+          PARAMETERS_JSON: ${{ secrets.AZURE_RESOURCES_PARAMETERS_JSON }}
+          PARAMETERS_SHA256: ${{ vars.AZURE_RESOURCES_PARAMETERS_SHA256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PARAMETERS_JSON" ] || [ -z "$PARAMETERS_SHA256" ]; then
+            echo "AZURE_RESOURCES_PARAMETERS_JSON and AZURE_RESOURCES_PARAMETERS_SHA256 are required." >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$PARAMETERS_JSON" > "$RUNNER_TEMP/resources.parameters.json"
+          printf '%s  %s\n' "${PARAMETERS_SHA256,,}" "$RUNNER_TEMP/resources.parameters.json" | sha256sum --check -
+          echo "PARAMETER_FILE=$RUNNER_TEMP/resources.parameters.json" >> "$GITHUB_ENV"
 
       - name: Azure Login
-        uses: azure/login@v2
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -73,13 +95,37 @@ jobs:
     needs: validate
 
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     environment: azure-infrastructure
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Both reviewed artifacts are supplied as secrets and verified against the
+      # digests recorded in the infrastructure review before any Azure write.
+      - name: Materialize reviewed parameter and approval records
+        shell: bash
+        env:
+          PARAMETERS_JSON: ${{ secrets.AZURE_RESOURCES_PARAMETERS_JSON }}
+          APPROVAL_JSON: ${{ secrets.AZURE_PROVISION_APPROVAL_JSON }}
+          PARAMETERS_SHA256: ${{ inputs.parameters_sha256 }}
+          APPROVAL_SHA256: ${{ inputs.approval_sha256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PARAMETERS_JSON" ] || [ -z "$APPROVAL_JSON" ]; then
+            echo "AZURE_RESOURCES_PARAMETERS_JSON and AZURE_PROVISION_APPROVAL_JSON are required." >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$PARAMETERS_JSON" > "$RUNNER_TEMP/resources.parameters.json"
+          printf '%s' "$APPROVAL_JSON" > "$RUNNER_TEMP/provision-approval.json"
+          printf '%s  %s\n' "${PARAMETERS_SHA256,,}" "$RUNNER_TEMP/resources.parameters.json" | sha256sum --check -
+          printf '%s  %s\n' "${APPROVAL_SHA256,,}" "$RUNNER_TEMP/provision-approval.json" | sha256sum --check -
+          echo "PARAMETER_FILE=$RUNNER_TEMP/resources.parameters.json" >> "$GITHUB_ENV"
+          echo "APPROVAL_FILE=$RUNNER_TEMP/provision-approval.json" >> "$GITHUB_ENV"
 
       - name: Azure Login
-        uses: azure/login@v2
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -90,7 +136,6 @@ jobs:
         env:
           SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           RESOURCE_GROUP_NAME: ${{ secrets.RESOURCE_GROUP_NAME }}
-          APPROVAL_FILE: ${{ inputs.approval_file }}
           PARAMETERS_SHA256: ${{ inputs.parameters_sha256 }}
           APPROVAL_SHA256: ${{ inputs.approval_sha256 }}
           APPROVAL_REFERENCE: ${{ inputs.approval_reference }}
