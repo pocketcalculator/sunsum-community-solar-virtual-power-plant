@@ -6,6 +6,33 @@ info:
   description: |
     Internal contract between `sumsum-api` (WS2) and the viability engine (WS4).
 
+    > ## 🛑 Status: overtaken by the implementation — do not integrate against this file
+    >
+    > This proposal has been answered. WS4 built the service on
+    > `origin/feature/preliminary-viability-mvp` (`prototypes/preliminary-viability-mvp/`,
+    > still unmerged, no PR opened), and it diverges from this document in three
+    > ways that matter to anyone reading it as a contract:
+    >
+    > | | This document | What was built |
+    > |---|---|---|
+    > | Create | `POST /assess` | `POST /assessments` → `201 Created` |
+    > | State | Stateless; "facts, not identifiers" | Persisted; `GET /assessments/{id}`, `/audit`, `/reviews`, `/feedback`, `/images` |
+    > | Surface | 2 operations | 16 routes, incl. HTML report and `GET /exports/reviewed.csv` |
+    >
+    > **WS2's own shipped client already follows the implementation, not this file.**
+    > `src/backend/viability/index.ts` (merged in #34) POSTs to `/assessments` and
+    > translates WS4's verdict vocabulary (`viable`, `potentially_viable`,
+    > `not_viable`, `insufficient_information`) into the three `VIABILITY_STATUSES`
+    > this document lists, via a `satisfies`-checked map so a new upstream verdict
+    > fails the build rather than reaching the database. The wire is aligned; only
+    > this document is behind.
+    >
+    > The body below is preserved as the original WS2 proposal, which is what §9.1's
+    > stateless framing was argued from. Reconciling the two — whether the service
+    > should be stateless as proposed, or whether this file should be rewritten to
+    > describe the resource that exists — is a WS2/WS4 decision that has not been
+    > taken yet, so nothing here has been silently rewritten to match.
+
     > ## ⚠️ This is a proposal, not a transcription
     >
     > `openapi.yaml` in this folder is *derived* from the design doc — every
