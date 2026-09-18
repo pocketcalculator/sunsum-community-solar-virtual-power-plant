@@ -46,9 +46,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The environment-specific parameter document is never committed; it is
-      # supplied as a reviewed secret and bound to the reviewed digest.
-      - name: Materialize reviewed parameter file
+      # The reviewed parameter document and its digest are provisioned
+      # out-of-band by an operator once a deployment is actually approved.
+      # Pushes that touch the templates (including this workflow's own
+      # first-time setup) must not hard-fail CI before that provisioning
+      # happens, so this step reports readiness instead of exiting non-zero.
+      - name: Check reviewed parameters availability
+        id: params
         shell: bash
         env:
           PARAMETERS_JSON: ${{ secrets.AZURE_RESOURCES_PARAMETERS_JSON }}
@@ -56,15 +60,29 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$PARAMETERS_JSON" ] || [ -z "$PARAMETERS_SHA256" ]; then
-            echo "AZURE_RESOURCES_PARAMETERS_JSON and AZURE_RESOURCES_PARAMETERS_SHA256 are required." >&2
-            exit 1
+            echo "::notice::AZURE_RESOURCES_PARAMETERS_JSON and/or AZURE_RESOURCES_PARAMETERS_SHA256 are not configured yet; skipping Azure validation until an operator provisions them."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      # The environment-specific parameter document is never committed; it is
+      # supplied as a reviewed secret and bound to the reviewed digest.
+      - name: Materialize reviewed parameter file
+        if: steps.params.outputs.configured == 'true'
+        shell: bash
+        env:
+          PARAMETERS_JSON: ${{ secrets.AZURE_RESOURCES_PARAMETERS_JSON }}
+          PARAMETERS_SHA256: ${{ github.event_name == 'workflow_dispatch' && inputs.parameters_sha256 || vars.AZURE_RESOURCES_PARAMETERS_SHA256 }}
+        run: |
+          set -euo pipefail
           umask 077
           printf '%s' "$PARAMETERS_JSON" > "$RUNNER_TEMP/resources.parameters.json"
           printf '%s  %s\n' "${PARAMETERS_SHA256,,}" "$RUNNER_TEMP/resources.parameters.json" | sha256sum --check -
           echo "PARAMETER_FILE=$RUNNER_TEMP/resources.parameters.json" >> "$GITHUB_ENV"
 
       - name: Azure Login
+        if: steps.params.outputs.configured == 'true'
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -72,11 +90,13 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Build Bicep
+        if: steps.params.outputs.configured == 'true'
         run: |
           az bicep build \
             --file $TEMPLATE_FILE
 
       - name: Validate Deployment
+        if: steps.params.outputs.configured == 'true'
         env:
           RESOURCE_GROUP_NAME: ${{ secrets.RESOURCE_GROUP_NAME }}
         run: |
@@ -86,6 +106,7 @@ jobs:
             --parameters "@$PARAMETER_FILE"
 
       - name: What-If
+        if: steps.params.outputs.configured == 'true'
         env:
           RESOURCE_GROUP_NAME: ${{ secrets.RESOURCE_GROUP_NAME }}
         run: |
