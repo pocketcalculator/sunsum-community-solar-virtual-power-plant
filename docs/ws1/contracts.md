@@ -48,9 +48,28 @@ on WS1's behalf; flipping these rows to accepted is WS1's call.
 
 | Gate                     | Artifact                                                           | Version |
 | ------------------------ | ------------------------------------------------------------------ | ------- |
-| Wire contract            | `docs/api/openapi.yaml` (21 operations) with `docs/api/README.md`   | 0.1.0   |
+| Wire contract            | `docs/api/openapi.yaml` (27 operations) with `docs/api/README.md`   | 0.1.1   |
 | Demo data                | `src/backend/core/store` seed — five Atlanta/Chattanooga pilot sites, deterministic on process start | 0.1.0   |
 | Identity and permissions | `src/backend/README.md` role/disclosure model; `src/backend/handlers/identity` session resolution | 0.1.0   |
+| Export                   | `GET /export` — role-aware JSON or CSV download, composed from the reads each role already has | 0.1.1   |
+
+The wire contract moves to 0.1.1 with `GET /export`. It is an addition, not a
+change: no existing operation, field or status was altered, so a client written
+against 0.1.0 is unaffected.
+
+`GET /export` answers WS1's auto-export requirement. Two properties are worth
+carrying into the canonical contract rather than rediscovering later:
+
+- **It composes, it does not re-query.** The bundle is built from
+  `getOwnerSites`, `getPortfolio` with `getDealRoom`, and `getPipeline` with
+  `getSubmissionDetail`. A change to a disclosure tier therefore reaches the
+  export automatically, and the export cannot become a second, weaker copy of
+  the visibility rules.
+- **Documents are a manifest, not bytes.** `content_url` is null whenever the
+  caller has no route to the content, which is *always* for an investor —
+  tier-1 content delivery is the §7.6 short-lived-SAS design and is not built.
+  This also keeps the export working while object storage is unreachable, which
+  it currently is on the deployed environment.
 
 Known limitation carried by the identity gate: every *protected* route now
 requires a signed `sunsum_session` cookie and answers `401 unauthenticated`
