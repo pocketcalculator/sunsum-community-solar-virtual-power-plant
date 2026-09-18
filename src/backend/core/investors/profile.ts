@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { InvestorProfile, Viewer, ViewerIdentity } from "../identity";
 import { FUNDING_STAGES, type FundingStage } from "../projects";
 import { failure, ok, type Result } from "../shared";
@@ -104,7 +103,7 @@ export async function upsertMyInvestorProfile(
   const existing = await store.getInvestorProfileByUserId(viewer.userId);
   const now = new Date().toISOString();
   const profile: InvestorProfile = {
-    id: existing?.id ?? randomUUID(),
+    id: existing?.id ?? store.nextId("investor"),
     userId: viewer.userId,
     organizationName: input.organizationName,
     investorType: input.investorType,

@@ -184,20 +184,30 @@ ON CONFLICT (id) DO UPDATE
 -- Onboarded, so the portfolio guard in section 7.7 lets this viewer through.
 -- The stage focus includes `permanent`, which is exactly the value that cannot
 -- be expressed if funding stages and project stages are treated as one list.
+--
+-- `updated_at` is named explicitly and pinned to the same fixed timestamp the
+-- in-memory fixture uses. The column defaults to `now()`, so leaving it out
+-- would seed a moving value here while the mock stays at 2026-09-01, and the
+-- two stores would answer `GET /investors/me/profile` differently — the exact
+-- divergence the store-parity contract exists to prevent. It is also restored
+-- on re-seed, alongside every other field this statement resets, so a reseeded
+-- demo returns to a known state instead of carrying an edit's timestamp on
+-- otherwise-seed content.
 -- ---------------------------------------------------------------------------
 
 INSERT INTO investors (id, user_id, organization_name, investor_type, capital_type,
                        funding_stage_focus, ticket_size_min, ticket_size_max, geographies,
-                       onboarding_completed_at, created_at) VALUES
+                       onboarding_completed_at, created_at, updated_at) VALUES
   ('4d7a2c91-8e56-43bf-9a10-5c6d2f7b8e34', '91e3b7c4-2d65-4a08-bf19-7c5e0a6d3b82',
    'Southeast Community Solar Fund', 'impact_investor', 'concessionary_debt',
    '["pre_development","development","permanent"]', 25000, 1000000, '["GA","TN"]',
-   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')
+   '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
   SET organization_name = EXCLUDED.organization_name, investor_type = EXCLUDED.investor_type,
       capital_type = EXCLUDED.capital_type, funding_stage_focus = EXCLUDED.funding_stage_focus,
       ticket_size_min = EXCLUDED.ticket_size_min, ticket_size_max = EXCLUDED.ticket_size_max,
-      geographies = EXCLUDED.geographies, onboarding_completed_at = EXCLUDED.onboarding_completed_at;
+      geographies = EXCLUDED.geographies, onboarding_completed_at = EXCLUDED.onboarding_completed_at,
+      updated_at = EXCLUDED.updated_at;
 
 -- ---------------------------------------------------------------------------
 -- Documents

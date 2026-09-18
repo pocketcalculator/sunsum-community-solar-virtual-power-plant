@@ -163,19 +163,29 @@ describe.skipIf(!databaseUrl)("the PostgreSQL store matches the mock", () => {
     if (existing === null) return;
 
     const edited = new Date(Date.now() + 1_000).toISOString();
-    await store.upsertInvestorProfile({
-      ...existing,
-      organizationName: `${existing.organizationName} (edited)`,
-      updatedAt: edited,
-    });
 
-    const reread = await store.getInvestorProfileByUserId(investor.userId);
+    /*
+     * This is the one test here that writes, and it writes to the shared seed.
+     * The restore therefore has to run even when an assertion throws, or a
+     * failure would leave `(edited)` behind and every later `npm run test:db`
+     * would start from corrupted demo data — turning one red test into a red
+     * suite that no longer describes the code.
+     */
+    try {
+      await store.upsertInvestorProfile({
+        ...existing,
+        organizationName: `${existing.organizationName} (edited)`,
+        updatedAt: edited,
+      });
 
-    expect(reread?.updatedAt).toBe(edited);
-    expect(reread?.updatedAt).not.toBe(reread?.createdAt);
-    expect(reread?.createdAt).toBe(existing.createdAt);
+      const reread = await store.getInvestorProfileByUserId(investor.userId);
 
-    await store.upsertInvestorProfile(existing);
+      expect(reread?.updatedAt).toBe(edited);
+      expect(reread?.updatedAt).not.toBe(reread?.createdAt);
+      expect(reread?.createdAt).toBe(existing.createdAt);
+    } finally {
+      await store.upsertInvestorProfile(existing);
+    }
   });
 });
 

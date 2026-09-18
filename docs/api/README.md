@@ -43,7 +43,13 @@ rules.
 > reach it can become any of the three demo users. It is therefore opt-in per
 > deployment (`SUNSUM_DEMO_AUTH=enabled`) and is the one endpoint a real
 > identity provider replaces. Cookies are `HttpOnly`, `SameSite=Lax`, and
-> `Secure` in production; `SameSite=Lax` is the CSRF defence for writes.
+> `Secure` in production. `SameSite=Lax` is only a partial CSRF mitigation:
+> it is scoped to the *site*, not the origin, so a sibling origin under the
+> same registrable domain still has the cookie attached to a forged write, and
+> it does not stop a cross-site POST from *starting* a session in the first
+> place. Cookie-authenticated writes are therefore also checked against
+> `Sec-Fetch-Site`, falling back to `Origin`; a cross-site write is refused
+> with `403` and `code: forbidden_origin`.
 
 The in-memory store is shared across routes so accepted projects can become
 visible in `GET /portfolio`. It is a demo persistence seam, not production

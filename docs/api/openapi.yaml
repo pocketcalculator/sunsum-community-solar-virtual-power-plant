@@ -740,12 +740,19 @@ components:
             $ref: "#/components/schemas/Error"
     Forbidden:
       description: |
-        The caller is authenticated but not allowed. Covers four distinct cases,
+        The caller is not allowed. Four cases concern authorization, and are
         distinguished by `code`: wrong role for the endpoint, right role but not
         the owner of this record, right role but an insufficient disclosure tier
         (§7.7), or an investor who has not completed onboarding and so has no
-        mandate to authorize against. Compare 401, which means no valid session
-        at all.
+        mandate to authorize against.
+
+        A fifth case is not about authorization at all. On writes, a request
+        that carries a session cookie but originates from another site is
+        refused with `code: forbidden_origin` before identity is considered, so
+        clients must not read a 403 as a role or ownership failure without
+        checking `code`. See `CrossSiteRefused`.
+
+        Compare 401, which means no valid session at all.
       content:
         application/json:
           schema:
