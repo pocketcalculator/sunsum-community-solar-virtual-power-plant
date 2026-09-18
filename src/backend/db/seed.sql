@@ -231,7 +231,7 @@ ON CONFLICT (id) DO UPDATE
 INSERT INTO documents (id, site_id, blob_path, original_filename, content_type, size_bytes,
                        doc_type, uploaded_by_user_id, created_at) VALUES
   ('d0c00000-0000-4000-8000-000000000001', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01',
-   'owner-private/owners/7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40/sites/8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01/electricity_bill/d0c00000-0000-4000-8000-000000000001/electricity-bill.pdf',
+   'site-documents/owners/7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40/sites/8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01/electricity_bill/d0c00000-0000-4000-8000-000000000001/electricity-bill.pdf',
    'electricity-bill.pdf', 'application/pdf', 184320,
    'electricity_bill', '7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE
@@ -240,7 +240,7 @@ ON CONFLICT (id) DO UPDATE
 INSERT INTO documents (id, site_id, blob_path, original_filename, content_type, size_bytes,
                        doc_type, disclosure_class, uploaded_by_user_id, created_at) VALUES
   ('d0c00000-0000-4000-8000-000000000002', '8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01',
-   'investor-tier-1/owners/7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40/sites/8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01/site_summary/d0c00000-0000-4000-8000-000000000002/site-summary.pdf',
+   'project-documents/owners/7a1f4e58-6b2c-4d91-8e30-1c5a7b9d2f40/sites/8a2c4d10-5e6f-4b7a-8c9d-0e1f2a3b4c01/site_summary/d0c00000-0000-4000-8000-000000000002/site-summary.pdf',
    'site-summary.pdf', 'application/pdf', 96256,
    'site_summary', 'investor_tier_1', '2c8d6f10-9a34-4b57-a1e2-6f0c3d8b5a71', '2026-09-01T00:00:00Z')
 ON CONFLICT (id) DO UPDATE

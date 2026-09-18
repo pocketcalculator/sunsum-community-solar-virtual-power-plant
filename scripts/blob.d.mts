@@ -10,7 +10,7 @@
 
 /** A `documents` row read out of `src/backend/db/seed.sql`. */
 export interface SeededDocument {
-  /** Container-qualified: `owner-private/owners/{ownerId}/...`. */
+  /** Container-qualified: `site-documents/owners/{ownerId}/...`. */
   readonly blobPath: string;
   readonly filename: string;
   readonly contentType: string;

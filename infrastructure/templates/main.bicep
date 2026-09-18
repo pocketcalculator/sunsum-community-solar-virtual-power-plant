@@ -83,38 +83,22 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' existing 
   name: storageAccountName
 }
 
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2024-01-01' existing = {
-  parent: storageAccount
-  name: 'default'
-}
-
 /*
-  One container per disclosure class, matching DOCUMENT_CONTAINERS in
-  src/backend/core/documents/storage.ts.
+  The document containers are created by ./modules/storage.bicep, which owns
+  the storage account and declares `site-documents` and `project-documents`
+  alongside it.
 
-  The application already enforces disclosure on every read. Splitting the
-  containers puts a second boundary underneath that check: a credential scoped
-  to investor-tier-1 cannot name a blob in owner-private at all, so an
-  authorization bug in the application cannot by itself expose an owner's
-  electricity bill.
+  This template previously declared a second pair — `owner-private` and
+  `investor-tier-1` — so a deployment produced four containers on one account
+  and left two naming schemes live at once. The backend maps its disclosure
+  classes onto the module's two names (DOCUMENT_CONTAINERS in
+  src/backend/core/documents/storage.ts), so those are the ones that exist.
+
+  The split still carries the access boundary it always did: the application
+  enforces disclosure on every read, and separate containers put a second,
+  coarser boundary underneath that check, since a credential scoped to one
+  container cannot name a blob in the other.
 */
-var documentContainerNames = [
-  'owner-private'
-  'investor-tier-1'
-]
-
-resource documentContainers 'Microsoft.Storage/storageAccounts/blobServices/containers@2024-01-01' = [
-  for name in documentContainerNames: {
-    parent: blobService
-    name: name
-    properties: {
-      publicAccess: 'None'
-    }
-    dependsOn: [
-      storage
-    ]
-  }
-]
 
 // Storage Blob Data Contributor. Built-in role ids are constant across clouds.
 var blobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
@@ -233,7 +217,7 @@ resource vnetIntegration 'Microsoft.Web/sites/networkConfig@2023-12-01' = if (en
 
 output storageAccountName string = storageAccountName
 output blobEndpoint string = storage.outputs.blobEndpoint
-output containerNames array = documentContainerNames
+output containerNames array = ['site-documents', 'project-documents']
 output privateBlobAccessEnabled bool = enablePrivateBlobAccess
 
 @description('Empty until the App Service is given a managed identity. That is the one step this template cannot take, because identity is a property of the site.')

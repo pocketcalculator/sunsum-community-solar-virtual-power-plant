@@ -106,7 +106,7 @@ describe("seeded document list", () => {
 
   it("reads a fully qualified path, a positive size and a content type for each", () => {
     for (const document of documents) {
-      expect(document.blobPath).toMatch(/^(owner-private|investor-tier-1)\/owners\//);
+      expect(document.blobPath).toMatch(/^(site-documents|project-documents)\/owners\//);
       expect(document.sizeBytes).toBeGreaterThan(0);
       expect(Number.isInteger(document.sizeBytes)).toBe(true);
       expect(document.contentType).toBe("application/pdf");
@@ -121,7 +121,7 @@ describe("seeded document list", () => {
    */
   it("covers both disclosure containers, so the demo has one of each", () => {
     const containers = new Set(documents.map((item) => item.blobPath.split("/")[0]));
-    expect([...containers].sort()).toEqual(["investor-tier-1", "owner-private"]);
+    expect([...containers].sort()).toEqual(["project-documents", "site-documents"]);
   });
 
   it("can build a placeholder for every row it found", () => {
