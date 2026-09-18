@@ -89,6 +89,8 @@ export {
   type SubmissionQuery,
   type SubmissionStatus,
   type SubmissionSummary,
+  type ViabilityAssessmentInput,
+  type ViabilityAssessmentResult,
   type ViabilityClient,
 } from "./sites";
 export {
