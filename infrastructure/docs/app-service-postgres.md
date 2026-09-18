@@ -2,9 +2,12 @@
 
 ## Status and boundaries
 
-The current dev workflow is [source-driven and repeatable](#repeatable-infrastructure-deployment).
-It manages the web app and private Storage while referencing an existing plan
-and PostgreSQL server. Database/plan creation is deferred; there is no mode switch.
+Use the [deployment guide](deployment.md#infrastructure-deployment) for the
+normal source-driven infrastructure commands, including updates and reruns.
+It manages a Linux B1/Basic plan, web app, private Storage and a new Entra-only
+PostgreSQL server with an empty database. All top-level resources use test names
+in the existing resource group; no existing data or grants are copied. There is
+no creation-mode switch.
 The first-time creation procedure below is historical and is not the dev entry.
 
 **Preparation only.** The templates and scripts have local validation, not a
@@ -16,28 +19,31 @@ database connection. A successful homepage response is not a database check.
 The [approved design](../../docs/sunsum_technical_design_doc.md#3-technology-stack)
 uses **Bicep and Azure CLI**, with no orchestration framework. Azure hosts the existing root
 Next.js app as **Linux App Service code**, not a customer container image. The
-new-plan definition remains **F1**. The temporary dev infrastructure test has an
-explicit exception to reuse an existing **B1/Basic** plan without changing its tier;
-this does not authorize creating or upgrading a paid plan. There is no ACR, Container Apps, Azurite, Fabric, Key
+dev plan is explicitly **B1/Basic** for this experiment after the target resource
+group rejected Linux F1 creation. B1 is billable; there is no automatic tier
+fallback. Distinct plan and app names leave the previous B1 resources untouched.
+There is no ACR, Container Apps, Azurite, Fabric, Key
 Vault, Application Insights, or Log Analytics resource in this foundation.
 The Storage account is Standard LRS, StorageV2, Hot, with private
 `site-documents` and `project-documents` containers. Shared-key access and
 anonymous Blob access are disabled.
 
-Existing-site provisioning and code deployment read the named site's
+The separate legacy provisioning and code-deployment commands read the named site's
 `serverFarmId`, then inspect that linked plan by resource ID. Both require
 `sku.name=F1` and `sku.tier=Free` before deployment; missing, unreadable, malformed
 or paid plans stop the operation. The operator needs read access to the linked
 plan, including when it is in another resource group in the same subscription.
 Neither command changes the plan or offers a paid-tier bypass. This is a
 preflight, not a lock against concurrent Azure configuration changes; serialize
-plan changes during deployment. The dev entry never changes the referenced plan.
+plan changes during deployment. These unchanged F1 guards reject the new B1 app;
+supporting code deployment to it requires a separate reviewed change. The dev
+infrastructure entry owns only its explicitly named B1 plan.
 
 | Surface | Preparation status | Deployment/application gate |
 | --- | --- | --- |
-| F1 site/plan and system identity | Bicep ready for explicit new-site creation | Existing-site identity/settings are separate, reviewed CLI changes; no live change by this PR |
-| Existing PostgreSQL reference | Server name/FQDN are returned as operator outputs | No database, administrator, authentication or firewall writes in the dev entry |
-| Storage/private containers | Bicep ready, network closed by default | Tenant-approved authenticated public endpoint needed for same-region F1; container RBAC needs an authorized administrator |
+| B1 site/plan and system identity | Bicep prepared for explicitly requested paid-tier creation | Confirm charges, quota and policy; compilation is not proof of deployment |
+| New PostgreSQL test server/database | Creation module configures Entra-only authentication, the selected administrator, TLS and an empty database | Confirm separate compute/storage budget and permissions; no firewall allowances, SQL runtime grants or schema migrations |
+| Storage/private containers | Bicep ready, network closed by default | Network access remains a separate approval; B1 alone adds no VNet integration or container RBAC |
 | Approved internal/guest sign-in | Separate opt-in `authsettingsV2` template and guards ready | Precreated workforce Web registration, code-flow credential, enterprise-app assignments and named participants required |
 | Application user/role mapping | **NOT IMPLEMENTED** | Easy Auth gate/claims do not replace fixed demo owner/operator/investor identities or implement business authorization |
 | Blob upload/download service | **NOT IMPLEMENTED** | Container role grants do not implement per-site/project document access or browser upload paths |
@@ -74,6 +80,9 @@ to upgrade it. See [PostgreSQL pricing](https://azure.microsoft.com/pricing/deta
 
 The user approved the proposed MVP budget, **not deployments**. Public USD retail
 rates observed for Central US, assuming 730 running hours per month:
+
+These historical assumptions predate the explicit B1 experiment. The $0 web-plan
+row does not apply to the new dev plan; confirm current B1 pricing before deployment.
 
 | Item | Retail assumption | Approximate charge before extras |
 | --- | --- | --- |
@@ -146,7 +155,11 @@ deployment does **not** require an Owner to repeat these administrator steps.
 Approved application participants require no Azure subscription/RG roles.
 
 The shared non-secret dev target is versioned in `infrastructure/config/dev.json`
-and resource inputs in `infrastructure/templates/resources.dev.bicepparam`. Keep generated artifacts, review
+and resource inputs in `infrastructure/templates/resources.dev.bicepparam`.
+Tenant and administrator identity values are redacted in the public parameters.
+Keep real values in ignored `.azure/dev/identity-values.json`, supply them only
+in local deployment inputs, and restore placeholders before committing. Preview
+and apply reject placeholders before calling Azure. Keep generated artifacts, review
 hashes, approval records, principal IDs and secrets in ignored `.azure/` files;
 do not commit them or use personal data as tags. Scripts do not switch
 the active subscription or enable basic publishing. The separately approved
@@ -156,11 +169,11 @@ the active subscription or enable basic publishing. The separately approved
 
 | File | Purpose |
 | --- | --- |
-| `templates/resources.bicep` | Dev entry: always manages the web app and Storage, referencing existing PostgreSQL and the plan. |
+| `templates/resources.bicep` | Dev entry: manages a complete new test stack including the B1 plan, web app, Storage and Entra-only PostgreSQL. |
 | `templates/resources.dev.bicepparam` | Versioned non-secret dev resource names and settings. |
 | `config/dev.json` | Versioned Azure target, stable deployment name and Bicep input paths. |
-| `templates/modules/web.bicep` | Fixture-only Linux site on the existing plan; commented creation block retained. |
-| `templates/modules/postgres.bicep` | New-server module retained for later use; not invoked by dev. |
+| `templates/modules/web.bicep` | Linux B1/Basic plan and fixture-only site with an explicit dependency on the plan. |
+| `templates/modules/postgres.bicep` | Creates the test PostgreSQL server, selected Entra administrator, empty database and TLS configuration; no firewall allowances. |
 | `templates/postgres-firewall.bicep` | Separate incremental exact-IP allowances on an existing server; empty by default. |
 | `templates/resources.parameters.example.json` | Legacy creation example retained for later restoration; not used by the dev entry. |
 | `templates/modules/storage.bicep` | Standard LRS Hot account and two private containers; closed unless authenticated-public mode has a policy approval reference. |
@@ -277,10 +290,11 @@ ACL preservation and reruns, not Azure Entra principal creation or cloud access.
 
 ## 2. Approved first-time provisioning
 
-This section describes the earlier creation-capable foundation. Do not run it
-against the current dev root, which intentionally references an existing server
-and plan and no longer takes creation-only inputs. Use the source-driven entry
-below for dev. Restoring new-server/plan provisioning is separate work.
+This section describes the earlier provisioning wrapper and its creation modes.
+Do not use it for the current B1 test stack: its F1 guards and first-time-only
+collision checks differ from the normal dev workflow. Use the
+[deployment guide](deployment.md#infrastructure-deployment) for both creation and
+reruns. The current root always deploys web, Storage and PostgreSQL modules.
 
 Copy the parameter example to an ignored local file and replace every
 placeholder. Keep the defaults only after the separate database budget review.
@@ -425,86 +439,6 @@ Do not replace the full configuration collection or export secrets into source
 control. Check the existing Node/Oryx/TLS/F1 settings separately; identity and
 configuration changes can restart the app and need a maintenance decision.
 Do not supply operator credentials or overwrite the sign-in credential.
-
-## Repeatable infrastructure deployment
-
-Use the single entry point from the repository root. It defaults to the committed
-[`config/dev.json`](../config/dev.json) configuration:
-
-```powershell
-# Compile and validate locally; no Azure calls.
-pwsh -NoProfile -File infrastructure/scripts/Deploy-Infrastructure.ps1
-# Read-only Azure preview.
-pwsh -NoProfile -File infrastructure/scripts/Deploy-Infrastructure.ps1 -Preview
-# Azure writes, only after explicit authorization.
-pwsh -NoProfile -File infrastructure/scripts/Deploy-Infrastructure.ps1 -Apply
-```
-
-### Inputs and outputs
-
-- `config/dev.json`: subscription, resource group, stable deployment name and
-  paths to the Bicep root and native parameter file. Paths resolve relative to
-  this config, not the terminal directory.
-- `templates/resources.dev.bicepparam`: non-secret dev resource names and settings,
-  with `using './resources.bicep'` for native type/parameter validation.
-- `templates/resources.bicep` and `templates/modules/`: desired resource state.
-  The web app and Storage are always managed. PostgreSQL and the plan are
-  existing references for now; no SQL/plan/web creation modes are required.
-
-A fresh clone contains every non-secret input. Install PowerShell 7.2+, Bicep CLI
-(validated with 0.42.1) and Azure CLI through your approved tool process. The script
-uses `bicep` from PATH, or `-BicepPath <installed-executable>`, and does not install
-tools or restore remote modules automatically. Azure login and permissions are
-needed only for preview/apply. `-ConfigPath <file>` can select an explicit config;
-there is no environment selector or multi-environment framework.
-
-Each run compiles the parameter file and its referenced template together, checks
-that the `using` target matches the configured root, and creates a unique directory
-under ignored `.azure/dev/deployments/`. It saves `template.json`, `parameters.json`
-and a manifest containing their hashes and the target. Preview/apply also saves
-`what-if.json`. None of these files, nor older local config/approval files, are
-prerequisites. Generated hashes are execution evidence, not independent approval.
-
-Default execution compiles locally. `-Preview` performs a read-only Azure what-if.
-`-Apply` compiles, previews, then deploys the same protected compiled bytes in
-Incremental mode. It does not recompile between preview and apply. Review the
-versioned inputs and preview before authorizing writes. If sources change between
-separate commands, the next run compiles the new inputs and runs a new preview.
-Do not put secrets in source or parameter files; protect generated artifacts too.
-
-The entry script retains parameter handling, compilation, what-if and apply calls.
-`scripts/InfrastructureValidation.psm1` holds the larger config, compiled-template
-and what-if/plan checks; it is a helper, not a second entry point. Post-deployment
-handling remains the CLI exit-code check and success/failure message. It adds no
-resource probes, application tests or SQL checks after deployment.
-
-### Repeatability and boundaries
-
-Stable resource names and a stable deployment name make repeated applies converge
-on the declared state. `Create`, `Modify` and `NoChange` results, mixed results and
-an empty change list are accepted. Declared settings overwrite manual drift;
-updates may include property removal. Provider defaults can produce repeated
-what-if differences, so an entirely empty preview is not required for idempotence.
-
-Reported resource deletions, unresolved changes/diagnostics, duplicate IDs and
-writes outside the configured resource group are blocked. The Bicep sources define
-resource ownership; this is not a separate manually maintained resource allowlist
-or an RBAC boundary. What-if may mask or omit properties, so inspect the compiled
-snapshot and verify live settings after apply. These checks do not replace source
-review, budget authorization, Azure Policy or role permissions. Preview/apply is
-not atomic; serialize deployments and inspect partial failures before retrying.
-There is no automatic retry, rollback, resource-group creation or tier fallback.
-
-For the temporary dev test, the infrastructure entry requires the referenced plan
-to be **B1/Basic**. Other SKUs, mismatched tiers, unreadable metadata and a different
-resource ID still block preview/apply. The existing plan is not modified, and the
-F1/Free guard on planned new resources remains enforced. The shared F1 helper and
-the code-deployment/first-time-provisioning checks are unchanged; this exception
-is limited to the infrastructure entry. The dev template does not deploy code or enable
-database access. It reapplies `SUNSUM_STORE=mock` and closed Storage networking.
-Database activation, SQL grants/migrations, sign-in and Blob data-plane access are
-separate operations. Do not use the legacy first-time provisioning wrapper with
-this existing-resource dev composition.
 
 ## 3. Review exact network allowances
 
