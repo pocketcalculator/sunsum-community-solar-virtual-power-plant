@@ -164,9 +164,48 @@ the TLS verification and the table grants together. Allow for a cold start on
 the free tier: the first request after an idle period can fail while the site is
 still waking.
 
+## When the site returns 500
+
+`SUNSUM_STORE` is `db` with no fallback, so anything that stops the site from
+reaching PostgreSQL surfaces as a 500 from every data route. That looks like a
+failed deployment and usually is not one. Read the container log first:
+
+```bash
+az webapp log tail --resource-group rg-sunsum-solar-dev-centralus \
+  --name app-sunsum-smoke-928e5e28
+```
+
+The cause is in the error the query throws, and the two common ones are
+distinct.
+
+`connect ETIMEDOUT <address>:5432` is a network failure: nothing accepted the
+connection. The usual reason is that the database server is stopped, which is
+easy to miss because every other resource stays healthy and the site itself
+reports as running.
+
+```bash
+az postgres flexible-server show --resource-group rg-sunsum-solar-dev-centralus \
+  --name db-sunsum-dev-centralus --query state --output tsv
+```
+
+A `Stopped` server starts with `az postgres flexible-server start` using the
+same arguments, and reaches `Ready` in about a minute. The site recovers on its
+next request without redeployment. Azure also stops a flexible server on its
+own after seven idle days, so a demo environment left alone over a break comes
+back in this state. If the server is running, check that the firewall still
+carries a rule admitting Azure services, since the site reaches the database
+over its public endpoint.
+
+`Password returned by client is empty` is the opposite case: the connection
+reached PostgreSQL and the access token never arrived. That points at the token
+path in `src/backend/db/client.ts` rather than at infrastructure.
+
 ## Environment notes
 
 The development plan is the free F1 tier. It cannot keep the site warm, so the
 first request after an idle period is slow, and it has a daily CPU quota that
 can stop the site altogether. Move the plan to B1 before relying on it for a
 demonstration; the template takes the SKU as a parameter.
+
+The database is a Burstable B1ms flexible server. Both tiers are sized for
+development rather than for a demonstration.
