@@ -105,6 +105,45 @@ them travels on the wire as a raw token:
   asserts the adapter's output satisfies `isParticipantRoleId` for every wire
   role, so the two sides cannot drift apart silently.
 
+## The viability service boundary
+
+`POST /assess` in §6.1 is a call the backend *makes*, not an endpoint it serves.
+The web app never sees it: `POST /sites` and `POST /sites/{id}/submit` are the
+public operations, and the screening happens inside them.
+
+The upstream is the preliminary-viability service, and its API is
+`POST {SUNSUM_VIABILITY_URL}/assessments`. It does not share our vocabulary, so
+`src/backend/viability` is the single place the two are reconciled. The
+translation is worth recording here because each line of it is a place a demo
+could show a homeowner a wrong number:
+
+| Ours                        | Theirs                                     | Rule                                                        |
+| --------------------------- | ------------------------------------------ | ----------------------------------------------------------- |
+| `approximate_area_sqm`      | `usable_roof_area_sqft` / `usable_land_area_acres` | Exact conversion, chosen by `site_type`             |
+| `viability_status` (3)      | `recommendation` (4)                       | `viable` maps **down** to `potentially_viable`               |
+| size / generation **ranges** | single point estimates                     | Both bounds take the point; a flag records it was not a range |
+| `missing_information`       | `missing_information`                      | Passed through unchanged                                     |
+
+Three properties this boundary holds to, which any replacement upstream must
+also hold to:
+
+- **Nothing is invented to fill a gap.** A field the owner did not provide is
+  absent from the request, not defaulted, and returns as `missing_information`.
+- **Consumption is never sent as generation.** The upstream has an
+  `annual_production_kwh` field and we hold `electricity_usage_kwh_annual`.
+  They share a unit and mean opposite things; conflating them would corrupt the
+  financial screening while looking entirely plausible.
+- **A screening is never promoted into an approval.** Feature C says this is a
+  preliminary screening and not an engineering, utility or financing
+  determination, so the upstream's `viable` cannot surface as a stronger claim
+  than our own UI is permitted to make.
+
+An unreachable service returns `503 service_unavailable` and persists neither
+the site nor an assessment, rather than recording a screening that never ran.
+`SUNSUM_VIABILITY=demo`, the default, uses an in-process fixture so the journey
+is demonstrable with no second deployment — but it returns the same illustrative
+numbers for every site, and is not a screening.
+
 ## Questions the canonical contract must resolve
 
 - Draft versus submission requirements, consent, optional usage/equipment/files,

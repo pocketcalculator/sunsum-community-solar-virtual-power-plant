@@ -56,6 +56,8 @@ src/backend/
     engagements/        S-ENG   interest and operator engagement reads
     views/              S-VIEW  composed reads
   db/                   schema, migrations, driver, store. Imports core; core never imports it
+  blob/                 document blob clients — in-memory, Azurite, Azure
+  viability/            the viability service client and its translation
   infrastructure/
     database/           server-only PostgreSQL/Drizzle connection and tooling seam
 ```
@@ -251,7 +253,7 @@ The `db/` directory also provides the PostgreSQL-backed `BackendStore` selected
 by the composition root. Application-user mapping remains separate from
 database access and Azure provisioning.
 
-Two seams allow those integrations without changing the workflow rules:
+Three seams allow those integrations without changing the workflow rules:
 
 - **Persistence.** `core/store/index.ts` provides the shared in-memory demo
   implementation behind `BackendStore`; `createMemoryBackendStore` gives tests
@@ -272,6 +274,25 @@ Two seams allow those integrations without changing the workflow rules:
   `POST /auth/demo-switch`, which issues a session for a seeded identity without
   checking a credential; it is opt-in per deployment and is what a real identity
   provider replaces.
+- **Viability.** `core/sites` owns the `ViabilityClient` interface and never
+  learns that a second service exists. `viability/` implements it over HTTP and
+  is selected by `SUNSUM_VIABILITY`; the default is the in-process fixture, so a
+  clean checkout and CI screen sites without a second deployment.
+
+  This is the `Backend API -> Viability Service` arrow in §6.1, and it is a call
+  the backend *makes* rather than an endpoint it serves — `POST /sites` and
+  `POST /sites/{id}/submit` are what trigger it. The two services do not share a
+  vocabulary, so the adapter is where every disagreement is resolved: area
+  converts from square metres to square feet or acres, the upstream's four
+  recommendations map onto our three viability statuses, and its point estimates
+  fill both ends of our ranges with a flag recording that no range was offered.
+  Nothing is invented to fill a gap — a field the owner did not provide is
+  simply absent, and comes back as `missing_information`.
+
+  `createSite` and `submitSite` already translate a throwing client into
+  `service_unavailable` inside a transaction, so an unreachable service persists
+  neither a site nor an assessment rather than recording a screening that never
+  happened.
 
 The App Service smoke test exercises a fixture-backed API, not a real data set
 or identity provider.

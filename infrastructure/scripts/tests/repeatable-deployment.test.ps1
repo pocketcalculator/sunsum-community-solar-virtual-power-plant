@@ -193,7 +193,17 @@ try {
     $devConfig.TemplatePath = '../../template.json'
     $devConfig.ParametersPath = '../../parameters.json'
     $devConfig.ApprovalPath = '../../approval.json'
+    $devTarget = @{}
+    foreach ($key in @('subscriptionId', 'resourceGroupName', 'deploymentName')) {
+        $devTarget[$key] = $devConfig[$key]
+        $devConfig.Remove($key)
+    }
+    $targetDirectory = Join-Path $fixture 'infrastructure/templates'
+    $null = New-Item -ItemType Directory -Path $targetDirectory -Force
+    $targetPath = Join-Path $targetDirectory 'deployment.dev.json'
     $devConfig | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
+    Assert-Blocked { & $devRunner } 'missing shared dev target' $true
+    $devTarget | ConvertTo-Json | Set-Content -LiteralPath $targetPath -Encoding utf8NoBOM
     Push-Location ([System.IO.Path]::GetTempPath())
     try {
         $state.Calls.Clear()
@@ -222,7 +232,19 @@ try {
         $changed = $devConfig.Clone()
         $changed.SubscriptionId = '22222222-2222-4222-8222-222222222222'
         $changed | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
-        Assert-Blocked { & $devRunner -Apply } 'dev approval target binding' $true
+        Assert-Blocked { & $devRunner -Apply } 'local dev target override' $true
+        $devConfig | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
+        foreach ($key in @('subscriptionId', 'resourceGroupName', 'deploymentName')) {
+            $changedTarget = $devTarget.Clone()
+            $changedTarget[$key] = if ($key -ceq 'subscriptionId') { '22222222-2222-4222-8222-222222222222' } else { 'other-target' }
+            $changedTarget | ConvertTo-Json | Set-Content -LiteralPath $targetPath -Encoding utf8NoBOM
+            Assert-Blocked { & $devRunner -Apply } "shared target approval binding: $key" $true
+        }
+        foreach ($badTarget in @('{}', '[]', 'null', 'invalid-json', '{"subscriptionId":true,"resourceGroupName":"sample-group","deploymentName":"repeatable-test"}')) {
+            Set-Content -LiteralPath $targetPath -Value $badTarget -Encoding utf8NoBOM
+            Assert-Blocked { & $devRunner -Apply } 'malformed shared target' $true
+        }
+        $devTarget | ConvertTo-Json | Set-Content -LiteralPath $targetPath -Encoding utf8NoBOM
         $changed = $devConfig.Clone()
         $changed.TemplateSha256 = '0' * 64
         $changed | ConvertTo-Json | Set-Content -LiteralPath $devPath -Encoding utf8NoBOM
