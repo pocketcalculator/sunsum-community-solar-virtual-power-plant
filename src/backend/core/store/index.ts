@@ -178,7 +178,7 @@ function demoState(seedDemoProjects: boolean): StoreState {
        * drift here unnoticed.
        */
       blobPath:
-        "investor-tier-1/owners/" +
+        "project-documents/owners/" +
         DEMO_SITE_OWNER_USER_ID +
         "/projects/" +
         project.id +
