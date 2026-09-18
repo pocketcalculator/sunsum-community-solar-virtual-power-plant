@@ -15,7 +15,7 @@ import {
 } from "../../core/sites";
 import { demoBackendStore, type BackendStore } from "../../core/store";
 import { failure, ok, type Result } from "../../core/shared";
-import { resolveDemoOperator, resolveDemoSiteOwner } from "../identity";
+import { requireRole } from "../identity";
 import {
   failureResponse,
   isUuid,
@@ -58,8 +58,10 @@ export async function handlePostSite(
     : failureResponse(result.failure);
 }
 
-export function postSiteRoute(request: Request): Promise<Response> {
-  return handlePostSite(request, resolveDemoSiteOwner());
+export async function postSiteRoute(request: Request): Promise<Response> {
+  const viewer = await requireRole(request, "site_owner");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handlePostSite(request, viewer.value);
 }
 
 export async function handleGetSubmissions(
@@ -73,8 +75,10 @@ export async function handleGetSubmissions(
   return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
 }
 
-export function getSubmissionsRoute(request: Request): Promise<Response> {
-  return handleGetSubmissions(request, resolveDemoOperator());
+export async function getSubmissionsRoute(request: Request): Promise<Response> {
+  const viewer = await requireRole(request, "operator");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetSubmissions(request, viewer.value);
 }
 
 
@@ -98,7 +102,9 @@ export async function patchSiteRoute(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
-  return handlePatchSite(request, resolveDemoSiteOwner(), (await context.params).id);
+  const viewer = await requireRole(request, "site_owner");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handlePatchSite(request, viewer.value, (await context.params).id);
 }
 
 export async function handlePostSiteSubmit(
@@ -147,7 +153,9 @@ export async function postSiteSubmitRoute(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
-  return handlePostSiteSubmit(request, resolveDemoSiteOwner(), (await context.params).id);
+  const viewer = await requireRole(request, "site_owner");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handlePostSiteSubmit(request, viewer.value, (await context.params).id);
 }
 
 export async function handleGetSubmissionDetail(
@@ -162,10 +170,12 @@ export async function handleGetSubmissionDetail(
 }
 
 export async function getSubmissionDetailRoute(
-  _request: Request,
+  request: Request,
   context: RouteContext,
 ): Promise<Response> {
-  return handleGetSubmissionDetail(resolveDemoOperator(), (await context.params).id);
+  const viewer = await requireRole(request, "operator");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetSubmissionDetail(viewer.value, (await context.params).id);
 }
 
 export function parseSiteCreate(body: JsonObject): Result<SiteCreateInput> {

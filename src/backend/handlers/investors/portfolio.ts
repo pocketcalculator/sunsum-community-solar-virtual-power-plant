@@ -13,7 +13,7 @@ import {
 import { isProjectStage, isViabilityStatus } from "../../core/projects";
 import { failure, ok, type Result } from "../../core/shared";
 import { demoBackendStore, type BackendStore } from "../../core/store";
-import { resolveDemoInvestor, resolveDemoViewer } from "../identity";
+import { requireRole } from "../identity";
 import {
   failureResponse,
   jsonResponse,
@@ -56,7 +56,9 @@ export async function handleGetPortfolio(
 }
 
 export async function getPortfolioRoute(request: Request): Promise<Response> {
-  return handleGetPortfolio(request, await resolveDemoViewer(), demoBackendStore);
+  const viewer = await requireRole(request, "investor");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetPortfolio(request, viewer.value, demoBackendStore);
 }
 
 export async function handleGetInvestorProfile(
@@ -67,8 +69,10 @@ export async function handleGetInvestorProfile(
   return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
 }
 
-export async function getInvestorProfileRoute(): Promise<Response> {
-  return handleGetInvestorProfile(await resolveDemoInvestor(demoBackendStore), demoBackendStore);
+export async function getInvestorProfileRoute(request: Request): Promise<Response> {
+  const viewer = await requireRole(request, "investor");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetInvestorProfile(viewer.value, demoBackendStore);
 }
 
 export async function handlePostInvestorProfile(
@@ -85,11 +89,9 @@ export async function handlePostInvestorProfile(
 }
 
 export async function postInvestorProfileRoute(request: Request): Promise<Response> {
-  return handlePostInvestorProfile(
-    request,
-    await resolveDemoInvestor(demoBackendStore),
-    demoBackendStore,
-  );
+  const viewer = await requireRole(request, "investor");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handlePostInvestorProfile(request, viewer.value, demoBackendStore);
 }
 
 export function parsePortfolioQuery(

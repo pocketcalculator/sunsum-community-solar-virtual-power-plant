@@ -497,6 +497,39 @@ Every document is classified as `owner_private` or `investor_tier_1`. Tier 1 ret
 
 ### 8.1 Authentication
 
+A session cookie names a user; the user row names a role; §8.2 decides what
+that role may do. The cookie holds only a user id and the time it was issued,
+signed with HMAC-SHA256 over `SUNSUM_SESSION_SECRET`. The role is deliberately
+**not** in the token: it is read from the user row on every request, so a role
+that changes in the database takes effect immediately and a stolen cookie
+cannot claim a role it was never given. Sessions last eight hours. The cookie
+is `HttpOnly` so script cannot read it, `SameSite=Lax` so a cross-site form
+post cannot spend it, and `Secure` in production.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/auth/demo-switch` | Sign in as one of the three seeded demo roles |
+| `POST /api/auth/logout` | Clear the session cookie |
+| `GET /api/me` | The identity behind the current session |
+
+Every other endpoint resolves the session first and answers `401
+unauthenticated` when there is none, before any handler runs. Single-role
+endpoints additionally answer `403 forbidden_role` for the wrong role; the
+three endpoints that serve more than one role (site documents, project funding
+needs, project stage) only authenticate here and let §8.2 in `core` decide.
+
+`demo-switch` is the sign-in for a hackathon build and is **not a credential
+check**. It hands out one of three *seeded* identities — never a real user's —
+so the three roles can be demonstrated without an identity provider. Anyone who
+can reach it can become any of the three demo users, which is why it is
+disabled by `SUNSUM_DEMO_AUTH=disabled` the moment a real provider exists.
+Replacing it with Entra changes how the cookie is minted and touches nothing
+downstream: the session, the role lookup, and the whole authorization matrix
+stay exactly as they are.
+
+Passwords are not stored. `users.password_hash` remains nullable and unused,
+reserved for whatever replaces this.
+
 ### 8.2 Authorization matrix
 
 `R` read · `W` write · `-` no access. Scope qualifiers: **own** = only their own records · **visible** = the project passes the investor-visibility rule · **tier** = limited by the disclosure tier their engagement unlocks (§7.7).

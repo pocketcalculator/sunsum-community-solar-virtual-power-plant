@@ -1,7 +1,7 @@
 import type { Viewer } from "../../core/identity";
 import { getDealRoom, getOwnerOutstanding, getOwnerSites } from "../../core/views";
 import { demoBackendStore, type BackendStore } from "../../core/store";
-import { resolveDemoInvestor, resolveDemoSiteOwner } from "../identity";
+import { requireRole } from "../identity";
 import { failureResponse, jsonResponse, validatePathId } from "../shared";
 
 interface RouteContext {
@@ -16,8 +16,10 @@ export async function handleGetOwnerSites(
   return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
 }
 
-export function getOwnerSitesRoute(): Promise<Response> {
-  return handleGetOwnerSites(resolveDemoSiteOwner());
+export async function getOwnerSitesRoute(request: Request): Promise<Response> {
+  const viewer = await requireRole(request, "site_owner");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetOwnerSites(viewer.value);
 }
 
 
@@ -29,8 +31,12 @@ export async function handleGetOwnerOutstanding(
   return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
 }
 
-export function getOwnerOutstandingRoute(): Promise<Response> {
-  return handleGetOwnerOutstanding(resolveDemoSiteOwner());
+export async function getOwnerOutstandingRoute(
+  request: Request,
+): Promise<Response> {
+  const viewer = await requireRole(request, "site_owner");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetOwnerOutstanding(viewer.value);
 }
 
 export async function handleGetDealRoom(
@@ -45,8 +51,10 @@ export async function handleGetDealRoom(
 }
 
 export async function getDealRoomRoute(
-  _request: Request,
+  request: Request,
   context: RouteContext,
 ): Promise<Response> {
-  return handleGetDealRoom(await resolveDemoInvestor(), (await context.params).id);
+  const viewer = await requireRole(request, "investor");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetDealRoom(viewer.value, (await context.params).id);
 }
