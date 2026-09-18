@@ -91,7 +91,7 @@ jobs:
             --parameters @$PARAMETER_FILE
 
   deploy:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     needs: validate
 
     runs-on: ubuntu-latest
