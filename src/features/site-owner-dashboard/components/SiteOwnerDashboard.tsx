@@ -7,6 +7,7 @@ import {
   RETURN_POINTS,
   type DashboardLocation,
 } from "../model/mockDashboard";
+import { humanizeStatus } from "../model/fromOwnerSites";
 import styles from "./SiteOwnerDashboard.module.css";
 
 const CHART_WIDTH = 560;
@@ -16,9 +17,52 @@ const CHART_RIGHT = 16;
 const CHART_TOP = 16;
 const CHART_BOTTOM = 44;
 const CHART_MAX_DOLLARS = 120000;
-const DEFAULT_SELECTED_IDS = DASHBOARD_LOCATIONS.filter(
-  (location) => location.selectedByDefault,
-).map((location) => location.id);
+
+function defaultSelectedIds(
+  locations: readonly DashboardLocation[],
+): readonly string[] {
+  return locations
+    .filter((location) => location.selectedByDefault)
+    .map((location) => location.id);
+}
+
+/**
+ * The simulation totals a freshly mounted dashboard shows.
+ *
+ * Computed from whichever locations were supplied rather than hard-coded, so
+ * that a dashboard showing real submissions — which carry no modelled return —
+ * opens at zero and reports nothing modelled, instead of displaying figures
+ * belonging to the sample data.
+ */
+function initialSimulation(locations: readonly DashboardLocation[]) {
+  const selected = locations.filter((location) => location.selectedByDefault);
+  const modeled = selected.filter(
+    (location) =>
+      location.individualReturnDollars !== null &&
+      location.communityReturnDollars !== null,
+  );
+
+  return {
+    individualTotal: modeled.reduce(
+      (total, location) => total + (location.individualReturnDollars ?? 0),
+      0,
+    ),
+    communityTotal: modeled.reduce(
+      (total, location) => total + (location.communityReturnDollars ?? 0),
+      0,
+    ),
+    modeledLocationCount: modeled.length,
+    excludedDraftCount: selected.length - modeled.length,
+    includedLocationIds: modeled.map((location) => location.id),
+    excludedLocationIds: selected
+      .filter(
+        (location) =>
+          location.individualReturnDollars === null ||
+          location.communityReturnDollars === null,
+      )
+      .map((location) => location.id),
+  };
+}
 
 function locationSetSignature(ids: readonly string[]): string {
   return [...ids].sort().join("|");
@@ -250,23 +294,37 @@ function RoiChart({ individualTotal, communityTotal }: RoiChartProps) {
   );
 }
 
-export function SiteOwnerDashboard() {
+/**
+ * Where the rows on screen came from.
+ *
+ * `sample` is the illustrative prototype data; `live` is the signed-in owner's
+ * real submissions. The distinction is rendered, not just tracked, because the
+ * two look alike on screen and a viewer who cannot tell them apart may read
+ * invented comparison figures as a statement about their own property.
+ */
+export type DashboardDataSource = "sample" | "live";
+
+export interface SiteOwnerDashboardProps {
+  readonly locations?: readonly DashboardLocation[];
+  readonly dataSource?: DashboardDataSource;
+}
+
+export function SiteOwnerDashboard({
+  locations: suppliedLocations = DASHBOARD_LOCATIONS,
+  dataSource = "sample",
+}: SiteOwnerDashboardProps = {}) {
   const searchRef = useRef<HTMLInputElement>(null);
   const customLocationSequence = useRef(0);
   const [query, setQuery] = useState("");
   const [locations, setLocations] =
-    useState<readonly DashboardLocation[]>(DASHBOARD_LOCATIONS);
-  const [selectedIds, setSelectedIds] =
-    useState<readonly string[]>(DEFAULT_SELECTED_IDS);
+    useState<readonly DashboardLocation[]>(suppliedLocations);
+  const [selectedIds, setSelectedIds] = useState<readonly string[]>(() =>
+    defaultSelectedIds(suppliedLocations),
+  );
   const [announcement, setAnnouncement] = useState("");
-  const [simulation, setSimulation] = useState({
-    individualTotal: 70000,
-    communityTotal: 108000,
-    modeledLocationCount: 3,
-    excludedDraftCount: 0,
-    includedLocationIds: DEFAULT_SELECTED_IDS,
-    excludedLocationIds: [] as readonly string[],
-  });
+  const [simulation, setSimulation] = useState(() =>
+    initialSimulation(suppliedLocations),
+  );
 
   const filteredLocations = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -450,11 +508,20 @@ export function SiteOwnerDashboard() {
         <div>
           <p className={styles.eyebrow}>Site owner workspace</p>
           <h1 className={styles.pageTitle}>Explore a community solar scenario</h1>
-          <p className={styles.pageDescription}>
-            Compare locations and review the supplied dashboard concept. Values
-            on this page are illustrative mock data and are not a financial,
-            engineering, or eligibility assessment.
-          </p>
+          {dataSource === "live" ? (
+            <p className={styles.pageDescription}>
+              Showing your submitted sites and their current stage, read live
+              from the Sunsum platform. Projected financial returns are not
+              shown: no tariff or market model stands behind them yet. Nothing
+              here is a financial, engineering, or eligibility assessment.
+            </p>
+          ) : (
+            <p className={styles.pageDescription}>
+              Compare locations and review the supplied dashboard concept.
+              Values on this page are illustrative mock data and are not a
+              financial, engineering, or eligibility assessment.
+            </p>
+          )}
         </div>
       </header>
 
@@ -601,6 +668,22 @@ export function SiteOwnerDashboard() {
                           ? "Area pending"
                           : `${location.areaSquareFeet.toLocaleString("en-US")} sq ft`}
                       </span>
+                      {location.submissionStatus == null ? null : (
+                        <span>
+                          {humanizeStatus(location.submissionStatus)}
+                          {location.projectStage == null
+                            ? ""
+                            : ` · ${humanizeStatus(location.projectStage)}`}
+                          {location.viabilityStatus == null
+                            ? ""
+                            : ` · ${humanizeStatus(location.viabilityStatus)}`}
+                          {location.outstandingCount
+                            ? ` · ${location.outstandingCount} item${
+                                location.outstandingCount === 1 ? "" : "s"
+                              } outstanding`
+                            : ""}
+                        </span>
+                      )}
                     </span>
                   </label>
                 );
@@ -614,6 +697,16 @@ export function SiteOwnerDashboard() {
           </div>
         </section>
 
+        {/*
+          The ROI panels are omitted entirely on live data rather than rendered
+          empty. Every projected return in this feature comes from the mock
+          fixtures; a real submission carries none, so on live data the chart
+          would plot nothing and the button would only ever report that no
+          location has model data. Showing a financial panel at all next to a
+          homeowner's real address implies a projection exists, so the honest
+          rendering is to leave it out until a tariff model backs it.
+        */}
+        {dataSource === "sample" ? (
         <section aria-labelledby="roi-heading" className={styles.panel}>
           <div className={styles.roiHeader}>
             <div className={styles.panelHeading}>
@@ -681,8 +774,10 @@ export function SiteOwnerDashboard() {
             individualTotal={simulation.individualTotal}
           />
         </section>
+        ) : null}
       </div>
 
+      {dataSource === "sample" ? (
       <section
         aria-labelledby="allocation-heading"
         className={`${styles.panel} ${styles.allocationSection}`}
@@ -774,6 +869,7 @@ export function SiteOwnerDashboard() {
           })}
         </div>
       </section>
+      ) : null}
     </div>
   );
 }

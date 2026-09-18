@@ -523,7 +523,34 @@ export function createMemoryBackendStore(
   return new MemoryBackendStore(options);
 }
 
-const demoMemoryStore = new MemoryBackendStore({ seedDemoProjects: true });
+/**
+ * The demo fixtures, as a single instance per process.
+ *
+ * Pinned to `globalThis` rather than held in a module-level `const` because
+ * Next.js compiles server components and route handlers into separate bundler
+ * layers, and module state is not shared between them. Without this, a process
+ * holds two copies of the fixtures: `POST /api/sites` writes to the route
+ * handler's copy while a dashboard server component reads the other, so a site
+ * submitted during a demo is accepted and then does not appear. Verified
+ * directly — the API reported four sites while the page rendered two.
+ *
+ * Only the in-memory store needs this. PostgreSQL has no module state to
+ * duplicate: both layers open their own pool onto the same database.
+ *
+ * `Symbol.for` rather than a string key so nothing else can collide with it,
+ * and `??=` so the first layer to load wins and every later one joins it.
+ */
+const DEMO_STORE_KEY = Symbol.for("sunsum.demoMemoryStore");
+
+interface DemoStoreGlobal {
+  [DEMO_STORE_KEY]?: MemoryBackendStore;
+}
+
+const storeGlobal = globalThis as DemoStoreGlobal;
+storeGlobal[DEMO_STORE_KEY] ??= new MemoryBackendStore({
+  seedDemoProjects: true,
+});
+const demoMemoryStore: MemoryBackendStore = storeGlobal[DEMO_STORE_KEY];
 
 /**
  * The in-memory fixtures, as a store.
