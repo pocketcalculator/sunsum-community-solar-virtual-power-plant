@@ -34,6 +34,7 @@ export {
   getProjectFundingNeedsRoute,
   getSiteDocumentContentRoute,
   getSubmissionDetailRoute,
+  isDemoAuthEnabled,
   patchProjectRoute,
   patchSiteRoute,
   postInvestorProfileRoute,
