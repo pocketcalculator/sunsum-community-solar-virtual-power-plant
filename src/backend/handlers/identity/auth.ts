@@ -36,6 +36,7 @@ import {
   failureResponse,
   jsonResponse,
   readJsonObject,
+  rejectCrossSiteRequest,
   rejectUnknownKeys,
   type JsonObject,
 } from "../shared";
@@ -139,6 +140,14 @@ export async function handlePostDemoSwitch(
     });
   }
 
+  /**
+   * Before anything else, and before any state is read: this endpoint answers
+   * with `Set-Cookie` and takes no credential, so a cross-site form post would
+   * otherwise log a victim's browser into a role the attacker picked.
+   */
+  const crossSite = rejectCrossSiteRequest(request);
+  if (crossSite !== null) return failureResponse(crossSite);
+
   const body = await readJsonObject(request);
   if (!body.ok) return failureResponse(body.failure);
   const role = parseDemoSwitch(body.value);
@@ -209,7 +218,20 @@ async function resolveIdentityForUser(
   return resolveIdentity(replay, store);
 }
 
-export function handlePostLogout(): Response {
+/**
+ * Signing out.
+ *
+ * Guarded the same way as signing in, for the same reason: it answers with a
+ * `Set-Cookie` and takes no credential, so a cross-site post could end a
+ * victim's session at an attacker's choosing. Less damaging than being signed
+ * *in* as someone else, but the same defect and the same one-line answer.
+ */
+export function handlePostLogout(request?: Request): Response {
+  if (request !== undefined) {
+    const crossSite = rejectCrossSiteRequest(request);
+    if (crossSite !== null) return failureResponse(crossSite);
+  }
+
   const response = jsonResponse({ signed_out: true });
   response.headers.append("set-cookie", clearedSessionCookie());
   return response;
@@ -234,8 +256,8 @@ export function demoSwitchRoute(request: Request): Promise<Response> {
   return handlePostDemoSwitch(request);
 }
 
-export function logoutRoute(): Response {
-  return handlePostLogout();
+export function logoutRoute(request: Request): Response {
+  return handlePostLogout(request);
 }
 
 export function getMeRoute(request: Request): Promise<Response> {

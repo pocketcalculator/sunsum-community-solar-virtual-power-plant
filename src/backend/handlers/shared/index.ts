@@ -6,7 +6,11 @@
  * here because handlers translate between external clients and backend wire ids.
  */
 
-export { failureResponse, jsonResponse } from "./http";
+export {
+  failureResponse,
+  jsonResponse,
+  rejectCrossSiteRequest,
+} from "./http";
 export { toDomainRole, toWireRole } from "./vocabulary";
 export {
   isUuid,

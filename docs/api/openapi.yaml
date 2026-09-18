@@ -27,11 +27,18 @@ info:
     without an identity provider, and verifies no credential. It is opt-in per
     deployment and is the single endpoint a real identity provider replaces.
 
-    Resolving a session requires `SUNSUM_SESSION_SECRET` to be set to at least
-    32 characters. A production deployment without it cannot verify or issue a
-    cookie, so every operation that needs a caller answers 503 with
-    `code: service_unavailable` instead of 401 — the caller is not at fault and
-    signing in again will not help.
+    Resolving a session needs a signing secret, and the two ways to get that
+    wrong fail differently. A *configured* `SUNSUM_SESSION_SECRET` shorter than
+    32 characters is refused in every environment. An *unset* one is refused
+    only in production — outside it the server invents a per-process secret and
+    warns, so local development needs no configuration and sessions simply end
+    when the process does. Either refusal answers 503 with
+    `code: service_unavailable` rather than 401 on every operation that needs a
+    caller: the caller is not at fault and signing in again will not help.
+
+    A production deployment missing its secret still starts and still serves
+    everything that needs no caller. The refusal happens per request, when the
+    secret is first needed, not at boot.
   contact:
     name: Workstream 2 — Backend & Workflow
   license:
@@ -92,6 +99,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Identity" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/CrossSiteRefused" }
         "404":
           description: Demo sign-in is not enabled on this deployment.
           content:
@@ -126,6 +134,7 @@ paths:
                 required: [signed_out]
                 properties:
                   signed_out: { type: boolean, enum: [true] }
+        "403": { $ref: "#/components/responses/CrossSiteRefused" }
   /me:
     get:
       tags: [Identity]
@@ -595,7 +604,9 @@ paths:
       summary: Current investor's own engagement pipeline
       responses:
         "200":
-          description: Engagements for the fixed demo investor only.
+          description:
+            Engagements belonging to the signed-in investor. Scoped to the
+            caller resolved from the session cookie, not to a fixed account.
           content:
             application/json:
               schema:
@@ -690,12 +701,25 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    CrossSiteRefused:
+      description: |
+        The request was initiated by another site. `POST /auth/demo-switch` and
+        `POST /auth/logout` answer with `Set-Cookie` and take no credential, so
+        they refuse a cross-site caller outright — `SameSite=Lax` stops a cookie
+        being *sent* cross-site but not one being *set*. Determined from
+        `Sec-Fetch-Site`, falling back to `Origin`; a non-browser client that
+        sends neither is unaffected. Always `code: forbidden_origin`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     AuthUnavailable:
       description: |
-        The deployment cannot resolve sessions: `SUNSUM_SESSION_SECRET` is
-        missing or shorter than 32 characters while running in production.
-        Always `code: service_unavailable`. This is a deployment fault, not a
-        caller fault — retrying or signing in again will not clear it, and every
+        The deployment cannot resolve sessions. Either `SUNSUM_SESSION_SECRET`
+        is configured but shorter than 32 characters — refused in every
+        environment — or it is unset while running in production. Always
+        `code: service_unavailable`. This is a deployment fault, not a caller
+        fault: retrying or signing in again will not clear it, and every
         operation that requires a session answers this way until the secret is
         configured.
       content:
@@ -1183,6 +1207,10 @@ components:
             `forbidden_role` (wrong role), `forbidden_owner` (right role, not your
             record), `forbidden_tier` (right role, insufficient disclosure tier),
             `forbidden_visibility` (project not investor-visible).
+
+            `forbidden_origin` is not an authorization decision about the
+            caller: it means the request was initiated by another site and was
+            refused before any identity was considered.
           example: forbidden_tier
         message:
           type: string

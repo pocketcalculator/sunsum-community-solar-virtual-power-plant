@@ -25,6 +25,7 @@ import {
   resolveViewer,
 } from "@/backend/handlers/identity";
 import { handlePostInvestorProfile } from "@/backend/handlers/investors/portfolio";
+import * as routes from "@/backend";
 
 const SECRET = "a-test-secret-that-is-long-enough-to-pass";
 const NOW = Date.UTC(2026, 8, 18, 12, 0, 0);
@@ -408,5 +409,372 @@ describe("signing in and out", () => {
 
     const me = await handleGetMe(withCookie(signedIn), fresh);
     expect(await me.json()).toMatchObject({ onboarded: true });
+  });
+
+  /*
+   * Login CSRF.
+   *
+   * `SameSite=Lax` keeps an existing cookie from being *sent* on a cross-site
+   * POST; it says nothing about a response that *sets* one. Sign-in takes no
+   * credential, so without this an attacker's form could put a victim's browser
+   * into a role of the attacker's choosing and the victim would go on using the
+   * demo as that role.
+   */
+  describe("a cross-site caller", () => {
+    function switchFrom(headers: Record<string, string>): Promise<Response> {
+      return handlePostDemoSwitch(
+        new Request("https://sunsum.test/api/auth/demo-switch", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            host: "sunsum.test",
+            ...headers,
+          },
+          body: JSON.stringify({ role: "operator" }),
+        }),
+        store,
+      );
+    }
+
+    it.each([["cross-site"], ["same-site"]])(
+      "is refused when Sec-Fetch-Site is %s",
+      async (site) => {
+        const response = await switchFrom({ "sec-fetch-site": site });
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({
+          code: "forbidden_origin",
+        });
+        expect(response.headers.get("set-cookie")).toBeNull();
+      },
+    );
+
+    it.each([["same-origin"], ["none"]])(
+      "is allowed when Sec-Fetch-Site is %s",
+      async (site) => {
+        const response = await switchFrom({ "sec-fetch-site": site });
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("set-cookie")).toContain(
+          SESSION_COOKIE_NAME,
+        );
+      },
+    );
+
+    it("is refused on an Origin from somewhere else", async () => {
+      const response = await switchFrom({ origin: "https://attacker.test" });
+
+      expect(response.status).toBe(403);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    });
+
+    it("is allowed on our own Origin", async () => {
+      const response = await switchFrom({ origin: "https://sunsum.test" });
+
+      expect(response.status).toBe(200);
+    });
+
+    /*
+     * curl, a server-to-server call and this test suite send neither header.
+     * They are not browsers and cannot be steered by a page, so refusing them
+     * would cost the demo its simplest client for no security gain.
+     */
+    it("is allowed when it sends neither header", async () => {
+      expect((await switchTo("operator")).status).toBe(200);
+    });
+
+    it("cannot sign a victim out from another site", () => {
+      const response = handlePostLogout(
+        new Request("https://sunsum.test/api/auth/logout", {
+          method: "POST",
+          headers: { "sec-fetch-site": "cross-site", host: "sunsum.test" },
+        }),
+      );
+
+      expect(response.status).toBe(403);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    });
+  });
+});
+
+/*
+ * The production fail-closed branch.
+ *
+ * Inventing a secret per process would work locally and then, in production,
+ * sign everyone out on each restart and reject the other instance's cookies —
+ * an intermittent logout nobody would trace back to a missing variable. The
+ * refusal is what makes that impossible, so it needs a test of its own: the
+ * development path exercised everywhere else would never notice it disappear.
+ */
+describe("a deployment with no usable session secret", () => {
+  let store: BackendStore;
+  let previous: BackendStore;
+
+  beforeEach(() => {
+    vi.stubEnv("SUNSUM_DEMO_AUTH", "enabled");
+    store = createMemoryBackendStore({ seedDemoProjects: true });
+    previous = setActiveStore(store);
+  });
+
+  afterEach(() => {
+    setActiveStore(previous);
+    vi.unstubAllEnvs();
+  });
+
+  function signIn(): Promise<Response> {
+    return handlePostDemoSwitch(
+      new Request("https://sunsum.test/api/auth/demo-switch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: "operator" }),
+      }),
+      store,
+    );
+  }
+
+  it("refuses to issue a cookie in production when the secret is unset", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SUNSUM_SESSION_SECRET", "");
+
+    const response = await signIn();
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: "service_unavailable",
+    });
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("refuses a protected request in production when the secret is unset", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SUNSUM_SESSION_SECRET", "");
+
+    const refused = await requireRole(
+      new Request("https://sunsum.test/api/portfolio", {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=anything` },
+      }),
+      "investor",
+      store,
+    );
+
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.failure.code).toBe("service_unavailable");
+  });
+
+  /*
+   * A secret that is present but too short is refused everywhere, not only in
+   * production: a development deployment that sets one is asking for it to be
+   * used, and quietly falling back to the per-process secret would hide the
+   * mistake until it shipped.
+   */
+  it.each([["production"], ["development"]])(
+    "refuses a secret that is too short in %s",
+    async (environment) => {
+      vi.stubEnv("NODE_ENV", environment);
+      vi.stubEnv("SUNSUM_SESSION_SECRET", "too-short");
+
+      const response = await signIn();
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    },
+  );
+
+  it("works in production once the secret is long enough", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SUNSUM_SESSION_SECRET", SECRET);
+
+    const response = await signIn();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("set-cookie")).toContain(SESSION_COOKIE_NAME);
+  });
+});
+
+/*
+ * Every gate, not just one.
+ *
+ * The gate lives in the route wrapper, one line per route, and a wrapper that
+ * omitted it would still pass every core test beneath it — which is exactly
+ * how an anonymous POST /api/sites once returned 201. Driving all of them from
+ * here is the only place that shows up, so the table is exhaustive on purpose:
+ * a new route without an entry is a route nobody proved refuses an anonymous
+ * caller.
+ *
+ * The wrong-role case is a contract test rather than a wrapper test. Core
+ * refuses the wrong role too, so it passes whether the wrapper names the right
+ * role or core catches it a layer down; what it pins is the answer a client
+ * sees, which is the thing that must not change.
+ */
+describe("every protected route", () => {
+  const SITE_ID = "11111111-2222-3333-4444-555555555555";
+
+  type Gate = "site_owner" | "operator" | "investor" | "any";
+  type Route = (request: Request, context: RouteContext) => unknown;
+  interface RouteContext {
+    readonly params: Promise<{ readonly id: string }>;
+  }
+
+  /** A role the gate must refuse, for each role the gate accepts. */
+  const WRONG_ROLE: Record<Exclude<Gate, "any">, string> = {
+    site_owner: "investor",
+    operator: "site_owner",
+    investor: "operator",
+  };
+
+  const ROUTES: ReadonlyArray<readonly [string, Route, Gate, "POST" | "GET"]> = [
+    ["postSite", routes.postSiteRoute as Route, "site_owner", "POST"],
+    ["patchSite", routes.patchSiteRoute as Route, "site_owner", "POST"],
+    ["postSiteSubmit", routes.postSiteSubmitRoute as Route, "site_owner", "POST"],
+    ["getOwnerSites", routes.getOwnerSitesRoute as Route, "site_owner", "GET"],
+    [
+      "getOwnerOutstanding",
+      routes.getOwnerOutstandingRoute as Route,
+      "site_owner",
+      "GET",
+    ],
+    ["getSubmissions", routes.getSubmissionsRoute as Route, "operator", "GET"],
+    [
+      "getSubmissionDetail",
+      routes.getSubmissionDetailRoute as Route,
+      "operator",
+      "GET",
+    ],
+    [
+      "postSubmissionDecision",
+      routes.postSubmissionDecisionRoute as Route,
+      "operator",
+      "POST",
+    ],
+    ["postProjectStage", routes.postProjectStageRoute as Route, "operator", "POST"],
+    [
+      "patchProjectVisibility",
+      routes.patchProjectVisibilityRoute as Route,
+      "operator",
+      "POST",
+    ],
+    ["patchProject", routes.patchProjectRoute as Route, "operator", "POST"],
+    ["getPipeline", routes.getPipelineRoute as Route, "operator", "GET"],
+    [
+      "getProjectEngagements",
+      routes.getProjectEngagementsRoute as Route,
+      "operator",
+      "GET",
+    ],
+    ["getPortfolio", routes.getPortfolioRoute as Route, "investor", "GET"],
+    [
+      "getInvestorProfile",
+      routes.getInvestorProfileRoute as Route,
+      "investor",
+      "GET",
+    ],
+    [
+      "postInvestorProfile",
+      routes.postInvestorProfileRoute as Route,
+      "investor",
+      "POST",
+    ],
+    ["postEngagement", routes.postEngagementRoute as Route, "investor", "POST"],
+    ["getMyEngagements", routes.getMyEngagementsRoute as Route, "investor", "GET"],
+    ["getDealRoom", routes.getDealRoomRoute as Route, "investor", "GET"],
+    ["postSiteDocument", routes.postSiteDocumentRoute as Route, "any", "POST"],
+    [
+      "getProjectFundingNeeds",
+      routes.getProjectFundingNeedsRoute as Route,
+      "any",
+      "GET",
+    ],
+  ];
+
+  let store: BackendStore;
+  let previous: BackendStore;
+
+  beforeEach(() => {
+    vi.stubEnv("SUNSUM_DEMO_AUTH", "enabled");
+    store = createMemoryBackendStore({ seedDemoProjects: true });
+    previous = setActiveStore(store);
+  });
+
+  afterEach(() => {
+    setActiveStore(previous);
+    vi.unstubAllEnvs();
+  });
+
+  async function cookieFor(role: string): Promise<string> {
+    const response = await handlePostDemoSwitch(
+      new Request("https://sunsum.test/api/auth/demo-switch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role }),
+      }),
+      store,
+    );
+    return (response.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+  }
+
+  function call(
+    route: Route,
+    method: "POST" | "GET",
+    cookie?: string,
+  ): Promise<Response> {
+    const request = new Request("https://sunsum.test/api/whatever", {
+      method,
+      headers: {
+        "content-type": "application/json",
+        ...(cookie === undefined ? {} : { cookie }),
+      },
+      ...(method === "POST" ? { body: "{}" } : {}),
+    });
+    return Promise.resolve(
+      route(request, { params: Promise.resolve({ id: SITE_ID }) }),
+    ) as Promise<Response>;
+  }
+
+  it.each(ROUTES.map(([name, route, , method]) => ({ name, route, method })))(
+    "refuses $name without a session",
+    async ({ route, method }) => {
+      const response = await call(route, method);
+
+      expect(response.status).toBe(401);
+      expect(await response.json()).toMatchObject({ code: "unauthenticated" });
+    },
+  );
+
+  it.each(
+    ROUTES.filter(([, , gate]) => gate !== "any").map(
+      ([name, route, gate, method]) => ({
+        name,
+        route,
+        method,
+        wrong: WRONG_ROLE[gate as Exclude<Gate, "any">],
+      }),
+    ),
+  )("refuses $name to a signed-in $wrong", async ({ route, method, wrong }) => {
+    const response = await call(route, method, await cookieFor(wrong));
+
+    expect(response.status).toBe(403);
+  });
+
+  /*
+   * The two multi-role routes are the ones a stricter gate would silently
+   * break: §8.1 has them open to any signed-in caller, so each role must get
+   * past the gate. What happens after it — a missing record, an unparsable
+   * body — is the handler's business and not what this asserts.
+   */
+  it.each(
+    ROUTES.filter(([, , gate]) => gate === "any").flatMap(
+      ([name, route, , method]) =>
+        (["site_owner", "operator", "investor"] as const).map((role) => ({
+          name,
+          route,
+          method,
+          role,
+        })),
+    ),
+  )("lets a signed-in $role past the gate on $name", async ({ route, method, role }) => {
+    const response = await call(route, method, await cookieFor(role));
+
+    expect(response.status).not.toBe(401);
+    expect(response.status).not.toBe(403);
   });
 });
