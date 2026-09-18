@@ -1,0 +1,12 @@
+{
+  "subscriptionId": "<subscription-id>",
+  "resourceGroupName": "<existing-resource-group>",
+  "approvalReference": "<participant-and-auth-review>",
+  "webAppName": "<existing-web-app>",
+  "tenantId": "<approved-workforce-tenant-id>",
+  "clientId": "<precreated-web-registration-client-id>",
+  "clientSecretSettingName": "MICROSOFT_PROVIDER_AUTHENTICATION_SECRET",
+  "approvedParticipantObjectIds": ["<approved-user-or-guest-object-id>"],
+  "directoryPrerequisitesConfirmed": false,
+  "allowReplaceExistingSignIn": false
+}

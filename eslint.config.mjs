@@ -3,6 +3,29 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+const databasePackages = ["pg", "drizzle-orm", "drizzle-kit", "@azure/identity"].map(
+  (name) => ({
+    name,
+    message: "Database clients belong in server infrastructure, not presentation, core, or handlers.",
+  }),
+);
+
+const databasePackageInternals = {
+  group: ["pg/**", "drizzle-orm/**", "drizzle-kit/**", "@azure/identity/**"],
+  message: "Database clients belong in the server infrastructure boundary.",
+};
+
+const infrastructureImports = {
+  group: [
+    "@/backend/infrastructure",
+    "@/backend/infrastructure/**",
+    "**/infrastructure",
+    "**/infrastructure/**",
+    "../infrastructure",
+  ],
+  message: "Inject persistence through a core interface; construct clients at the composition boundary.",
+};
+
 const serverImports = [
   ...new Set(builtinModules.flatMap((name) => [name, `node:${name}`])),
   "server-only",
@@ -13,7 +36,7 @@ const serverImports = [
   name,
   message:
     "Public presentation must stay browser-safe and independent of server services.",
-}));
+})).concat(databasePackages);
 
 const nodeNamespace = {
   regex: "^node:",
@@ -177,6 +200,7 @@ export default defineConfig([
           paths: serverImports,
           patterns: [
             nodeNamespace,
+            databasePackageInternals,
             backendModules,
             {
               group: [
@@ -205,7 +229,9 @@ export default defineConfig([
       "no-restricted-imports": [
         "error",
         {
+          paths: serverImports,
           patterns: [
+            databasePackageInternals,
             backendModules,
             {
               group: ["**/app/**"],
@@ -225,6 +251,7 @@ export default defineConfig([
           paths: serverImports,
           patterns: [
             nodeNamespace,
+            databasePackageInternals,
             backendModules,
             {
               group: [
@@ -255,6 +282,7 @@ export default defineConfig([
           paths: serverImports,
           patterns: [
             nodeNamespace,
+            databasePackageInternals,
             backendModules,
             {
               group: [
@@ -287,6 +315,7 @@ export default defineConfig([
           paths: serverImports,
           patterns: [
             nodeNamespace,
+            databasePackageInternals,
             backendModules,
             {
               group: [
@@ -317,16 +346,27 @@ export default defineConfig([
     },
   },
   {
+    files: ["src/backend/db/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [presentationImports, infrastructureImports] },
+      ],
+    },
+  },
+  {
     files: ["src/backend/core/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",
         {
-          paths: transportModules,
+          paths: [...transportModules, ...databasePackages],
           patterns: [
             presentationImports,
             handlerImports,
             domainInternals,
+            infrastructureImports,
+            databasePackageInternals,
             persistenceImports,
             driverImports,
           ],
@@ -340,7 +380,15 @@ export default defineConfig([
       "no-restricted-imports": [
         "error",
         {
-          patterns: [presentationImports, domainInternals, persistenceImports, driverImports],
+          paths: databasePackages,
+          patterns: [
+            presentationImports,
+            domainInternals,
+            infrastructureImports,
+            databasePackageInternals,
+            persistenceImports,
+            driverImports,
+          ],
         },
       ],
     },
@@ -352,7 +400,7 @@ export default defineConfig([
       "no-restricted-imports": [
         "error",
         {
-          paths: transportModules,
+          paths: [...transportModules, ...databasePackages],
           patterns: [
             presentationImports,
             handlerImports,
@@ -360,6 +408,8 @@ export default defineConfig([
             persistenceImports,
             driverImports,
             sharedIsDomainFree,
+            infrastructureImports,
+            databasePackageInternals,
           ],
         },
       ],
@@ -371,8 +421,10 @@ export default defineConfig([
       "no-restricted-imports": [
         "error",
         {
+          paths: databasePackages,
           patterns: [
             backendInternals,
+            databasePackageInternals,
             {
               group: ["@/features/*/**", "**/features/*/**"],
               message: "Routes must use a feature's public entry point.",
@@ -384,6 +436,7 @@ export default defineConfig([
   },
   globalIgnores([
     ".next/**",
+    ".azure/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
