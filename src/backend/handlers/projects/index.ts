@@ -12,7 +12,7 @@ import {
 import { failure, ok, type Result } from "../../core/shared";
 import { demoBackendStore, type BackendStore } from "../../core/store";
 import { parseSubmissionQuery } from "../sites";
-import { resolveDemoOperator } from "../identity";
+import { requireRole } from "../identity";
 import {
   failureResponse,
   isUuid,
@@ -47,9 +47,11 @@ export async function postSubmissionDecisionRoute(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
+  const viewer = await requireRole(request, "operator");
+  if (!viewer.ok) return failureResponse(viewer.failure);
   return handlePostSubmissionDecision(
     request,
-    resolveDemoOperator(),
+    viewer.value,
     (await context.params).id,
   );
 }
@@ -86,9 +88,11 @@ export async function postProjectStageRoute(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
+  const viewer = await requireRole(request, "operator");
+  if (!viewer.ok) return failureResponse(viewer.failure);
   return handlePostProjectStage(
     request,
-    resolveDemoOperator(),
+    viewer.value,
     (await context.params).id,
   );
 }
@@ -125,9 +129,11 @@ export async function patchProjectVisibilityRoute(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
+  const viewer = await requireRole(request, "operator");
+  if (!viewer.ok) return failureResponse(viewer.failure);
   return handlePatchProjectVisibility(
     request,
-    resolveDemoOperator(),
+    viewer.value,
     (await context.params).id,
   );
 }
@@ -153,7 +159,9 @@ export async function patchProjectRoute(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
-  return handlePatchProject(request, resolveDemoOperator(), (await context.params).id);
+  const viewer = await requireRole(request, "operator");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handlePatchProject(request, viewer.value, (await context.params).id);
 }
 
 export async function handleGetPipeline(
@@ -167,8 +175,10 @@ export async function handleGetPipeline(
   return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
 }
 
-export function getPipelineRoute(request: Request): Promise<Response> {
-  return handleGetPipeline(request, resolveDemoOperator());
+export async function getPipelineRoute(request: Request): Promise<Response> {
+  const viewer = await requireRole(request, "operator");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetPipeline(request, viewer.value);
 }
 
 

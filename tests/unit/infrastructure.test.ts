@@ -149,9 +149,16 @@ describe("the bounded Azure preparation contract", () => {
     expect(result.stdout).not.toContain("checks passed");
   }, 50_000);
 
+  /*
+   * The reporter is pinned because the assertion reads its output. Node 22
+   * defaults `--test` to TAP and emits `# fail 0`; Node 24 defaults to the
+   * spec reporter and emits `ℹ fail 0`, so an unpinned run passes on the
+   * version CI uses and fails on the one a developer is likely to have.
+   */
   it("runs the actual bootstrap safety tests without database or identity calls", () => {
     const result = execFileSync(process.execPath, [
-      "--test", join(root, "infrastructure/scripts/tests/postgres-bootstrap.test.mjs"),
+      "--test", "--test-reporter=tap",
+      join(root, "infrastructure/scripts/tests/postgres-bootstrap.test.mjs"),
       join(root, "infrastructure/scripts/tests/postgres-bootstrap-operations.test.mjs"),
     ], { cwd: root, encoding: "utf8", timeout: 30_000 });
     expect(result).toContain("# fail 0");
@@ -159,7 +166,8 @@ describe("the bounded Azure preparation contract", () => {
 
   it("checks actual App Service HTTP responses without following redirects", () => {
     const result = execFileSync(process.execPath, [
-      "--test", join(root, "infrastructure/scripts/tests/app-service-response.test.mjs"),
+      "--test", "--test-reporter=tap",
+      join(root, "infrastructure/scripts/tests/app-service-response.test.mjs"),
     ], { cwd: root, encoding: "utf8", timeout: 40_000 });
     expect(result).toContain("# fail 0");
   }, 45_000);

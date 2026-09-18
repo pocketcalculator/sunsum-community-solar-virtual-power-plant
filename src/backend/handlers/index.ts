@@ -69,10 +69,19 @@ export {
   getOwnerOutstandingRoute,
 } from "./views";
 export {
+  SESSION_COOKIE_NAME,
+  demoSwitchRoute,
+  getMeRoute,
+  handleGetMe,
+  handlePostDemoSwitch,
+  handlePostLogout,
+  isDemoAuthEnabled,
+  logoutRoute,
+  requireRole,
   resolveDemoInvestor,
   resolveDemoOperator,
   resolveDemoSiteOwner,
-  resolveDemoViewer,
+  resolveViewer,
 } from "./identity";
 export {
   failureResponse,

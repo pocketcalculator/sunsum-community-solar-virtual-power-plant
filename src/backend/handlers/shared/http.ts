@@ -19,6 +19,7 @@ const STATUS_BY_FAILURE_CODE: Record<FailureCode, number> = {
   invalid_query: 400,
   invalid_body: 400,
   unauthenticated: 401,
+  forbidden_origin: 403,
   forbidden_role: 403,
   forbidden_owner: 403,
   forbidden_tier: 403,
@@ -60,4 +61,82 @@ export function failureResponse(failure: Failure): Response {
   };
 
   return jsonResponse(body, STATUS_BY_FAILURE_CODE[failure.code]);
+}
+
+/**
+ * Refuse a state-changing request that a different site initiated.
+ *
+ * `SameSite=Lax` stops an existing cookie from being *sent* on a cross-site
+ * POST. It does nothing about a cross-site POST whose *response* sets one, so
+ * an anonymous sign-in endpoint is open to login CSRF: an attacker's form posts
+ * to `/auth/demo-switch`, the browser stores the returned cookie, and the
+ * victim then drives the demo as a role the attacker chose. The endpoint takes
+ * no credential, so nothing else stands in the way.
+ *
+ * `Sec-Fetch-Site` is the check that actually answers the question — the
+ * browser sets it, script cannot, and it survives proxies untouched. `none` is
+ * a user-initiated navigation and `same-origin` is our own page; anything else
+ * came from somewhere we did not serve.
+ *
+ * Absent the header the caller is not a modern browser — curl, a test, a
+ * server-to-server call — and is not subject to this attack, so fall back to
+ * `Origin` and allow the request when neither is present. A literal
+ * `Origin: null` is *not* an absent header: sandboxed iframes and `data:` and
+ * `file:` documents send it, and those are browsers running an attacker's
+ * markup, which is the case this exists to refuse. `Origin` is otherwise
+ * compared by host against the `Host` header rather than against
+ * `request.url`, because behind App Service's proxy those need not agree on
+ * scheme or port.
+ */
+export function rejectCrossSiteRequest(request: Request): Failure | null {
+  const refusal: Failure = {
+    code: "forbidden_origin",
+    message: "This endpoint does not accept cross-site requests.",
+  };
+
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite !== null) {
+    return fetchSite === "same-origin" || fetchSite === "none" ? null : refusal;
+  }
+
+  const origin = request.headers.get("origin");
+  if (origin === null) return null;
+  if (origin === "null") return refusal;
+
+  const host = request.headers.get("host");
+  if (host === null) return refusal;
+
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return refusal;
+  }
+  return originHost === host ? null : refusal;
+}
+
+/**
+ * The methods that cannot change state, and so cannot be forged into one.
+ *
+ * A cross-site `GET` is a read the caller could have made anyway; refusing it
+ * would break legitimate embedding and buy nothing.
+ */
+const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * Refuse a cookie-authenticated write that a different site initiated.
+ *
+ * `SameSite=Lax` is scoped to the *site*, not the origin, so a sibling origin
+ * under the same registrable domain still has the session cookie attached to
+ * its forged `POST`. Lax is therefore not a CSRF defence for the write routes
+ * on its own, and every state-changing route needs the origin check — not just
+ * the two that hand out a cookie.
+ *
+ * This is applied once, at the point where a request becomes an identity, so
+ * that a new route cannot be added without it.
+ */
+export function rejectCrossSiteWrite(request: Request): Failure | null {
+  return SAFE_METHODS.has(request.method.toUpperCase())
+    ? null
+    : rejectCrossSiteRequest(request);
 }

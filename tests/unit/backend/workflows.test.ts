@@ -1249,6 +1249,29 @@ describe("new endpoint workflows", () => {
     expect((await listMyEngagements(operator, store)).ok).toBe(false);
   });
 
+  /*
+   * The pipeline closes when onboarding is revoked, not just when it was never
+   * done. Creation, funding needs and portfolio all gate on
+   * `onboardingCompletedAt`; the list did not, so an investor whose onboarding
+   * was reset kept reading project names and stage transitions after every
+   * other read had closed. The engagement is created while onboarded and read
+   * back after, because that is the order the gap actually occurs in.
+   */
+  it("closes the pipeline to an investor whose onboarding is incomplete", async () => {
+    const { store, projectId } = await acceptedStore();
+    await updateProjectVisibility(operator, projectId, true, store);
+    await expressInterest(investor, projectId, null, store);
+
+    const onboarded = await listMyEngagements(investor, store);
+    expect(onboarded.ok).toBe(true);
+    if (onboarded.ok) expect(onboarded.value).toHaveLength(1);
+
+    const pending = await listMyEngagements(pendingInvestor, store);
+
+    expect(pending.ok).toBe(false);
+    if (!pending.ok) expect(pending.failure.code).toBe("forbidden_tier");
+  });
+
   it("gives every activity and document row exactly one parent", async () => {
     const { store, siteId, projectId } = await acceptedStore();
     await updateProjectVisibility(operator, projectId, true, store);
