@@ -15,6 +15,7 @@ import {
 } from "../../core/sites";
 import { demoBackendStore, type BackendStore } from "../../core/store";
 import { failure, ok, type Result } from "../../core/shared";
+import { viabilityClient as selectViabilityClient } from "../../viability";
 import { requireRole } from "../identity";
 import {
   failureResponse,
@@ -46,7 +47,7 @@ export async function handlePostSite(
   request: Request,
   viewer: Viewer,
   store: BackendStore = demoBackendStore,
-  viabilityClient?: ViabilityClient,
+  viabilityClient: ViabilityClient = selectViabilityClient(),
 ): Promise<Response> {
   const body = await readJsonObject(request);
   if (!body.ok) return failureResponse(body.failure);
@@ -112,7 +113,7 @@ export async function handlePostSiteSubmit(
   viewer: Viewer,
   siteId: string,
   store: BackendStore = demoBackendStore,
-  viabilityClient?: ViabilityClient,
+  viabilityClient: ViabilityClient = selectViabilityClient(),
 ): Promise<Response> {
   const id = validatePathId(siteId, "invalid_body");
   if (!id.ok) return failureResponse(id.failure);
