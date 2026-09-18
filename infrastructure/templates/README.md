@@ -25,7 +25,7 @@ identity details for the preparation workflow in ignored local configuration.
 
 | Template | Scope | Use |
 | --- | --- | --- |
-| `resources.bicep` | Resource group | Linux F1 App Service and separately billable Entra-only PostgreSQL in an existing group. |
+| `resources.bicep` | Resource group | Fixture-only Linux F1 App Service and separately billable Entra-only PostgreSQL in an existing group; database activation is separate. |
 | `postgres-firewall.bicep` | Resource group | Only approved individual IPv4 rules for an existing PostgreSQL server; no rules by default. |
 | `storage.bicep` | Resource group | Standard LRS Hot private containers, shared keys disabled; closed by default with explicit policy-approved authenticated-public mode. |
 | `storage-role-grants.bicep` | Resource group | Separate administrator grant to the web identity at the two container scopes only. |
@@ -41,7 +41,12 @@ Use an ignored `.azure\artifacts\` output directory. Compilation makes no cloud
 changes and does not validate quotas, cost, directory membership or Azure
 policy. The web module has no implicit paid-tier fallback.
 
-Both `resources.bicep` and `web.bicep` allow only `sunsum_runtime` for
+`web.bicep` explicitly sets `SUNSUM_STORE=mock` and has no database parameters or
+database app settings. The root retains `PG*` outputs for separate operator setup;
+app activation requires reviewed `DATABASE_URL`/`SUNSUM_DB_AUTH` settings and grants.
+Do not reapply the preparation template over an activated app to deploy code.
+
+`resources.bicep` allows only `sunsum_runtime` for its output-contract
 `runtimeRoleName`, including direct-template deployments. The provisioning
 wrapper rejects other names before Azure calls. This is a configuration guard,
 not SQL privilege enforcement; the separate bootstrap must verify that the role

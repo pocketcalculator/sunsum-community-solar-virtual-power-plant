@@ -94,7 +94,7 @@ describe("the bounded Azure preparation contract", () => {
     expect(provision).toContain("DatabaseBudgetApproval");
   });
 
-  it("declares TLS, managed identity, disabled publishing passwords and exact shared PG variables", () => {
+  it("declares a fixture-only web host with database configuration kept in operator outputs", () => {
     const web = read("infrastructure/templates/web.bicep");
     expect(web).toContain("httpsOnly: true");
     expect(web).toContain("ftpsState: 'Disabled'");
@@ -102,12 +102,14 @@ describe("the bounded Azure preparation contract", () => {
     expect(web).toContain("scmMinTlsVersion: '1.2'");
     expect(web.match(/allow: false/gu)).toHaveLength(2);
     expect(web).toContain("type: 'SystemAssigned'");
+    expect(web).toContain("name: 'SUNSUM_STORE'");
+    expect(web).toContain("value: 'mock'");
+    const core = read("infrastructure/templates/resources.bicep");
     for (const name of ["SUNSUM_DATABASE_AUTH", "PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGSSLMODE"]) {
-      expect(web).toContain(`name: '${name}'`);
+      expect(web).not.toContain(`name: '${name}'`);
+      expect(core).toContain(`output ${name} string`);
     }
-    expect(web).toContain("value: 'managed-identity'");
-    expect(web).toContain("value: 'verify-full'");
-    expect(web).not.toMatch(/PGPASSWORD|DATABASE_URL|AZURE_CLIENT_ID/u);
+    expect(web).not.toMatch(/PGPASSWORD|DATABASE_URL|SUNSUM_DB_AUTH|AZURE_CLIENT_ID/u);
   });
 
   it("keeps network approval separate from Entra-only PostgreSQL provisioning", () => {

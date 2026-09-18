@@ -8,7 +8,7 @@ param environmentName string
 param location string
 param appServicePlanName string
 param webAppName string
-@description('Existing is nonmutating: identity/settings/sign-in on an existing app are explicit separate steps. Create deploys the F1 plan and web app.')
+@description('Existing is nonmutating: identity/settings/sign-in on an existing app are explicit separate steps. Create deploys the F1 plan and fixture-only web app; database activation is separate.')
 @allowed([
   'Existing'
   'Create'
@@ -19,7 +19,7 @@ param postgresServerName string
 @maxLength(24)
 param storageAccountName string
 param databaseName string = 'sunsum'
-@description('This foundation configures only the designated runtime role. Its Entra mapping and non-admin privileges must be verified by the separate SQL bootstrap.')
+@description('Designated SQL role returned in operator connection outputs, not installed as app settings. Its Entra mapping and non-admin privileges must be verified by separate SQL bootstrap.')
 @allowed([
   'sunsum_runtime'
 ])
@@ -95,9 +95,6 @@ module web './web.bicep' = if (webAppMode == 'Create') {
     location: location
     planName: appServicePlanName
     webAppName: webAppName
-    databaseHost: postgres.outputs.fqdn
-    databaseName: databaseName
-    runtimeRoleName: runtimeRoleName
     blobEndpoint: storage.outputs.blobEndpoint
     tags: tags
   }

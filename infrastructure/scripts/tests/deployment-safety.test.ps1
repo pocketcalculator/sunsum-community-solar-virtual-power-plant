@@ -840,19 +840,24 @@ try {
             $compiledJson = & $BicepPath build $templatePath --no-restore --stdout
             if ($LASTEXITCODE -ne 0) { throw "Cannot compile $templateName." }
             $compiled = ($compiledJson -join "`n") | ConvertFrom-Json -AsHashtable
+            if ($templateName -ceq 'web') {
+                $webResource = @($compiled.resources | Where-Object { $_.type -ceq 'Microsoft.Web/sites' })
+                $settings = @($webResource[0].properties.siteConfig.appSettings)
+                $store = @($settings | Where-Object { $_.name -ceq 'SUNSUM_STORE' })
+                if ($store.Count -ne 1 -or $store[0].value -cne 'mock' -or
+                    @($settings | Where-Object { $_.name -cmatch '^(PG|SUNSUM_DATABASE_AUTH$|DATABASE_URL$|SUNSUM_DB_AUTH$)' }).Count -ne 0) {
+                    throw 'The preparation web host must be explicitly fixture-only with no database settings.'
+                }
+                foreach ($removed in @('databaseHost', 'databaseName', 'runtimeRoleName')) {
+                    if ($compiled.parameters.Contains($removed)) { throw 'Unused database inputs must not remain in the web module.' }
+                }
+                continue
+            }
             $roleParameter = $compiled.parameters.runtimeRoleName
             if ($roleParameter.allowedValues.Count -ne 1 -or $roleParameter.allowedValues[0] -cne 'sunsum_runtime' -or
                 $roleParameter.defaultValue -cne 'sunsum_runtime') { throw 'Compiled runtime-role allowlist must contain only sunsum_runtime.' }
             $templateParameters = @{}
-            if ($templateName -ceq 'resources') {
-                foreach ($entry in $provisionParameters.parameters.GetEnumerator()) { $templateParameters[$entry.Key] = $entry.Value.value }
-            } else {
-                $templateParameters = @{
-                    location = 'centralus'; planName = 'sample-plan'; webAppName = 'sample-web'
-                    databaseHost = 'sample-postgres.postgres.database.azure.com'; databaseName = 'sunsum'
-                    blobEndpoint = 'https://samplestorage.blob.core.windows.net/'
-                }
-            }
+            foreach ($entry in $provisionParameters.parameters.GetEnumerator()) { $templateParameters[$entry.Key] = $entry.Value.value }
             $relativeTemplate = [System.IO.Path]::GetRelativePath($fixture, $templatePath).Replace('\', '/')
             foreach ($roleName in @('omitted', 'sunsum_runtime', '') + $rejectedRoles) {
                 $null = $templateParameters.Remove('runtimeRoleName')
@@ -870,7 +875,7 @@ try {
                 }
             }
         }
-        Write-Output 'Runtime role template guards passed: both compiled allowlists and 18 parameter cases.'
+        Write-Output 'Template guards passed: fixture-only web settings and nine root runtime-role parameter cases.'
     }
     $zip = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Update)
     try { $null = $zip.CreateEntry('.env') } finally { $zip.Dispose() }

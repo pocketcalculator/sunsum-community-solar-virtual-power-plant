@@ -124,6 +124,7 @@ database is required for the browser-only preview.
 
 ```sh
 npm run db:generate
+npm run db:migrate:azure -- --print-digest
 npm run db:migrate:azure -- --apply --approval .azure/dev/migration-approval.json --expected-sha256 '<reviewed-approval-sha256>'
 ```
 
@@ -137,11 +138,18 @@ same committed SQL through the explicit `PG*` and Entra contract above.
 
 The reviewed approval JSON binds `operation=DatabaseMigration`, host, numeric
 port, database, user, authentication mode, TLS mode, numeric statement timeout,
-and a nonempty approval reference. Its exact-byte SHA-256 must come from review.
+and a nonempty approval reference, plus `migrationsSha256` for the reviewed
+journal and its SQL files. The approval file's exact-byte SHA-256 must come from review.
 Values must match the captured environment before any client is constructed;
 the digest is checked again before construction. See the
 [approval example](../../../../infrastructure/docs/app-service-postgres.md#5-operator-connectivity-and-migrations).
-Keep the reviewed SQL revision separately; the target approval does not hash SQL.
+`--print-digest` is read-only and requires no database settings. Record its value
+during SQL review, not by recomputing it from edited files at apply time. Execution
+uses an immutable in-memory copy parsed by Drizzle; source and approval drift are
+checked immediately before running it. Drizzle retains transaction/history
+handling through the same pool, without rereading the mutable migration folder.
+The runbook specifies the digest format; keep the SQL and tooling revision with
+the approval. This target/SQL binding does not establish operator permissions.
 
 Review generated SQL, snapshots, locks, data compatibility, and least-privilege
 grants before using `--apply`. Azure migrations require the separately granted

@@ -2,13 +2,17 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { readMigrationApproval } from "../../../scripts/migration-approval";
 import type { DatabaseConfig } from "../../../src/backend/infrastructure/database/config";
 import { DatabaseConfigurationError } from "../../../src/backend/infrastructure/database/errors";
+import { captureMigrationSnapshot, migrationDigest } from "../../../scripts/migration-snapshot";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { Client, Pool } from "pg";
+import type { QueryConfig } from "pg";
 
 vi.mock("server-only", () => ({}));
 
@@ -38,6 +42,7 @@ describe("database CLI safety gates", () => {
       operation: "DatabaseMigration", host: config.host, port: config.port, database: config.database,
       user: config.user, sslMode: config.sslMode, authentication: config.auth.mode,
       statementTimeoutMs: 5000, approvalReference: "review-123",
+      migrationsSha256: migrationDigest(join(root, "src/backend/db/migrations")),
     };
     const text = JSON.stringify(record);
     const hash = createHash("sha256").update(text).digest("hex");
@@ -64,6 +69,13 @@ describe("database CLI safety gates", () => {
       const missing = run([...operatorArgs, "scripts/db-migrate.ts", "--apply"], env);
       expect(missing.status).toBe(1);
       expect(missing.stderr).toContain("requires a reviewed --approval");
+      const unreviewedSql = JSON.stringify({ ...record, migrationsSha256: "0".repeat(64) });
+      writeFileSync(path, unreviewedSql);
+      const sqlMismatch = run([...operatorArgs, "scripts/db-migrate.ts", "--apply", "--approval", path, "--expected-sha256", createHash("sha256").update(unreviewedSql).digest("hex")], env);
+      expect(sqlMismatch.status).toBe(1);
+      expect(sqlMismatch.stderr).toContain("SQL no longer matches");
+      expect(sqlMismatch.stdout).not.toContain("applied");
+      writeFileSync(path, text);
       for (const unreadable of [join(directory, "synthetic-private-missing.json"), directory]) {
         expect(() => readMigrationApproval(unreadable, hash, config, 5000)).toThrow(DatabaseConfigurationError);
         const result = run([...operatorArgs, "scripts/db-migrate.ts", "--apply", "--approval", unreadable, "--expected-sha256", hash], env);
@@ -86,6 +98,98 @@ describe("database CLI safety gates", () => {
       expect(() => approval.verifyUnchanged()).toThrow("Cannot read the migration approval file");
     } finally { rmSync(directory, { recursive: true, force: true }); }
   }, 30_000);
+
+  it("hashes journal and SQL bytes and executes only the captured migrations", async () => {
+    const folder = mkdtempSync(join(tmpdir(), "sunsum-reviewed-sql-"));
+    mkdirSync(join(folder, "meta"));
+    const journal = JSON.stringify({ version: "7", dialect: "postgresql", entries: [{ idx: 0, tag: "0000_test", when: 1, breakpoints: true }] });
+    const journalPath = join(folder, "meta/_journal.json");
+    const sqlPath = join(folder, "0000_test.sql");
+    const originalSql = "SELECT 1;\n--> statement-breakpoint\nSELECT 2;";
+    const pool = new Pool();
+    try {
+      writeFileSync(journalPath, journal);
+      writeFileSync(sqlPath, originalSql);
+      const digest = migrationDigest(folder);
+      const expected = createHash("sha256").update(JSON.stringify([
+        ["meta/_journal.json", createHash("sha256").update(journal).digest("hex")],
+        ["0000_test.sql", createHash("sha256").update(originalSql).digest("hex")],
+      ])).digest("hex");
+      expect(digest).toBe(expected);
+      const snapshot = captureMigrationSnapshot(folder, digest.toUpperCase());
+      expect(snapshot.count).toBe(1);
+      const migrate = vi.spyOn(PgDialect.prototype, "migrate").mockImplementation(async (migrations) => {
+        writeFileSync(sqlPath, "SELECT 'unreviewed';");
+        expect(migrations[0]?.sql.join("--> statement-breakpoint")).toBe(originalSql);
+        expect(migrations[0]?.hash).toBe(createHash("sha256").update(originalSql).digest("hex"));
+        expect(Object.isFrozen(migrations[0]?.sql)).toBe(true);
+      });
+      await snapshot.migrate(pool);
+      expect(migrate).toHaveBeenCalledOnce();
+      await expect(snapshot.migrate(pool)).rejects.toThrow("SQL no longer matches");
+      expect(migrate).toHaveBeenCalledOnce();
+      expect(() => captureMigrationSnapshot(folder, digest)).toThrow("SQL no longer matches");
+      writeFileSync(sqlPath, originalSql);
+      writeFileSync(journalPath, `${journal}\n`);
+      expect(() => snapshot.verifyUnchanged()).toThrow("SQL no longer matches");
+      writeFileSync(journalPath, journal.replace("0000_test", "../outside"));
+      expect(() => migrationDigest(folder)).toThrow("unique safe names");
+      writeFileSync(journalPath, journal);
+      rmSync(sqlPath);
+      expect(() => snapshot.verifyUnchanged()).toThrow("Cannot read the migration journal");
+    } finally {
+      vi.restoreAllMocks();
+      await pool.end();
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it("prints the migration digest without database configuration or connections", () => {
+    const result = run([...operatorArgs, "scripts/db-migrate.ts", "--print-digest"], { PGHOST: "" });
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe(migrationDigest(join(root, "src/backend/db/migrations")));
+  });
+
+  it.each([false, true])("runs captured SQL through Drizzle transaction/history handling (failure=%s)", async (failStatement) => {
+    const folder = mkdtempSync(join(tmpdir(), "sunsum-drizzle-snapshot-"));
+    mkdirSync(join(folder, "meta"));
+    const pool = new Pool();
+    const client = Object.assign(new Client(), { release: vi.fn() });
+    const result = { rows: [], command: "", rowCount: 0, oid: 0, fields: [] };
+    try {
+      writeFileSync(join(folder, "meta/_journal.json"), JSON.stringify({ dialect: "postgresql", entries: [{ tag: "0000_test", when: 1, breakpoints: true }] }));
+      const sqlPath = join(folder, "0000_test.sql");
+      writeFileSync(sqlPath, "SELECT 1;\n--> statement-breakpoint\nSELECT 2;");
+      const snapshot = captureMigrationSnapshot(folder, migrationDigest(folder));
+      const outsideTransaction = vi.spyOn(pool, "query").mockImplementation(async () => {
+        writeFileSync(sqlPath, "SELECT 'unreviewed';");
+        return result;
+      });
+      vi.spyOn(pool, "connect").mockImplementation(async () => client);
+      const executed: string[] = [];
+      vi.spyOn(client, "query").mockImplementation(async (query: string | QueryConfig) => {
+        const text = typeof query === "string" ? query : query.text;
+        executed.push(text);
+        if (failStatement && text.includes("SELECT 2")) throw new Error("synthetic statement failure");
+        return result;
+      });
+      if (failStatement) { await expect(snapshot.migrate(pool)).rejects.toThrow(); }
+      else { await snapshot.migrate(pool); }
+      expect(outsideTransaction).toHaveBeenCalledTimes(3);
+      expect(executed[0]).toBe("begin");
+      expect(executed).toContain("SELECT 1;\n");
+      expect(executed).toContain("\nSELECT 2;");
+      expect(executed.some((query) => query.includes('insert into "drizzle"."__drizzle_migrations"'))).toBe(!failStatement);
+      expect(executed.at(-1)).toBe(failStatement ? "rollback" : "commit");
+      expect(executed.join("\n")).not.toContain("unreviewed");
+      expect(client.release).toHaveBeenCalledOnce();
+      expect(pool.totalCount).toBe(0);
+    } finally {
+      vi.restoreAllMocks();
+      await pool.end();
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
 
   it("does not report a configured database when settings are absent", () => {
     const result = run([...operatorArgs, "scripts/db-check.ts"], { PGHOST: "" });

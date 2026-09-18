@@ -89,7 +89,7 @@ Available routes:
 | ------- | ---------------------------------------------------------------- |
 | `/`     | Value proposition, the three ways to take part, journey, and FAQ |
 | `/join` | The guided create-profile workflow                               |
-| `GET /api/portfolio` | Explicit synthetic portfolio fixtures and a fixed demo investor |
+| `GET /api/portfolio` | Selected fixture or PostgreSQL store with a fixed demo investor |
 | `/dashboard/site-owner` | Interactive site-owner dashboard design prototype |
 
 `/join` accepts an optional `?start=` parameter so the landing page can open the

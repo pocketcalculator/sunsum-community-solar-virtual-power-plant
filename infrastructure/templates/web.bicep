@@ -7,18 +7,7 @@ param planName string
 @minLength(2)
 @maxLength(60)
 param webAppName string
-param databaseHost string
 param blobEndpoint string
-@minLength(1)
-@maxLength(63)
-param databaseName string
-@description('Designated runtime SQL role; role naming does not establish its Entra mapping or privileges.')
-@allowed([
-  'sunsum_runtime'
-])
-@minLength(1)
-@maxLength(63)
-param runtimeRoleName string = 'sunsum_runtime'
 param tags object = {}
 
 resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {
@@ -73,28 +62,8 @@ resource web 'Microsoft.Web/sites@2024-04-01' = {
           value: 'true'
         }
         {
-          name: 'SUNSUM_DATABASE_AUTH'
-          value: 'managed-identity'
-        }
-        {
-          name: 'PGHOST'
-          value: databaseHost
-        }
-        {
-          name: 'PGPORT'
-          value: '5432'
-        }
-        {
-          name: 'PGDATABASE'
-          value: databaseName
-        }
-        {
-          name: 'PGUSER'
-          value: runtimeRoleName
-        }
-        {
-          name: 'PGSSLMODE'
-          value: 'verify-full'
+          name: 'SUNSUM_STORE'
+          value: 'mock'
         }
         {
           name: 'AZURE_STORAGE_BLOB_ENDPOINT'

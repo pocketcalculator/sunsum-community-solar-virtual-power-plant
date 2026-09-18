@@ -44,10 +44,13 @@ export const readMigrationApproval = (
     statementTimeoutMs,
   };
   if (!input || typeof input !== "object" || Array.isArray(input) ||
-      Object.keys(input).length !== Object.keys(expected).length + 1) {
+      Object.keys(input).length !== Object.keys(expected).length + 2) {
     throw new DatabaseConfigurationError("Migration approval must contain exactly the documented fields.");
   }
   const record = input as Record<string, unknown>;
+  if (typeof record.migrationsSha256 !== "string" || !/^[a-f0-9]{64}$/iu.test(record.migrationsSha256)) {
+    throw new DatabaseConfigurationError("A reviewed migrationsSha256 digest is required in migration approval.");
+  }
   if (typeof record.approvalReference !== "string" || !record.approvalReference.trim() ||
       record.approvalReference.length > 200 || /[<>\u0000-\u001f\u007f]/u.test(record.approvalReference)) {
     throw new DatabaseConfigurationError("A migration review reference is required.");
@@ -57,5 +60,5 @@ export const readMigrationApproval = (
       throw new DatabaseConfigurationError(`Migration approval does not match the configured target (${key}).`);
     }
   }
-  return Object.freeze({ verifyUnchanged: () => { verifiedBytes(); } });
+  return Object.freeze({ migrationsSha256: record.migrationsSha256, verifyUnchanged: () => { verifiedBytes(); } });
 };

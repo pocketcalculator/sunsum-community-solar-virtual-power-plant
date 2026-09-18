@@ -1,18 +1,22 @@
 import { fileURLToPath } from "node:url";
-import { readMigrationFiles } from "drizzle-orm/migrator";
 import {
   DatabaseConfigurationError,
   databaseFailureMessage,
 } from "../src/backend/infrastructure/database/errors";
 import { readDatabaseConfig } from "../src/backend/infrastructure/database/config";
 import { readMigrationApproval } from "./migration-approval";
+import { captureMigrationSnapshot, migrationDigest } from "./migration-snapshot";
 
 const migrationsFolder = fileURLToPath(
   new URL("../src/backend/db/migrations", import.meta.url),
 );
 
-try {
+const main = async () => {
   const args = process.argv.slice(2);
+  if (args.length === 1 && args[0] === "--print-digest") {
+    console.log(migrationDigest(migrationsFolder));
+    return;
+  }
   if (args[0] !== "--apply" || (args.length !== 1 &&
       (args.length !== 5 || args[1] !== "--approval" || !args[2] || args[3] !== "--expected-sha256" || !args[4]))) {
     throw new DatabaseConfigurationError("Migration execution requires exactly --apply --approval <local-json> --expected-sha256 <reviewed-hash> after reviewing the target and generated SQL.");
@@ -40,25 +44,26 @@ try {
     throw new DatabaseConfigurationError("Migration execution requires a reviewed --approval file and --expected-sha256 before connecting.");
   }
   const approval = readMigrationApproval(approvalPath, approvalSha256, config, migrationStatementTimeoutMs);
-  const migrations = readMigrationFiles({ migrationsFolder });
-  if (migrations.length === 0) {
+  const snapshot = captureMigrationSnapshot(migrationsFolder, approval.migrationsSha256);
+  if (snapshot.count === 0) {
     console.log("No versioned SQL migrations are present; nothing was applied.");
   } else {
-    const [{ createDatabase, assertMigrationPermission }, { migrate }] = await Promise.all([
-      import("../src/backend/infrastructure/database"),
-      import("drizzle-orm/node-postgres/migrator"),
-    ]);
+    const { createDatabase, assertMigrationPermission } = await import("../src/backend/infrastructure/database");
     approval.verifyUnchanged();
+    snapshot.verifyUnchanged();
     const database = createDatabase(environment, { allowOperatorIdentity: true, migrationStatementTimeoutMs });
     try {
       await assertMigrationPermission(database);
-      await migrate(database.db, { migrationsFolder, migrationsSchema: "drizzle" });
+      approval.verifyUnchanged();
+      await snapshot.migrate(database.pool);
       console.log("Reviewed database migrations applied. Application rollback does not roll back the database.");
     } finally {
       await database.close();
     }
   }
-} catch (error) {
+};
+
+main().catch((error) => {
   console.error(`Database migration failed: ${databaseFailureMessage(error)}`);
   process.exitCode = 1;
-}
+});

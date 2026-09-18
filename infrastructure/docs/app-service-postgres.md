@@ -49,9 +49,11 @@ and uses `DATABASE_URL` plus optional `SUNSUM_DB_AUTH`, as documented in the
 [runtime database guide](../../src/backend/db/README.md). The default remains
 the explicit fixture store. The `PG*` and `SUNSUM_DATABASE_AUTH` settings below
 configure this PR's separate connection/migration tooling; they do not configure
-that application store. This rebase does not enable database mode or reconcile
-the two connection/credential implementations. In particular, provisioning the
-listed `PG*` App Service settings alone does not activate persistent endpoints.
+that application store. Create-mode preparation explicitly sets `SUNSUM_STORE=mock`
+and installs no database connection settings. The root template retains database
+connection outputs for separate operator setup. Database activation with the
+application contract, identity mapping and table grants requires its own review;
+neither provisioning nor routine ZIP deployment activates it.
 
 PostgreSQL Flexible Server is **separately billable**. The initial defaults are
 PostgreSQL 17, `Burstable` / `Standard_B1ms`, `storageSizeGB=32`, seven-day local
@@ -149,7 +151,7 @@ the active subscription or enable basic publishing. The separately approved
 | File | Purpose |
 | --- | --- |
 | `templates/resources.bicep` | Resource-group-scoped core; parameters include region, names, tenant, administrator, compute tier/SKU, storage and version. |
-| `templates/web.bicep` | Linux F1 plan/site, system-assigned managed identity, HTTPS/TLS, disabled FTP/SCM basic publishing and database settings. |
+| `templates/web.bicep` | Fixture-only Linux F1 plan/site, system-assigned managed identity, HTTPS/TLS and disabled FTP/SCM basic publishing. |
 | `templates/postgres.bicep` | Entra-only server/database and TLS settings; **no firewall rules**. |
 | `templates/postgres-firewall.bicep` | Separate incremental exact-IP allowances on an existing server; empty by default. |
 | `templates/resources.parameters.example.json` | Nondeployable placeholders; copy to ignored configuration and replace them. |
@@ -164,8 +166,16 @@ SCM, `ftpsState=Disabled`, and both publishing policies `allow=false`.
 `npm run start -- --hostname 0.0.0.0` lets Next.js use the platform's `PORT`;
 there is no hardcoded port setting. A system-assigned identity is a declaration
 for future provisioning, not evidence that an identity already exists.
+`SUNSUM_STORE=mock` is explicit. The module takes no database host/name/role
+parameters and installs no `PG*`, `SUNSUM_DATABASE_AUTH`, `DATABASE_URL` or
+`SUNSUM_DB_AUTH` settings. Direct web-module callers must remove the former
+database parameters; root callers retain the database configuration/output contract.
 
-| Setting | Azure runtime | Optional local PostgreSQL |
+The root connection outputs below describe the separate tooling contract. They
+are not automatically installed into App Service. Azure migration operators use
+their separately approved `azure-cli` identity and `sunsum_migrator` role.
+
+| Setting | Azure tooling connection | Optional local PostgreSQL |
 | --- | --- | --- |
 | `SUNSUM_DATABASE_AUTH` | `managed-identity` | `password` |
 | `PGHOST` | PostgreSQL server FQDN | Loopback |
@@ -175,7 +185,7 @@ for future provisioning, not evidence that an identity already exists.
 | `PGSSLMODE` | `verify-full` | `disable`, **only nonproduction loopback** |
 | `PGPASSWORD` | **Not an App Service setting** | Generated local secret |
 
-Both the root and standalone web templates constrain `runtimeRoleName` to
+The root template constrains its connection-output `runtimeRoleName` to
 `sunsum_runtime`; the provisioning script rejects other values before Azure
 calls. Use that same name for `runtimeRole` in the separate bootstrap config.
 Custom runtime role names require a reviewed change to the template/bootstrap
@@ -190,8 +200,11 @@ Future Blob adapters receive server-only `AZURE_STORAGE_BLOB_ENDPOINT`,
 web app's `ManagedIdentityCredential`, not account keys. Declaring these settings
 does not install or implement a Storage client.
 
-Do not set Azure `DATABASE_URL`, `PGPASSWORD`, or `AZURE_CLIENT_ID` for this
-system-assigned identity path. Runtime must not fall back to Azure CLI.
+The preparation template must remain fixture-only until separate activation is
+reviewed. The application path uses a passwordless `DATABASE_URL` with verified
+TLS and managed identity; it must not be confused with this tooling contract.
+Do not set Azure `PGPASSWORD` or select a user-assigned identity implicitly.
+Runtime must not fall back to Azure CLI.
 `SUNSUM_DATABASE_AUTH=azure-cli` is an **explicit operator-tooling mode** with
 verified TLS, never the App Service runtime mode. Use trusted root CAs and the
 server FQDN, not an IP or a pinned intermediate/server certificate.
@@ -693,8 +706,18 @@ Use the same role in bootstrap. Custom names require a reviewed contract change,
 and the name restriction does not substitute for bootstrap's non-admin identity
 mapping and permission checks.
 
-Prepare an ignored `.azure\dev\migration-approval.json`, binding the captured
-`PG*` environment to the reviewed operation, and record its SHA-256:
+Review the journal and referenced SQL in `src/backend/db/migrations`, then obtain
+their content digest with this local-only command (no database configuration,
+credentials or connection needed):
+
+```powershell
+npm run db:migrate:azure -- --print-digest
+```
+
+Record that value as `migrationsSha256` in an ignored
+`.azure\dev\migration-approval.json`, binding the SQL and captured `PG*`
+environment to the reviewed operation. Record the approval file's own SHA-256
+in the approval process as well; these are two different digests:
 
 ```json
 {
@@ -706,6 +729,7 @@ Prepare an ignored `.azure\dev\migration-approval.json`, binding the captured
   "authentication": "azure-cli",
   "sslMode": "verify-full",
   "statementTimeoutMs": 5000,
+  "migrationsSha256": "<reviewed-journal-and-sql-sha256>",
   "approvalReference": "<migration-review>"
 }
 ```
@@ -714,9 +738,25 @@ All fields are required; extra fields or mismatches fail before client creation.
 Missing or unreadable approval files and malformed JSON are reported as local
 configuration errors, not PostgreSQL connectivity errors. Diagnostics omit file
 contents and paths, including if the approval file disappears before the final check.
-The command rechecks the digest before constructing the client and uses the
-captured environment, not later changes. Review and retain the generated SQL
-and code revision separately; this target record does not hash the SQL files.
+The migration digest is SHA-256 of compact UTF-8 JSON containing ordered
+`[relativePath, fileSha256]` pairs: `meta/_journal.json` first, then each referenced
+`<tag>.sql` in journal order. Per-file hashes cover exact bytes, including line
+endings, and use lowercase hex. Paths use `/`. Changes to SQL, journal ordering,
+timestamps, names or formatting require a new digest and approval. Unreferenced
+SQL and Drizzle Kit snapshot JSON are not executed and are not included.
+
+The command verifies the captured bytes before constructing a client, parses
+only that copy with Drizzle, and removes the temporary files after parsing.
+Approval and source digests are rechecked after the permission preflight,
+immediately before execution. Drizzle's PostgreSQL dialect and session then apply
+the frozen in-memory migrations through the existing pool, preserving its
+transaction and migration-history handling without rereading the source folder.
+Edits after the final check cannot substitute SQL into that execution. Keep the
+reviewed SQL, journal, approval and code revision together; don't recompute an
+edited bundle's digest at apply time and treat it as approval. As with other
+local guards, this does not protect against a compromised operator or changed
+tooling/dependencies. An abrupt process termination may leave a temporary copy;
+use an operator-controlled temporary directory.
 
 ```powershell
 npm run db:check
