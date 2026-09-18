@@ -14,6 +14,19 @@ export interface DashboardLocation {
         readonly yPercent: number;
       }
     | null;
+  /*
+   * Everything below describes a real submission and is therefore optional:
+   * the illustrative locations in this file have no pipeline position, and a
+   * required field would force them to invent one. `undefined` means "this is
+   * a sample row"; `null` means "a real row that has not reached this stage".
+   */
+  readonly submissionStatus?: string | null;
+  readonly projectStage?: string | null;
+  readonly journeyStageId?: string | null;
+  readonly nextAction?: string | null;
+  readonly viabilityStatus?: string | null;
+  readonly documentCount?: number;
+  readonly outstandingCount?: number;
 }
 
 export interface ReturnPoint {
