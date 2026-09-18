@@ -124,8 +124,8 @@ describe("document content", () => {
     if (location === null) return;
 
     expect(await blob.exists(location)).toBe(true);
-    expect(blob.countByContainer("owner-private")).toBe(1);
-    expect(blob.countByContainer("investor-tier-1")).toBe(0);
+    expect(blob.countByContainer("site-documents")).toBe(1);
+    expect(blob.countByContainer("project-documents")).toBe(0);
     expect(formatBlobPath(location)).toContain(`owners/${owner.userId}/sites/${siteId}/`);
   });
 

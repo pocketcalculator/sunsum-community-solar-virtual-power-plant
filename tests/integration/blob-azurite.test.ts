@@ -120,7 +120,7 @@ describe.skipIf(!running)("AzureDocumentBlobClient against a live Azurite emulat
   /**
    * The container split is the boundary underneath the application's own
    * authorization: a credential scoped to tier-1 cannot even name an
-   * owner-private blob. This proves the two really are distinct containers on
+   * site-documents blob. This proves the two really are distinct containers on
    * the server, not just distinct strings in a path.
    */
   it("keeps the two disclosure classes in separate containers", async () => {
@@ -133,8 +133,8 @@ describe.skipIf(!running)("AzureDocumentBlobClient against a live Azurite emulat
       blobName: ownerOnly.blobName,
     };
 
-    expect(ownerOnly.container).toBe("owner-private");
-    expect(sameNameInvestorSide.container).toBe("investor-tier-1");
+    expect(ownerOnly.container).toBe("site-documents");
+    expect(sameNameInvestorSide.container).toBe("project-documents");
     expect(await blob.exists(ownerOnly)).toBe(true);
     expect(await blob.exists(sameNameInvestorSide)).toBe(false);
   });

@@ -141,7 +141,7 @@ describe("document blob client seam", () => {
     expect(await client.download(location)).toBeNull();
   });
 
-  it("keeps an owner-private upload out of the investor container", async () => {
+  it("keeps an site-documents upload out of the investor container", async () => {
     const client = new InMemoryDocumentBlobClient();
     await client.upload(
       buildDocumentBlobLocation({
@@ -156,8 +156,8 @@ describe("document blob client seam", () => {
       "application/pdf",
     );
 
-    expect(client.countByContainer("owner-private")).toBe(1);
-    expect(client.countByContainer("investor-tier-1")).toBe(0);
+    expect(client.countByContainer("site-documents")).toBe(1);
+    expect(client.countByContainer("project-documents")).toBe(0);
   });
 });
 
@@ -189,7 +189,7 @@ describe("uploaded documents carry a real blob path", () => {
 
     const location = parseBlobPath(stored!.blobPath);
     expect(location).not.toBeNull();
-    expect(location!.container).toBe("owner-private");
+    expect(location!.container).toBe("site-documents");
     expect(location!.blobName).toContain(
       `owners/${owner.userId}/sites/${siteId}/electricity_bill/`,
     );

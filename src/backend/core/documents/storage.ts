@@ -15,9 +15,17 @@ import type { DocumentDisclosureClass } from "../sites";
  * The disclosure class decides who may read a document, and `core` already
  * enforces that on every read path. Splitting the containers adds a second,
  * coarser boundary underneath the application logic: a credential or SAS scoped
- * to `investor-tier-1` cannot name a blob in `owner-private` at all, so an
+ * to `project-documents` cannot name a blob in `site-documents` at all, so an
  * authorization bug in the application cannot by itself expose an owner's
  * electricity bill. Defence in depth, not a replacement for the checks in core.
+ *
+ * The names come from the infrastructure templates, which provision exactly
+ * these two containers. They read as a split by parent entity rather than by
+ * disclosure, and the mapping below is what reconciles the two vocabularies:
+ * owner-private uploads are site-level artefacts such as an electricity bill,
+ * while the documents released to investors are what a project's deal room
+ * shows. The disclosure class remains the thing that decides access — the
+ * container name is where it is stored, not what it means.
  *
  * This is safe because a document's disclosure class is fixed at upload —
  * `addSiteDocument` is the only writer and there is no re-classification path.
@@ -25,8 +33,8 @@ import type { DocumentDisclosureClass } from "../sites";
  * `blobPath`, which is why the stored path is fully qualified below.
  */
 export const DOCUMENT_CONTAINERS = {
-  owner_private: "owner-private",
-  investor_tier_1: "investor-tier-1",
+  owner_private: "site-documents",
+  investor_tier_1: "project-documents",
 } as const satisfies Record<DocumentDisclosureClass, string>;
 
 export type DocumentContainer = (typeof DOCUMENT_CONTAINERS)[DocumentDisclosureClass];

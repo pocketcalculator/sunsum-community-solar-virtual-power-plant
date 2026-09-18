@@ -24,11 +24,11 @@ describe("document blob layout", () => {
   it("gives every disclosure class its own container", () => {
     const containers = DOCUMENT_DISCLOSURE_CLASSES.map((c) => containerForDisclosure(c));
     expect(new Set(containers).size).toBe(DOCUMENT_DISCLOSURE_CLASSES.length);
-    expect(DOCUMENT_CONTAINERS.owner_private).toBe("owner-private");
-    expect(DOCUMENT_CONTAINERS.investor_tier_1).toBe("investor-tier-1");
+    expect(DOCUMENT_CONTAINERS.owner_private).toBe("site-documents");
+    expect(DOCUMENT_CONTAINERS.investor_tier_1).toBe("project-documents");
   });
 
-  it("routes an owner-private document away from the investor container", () => {
+  it("routes an site-documents document away from the investor container", () => {
     const location = buildDocumentBlobLocation({
       ownerUserId: OWNER_ID,
       parent: siteDocumentParent(SITE_ID),
@@ -37,7 +37,7 @@ describe("document blob layout", () => {
       originalFilename: "march-bill.pdf",
       disclosureClass: "owner_private",
     });
-    expect(location.container).toBe("owner-private");
+    expect(location.container).toBe("site-documents");
     expect(location.blobName).toBe(
       `owners/${OWNER_ID}/sites/${SITE_ID}/electricity_bill/${DOCUMENT_ID}/march-bill.pdf`,
     );
@@ -81,7 +81,7 @@ describe("document blob layout", () => {
       disclosureClass: "investor_tier_1",
     });
     expect(location.blobName.startsWith(`owners/${OWNER_ID}/projects/`)).toBe(true);
-    expect(location.container).toBe("investor-tier-1");
+    expect(location.container).toBe("project-documents");
   });
 
   it("separates two uploads of the same filename", () => {
@@ -174,11 +174,11 @@ describe("document blob layout", () => {
       disclosureClass: "investor_tier_1",
     });
     const stored = formatBlobPath(location);
-    expect(stored).toBe(`investor-tier-1/${location.blobName}`);
+    expect(stored).toBe(`project-documents/${location.blobName}`);
     expect(parseBlobPath(stored)).toEqual(location);
   });
 
-  it.each([["", null], ["no-slash", null], ["owner-private/", null], ["not-a-container/x/y", null]])(
+  it.each([["", null], ["no-slash", null], ["site-documents/", null], ["not-a-container/x/y", null]])(
     "rejects %j as a stored path",
     (input, expected) => {
       expect(parseBlobPath(input)).toBe(expected);

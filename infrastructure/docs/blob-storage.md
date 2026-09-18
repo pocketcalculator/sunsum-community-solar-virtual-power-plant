@@ -52,13 +52,13 @@ happens to be pointed at.
 
 | Container | Holds |
 | --- | --- |
-| `owner-private` | Everything by default, including the electricity bill. |
-| `investor-tier-1` | Only documents an operator explicitly disclosed to investors. |
+| `site-documents` | Everything by default, including the electricity bill. |
+| `project-documents` | Only documents an operator explicitly disclosed to investors. |
 
 One container per disclosure class, rather than the class encoded in a path.
 The application already enforces disclosure on every read; this puts a coarser
-boundary underneath that check, so a credential scoped to `investor-tier-1`
-cannot name an owner-private blob at all. The rationale and the path layout are
+boundary underneath that check, so a credential scoped to `project-documents`
+cannot name an site-documents blob at all. The rationale and the path layout are
 in [`src/backend/README.md`](../../src/backend/README.md#document-blob-storage).
 
 Within each container, blobs are grouped by owner and then by site or project:
@@ -73,8 +73,8 @@ above them.
 
 A third container, `$logs`, appears in the portal. It is **not** ours: `$`-prefixed
 containers are Storage Analytics artifacts the platform creates, invisible to
-ARM. `az storage container-rm list` returns only `owner-private` and
-`investor-tier-1`, and `storage.bicep` configures no logging at all.
+ARM. `az storage container-rm list` returns only `site-documents` and
+`project-documents`, and `storage.bicep` configures no logging at all.
 
 ## Running the same code locally
 
