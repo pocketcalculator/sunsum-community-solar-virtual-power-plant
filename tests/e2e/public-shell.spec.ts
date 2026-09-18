@@ -6,6 +6,12 @@ const entryPaths = [
   { label: "I want to fund projects", href: "/join?start=i-would-fund" },
 ];
 
+const roleLinks = [
+  { label: "Site Owner", href: "/dashboard/site-owner" },
+  { label: "Investor", href: "/join?start=i-would-fund" },
+  { label: "Platform Operator", href: "/join" },
+];
+
 async function hasOverflow(page: Page) {
   return page.evaluate(
     () =>
@@ -44,6 +50,15 @@ test("landing offers every way to take part without horizontal overflow", async 
     });
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute("href", path.href);
+  }
+
+  const roleNavigation = page.getByRole("navigation", {
+    name: "Role workspaces",
+  });
+  for (const role of roleLinks) {
+    await expect(
+      roleNavigation.getByRole("link", { name: role.label, exact: true }),
+    ).toHaveAttribute("href", role.href);
   }
 
   expect(await hasOverflow(page)).toBe(false);
