@@ -77,11 +77,13 @@ jobs:
             --file $TEMPLATE_FILE
 
       - name: Validate Deployment
+        env:
+          RESOURCE_GROUP_NAME: ${{ secrets.RESOURCE_GROUP_NAME }}
         run: |
           az deployment group validate \
-            --resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
-            --template-file $TEMPLATE_FILE \
-            --parameters @$PARAMETER_FILE
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --template-file "$TEMPLATE_FILE" \
+            --parameters "@$PARAMETER_FILE"
 
       - name: What-If
         run: |
