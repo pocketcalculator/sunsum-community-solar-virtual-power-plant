@@ -11,6 +11,11 @@ are files. The row in `documents` is metadata; this is where the bytes go.
   composes [`storage.bicep`](../templates/storage.bicep) and
   [`network.bicep`](../templates/network.bicep)
 
+`storage.bicep` is shared with the App Service deployment workstream and owns
+the account itself. The document containers, the blob private endpoint and the
+data-plane role assignments are declared in `main.bicep` on top of it, so
+neither template redefines what the other owns.
+
 The template is the source of truth. It was checked against the live account
 with `az deployment group what-if`, which reports every resource as `Modify`
 rather than `Create` and no property drift beyond server-populated defaults.
@@ -41,7 +46,7 @@ happens to be pointed at.
 | `allowSharedKeyAccess` | `false` | No account key exists to leak, embed or rotate. Access is Entra plus RBAC. |
 | `allowBlobPublicAccess` | `false` | No document is public; anonymous access is refused at the account level so a mis-set container cannot open one up. |
 | `minimumTlsVersion` | `TLS1_2` | — |
-| Blob + container soft delete | 7 days | A wrong delete during the hackathon is recoverable. |
+| Blob + container soft delete | Not configured | `storage.bicep` leaves versioning and delete retention off; a deleted blob is not recoverable. |
 
 ## Containers
 
@@ -216,5 +221,4 @@ the three `Storage Blob Data *` roles specifically for that reason.
 
 Standard_LRS hot storage is roughly $0.02 per GB per month with no minimum.
 Demo-scale document volume is well under a gigabyte, so the account is
-effectively free; soft delete retains deleted blobs for 7 days and is billed the
-same way. There is no charge for an idle account beyond stored bytes.
+effectively free. There is no charge for an idle account beyond stored bytes.

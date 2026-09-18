@@ -23,9 +23,10 @@ param tags object = {
 /*
   The network that makes the storage account reachable at all.
 
-  storage.bicep already creates a private endpoint when it is handed a subnet
-  id and a DNS zone id, but nothing created either, so the only documented route
-  to the data plane was not actually deployable. This is that missing half.
+  storage.bicep creates the account, and main.bicep creates a private endpoint
+  against it once it is handed a subnet id and a DNS zone id, but nothing
+  created either, so the only documented route to the data plane was not
+  actually deployable. This is that missing half.
 
   Why a private endpoint rather than a firewall rule: publicNetworkAccess is
   pinned to Disabled by the tenant policy StorageAccount_PublicNetwork_Modify,

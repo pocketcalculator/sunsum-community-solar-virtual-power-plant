@@ -62,22 +62,125 @@ module network 'network.bicep' = if (enablePrivateBlobAccess) {
   }
 }
 
+/*
+  The account itself. storage.bicep is the shared definition — shared keys and
+  anonymous access disabled, public network access closed unless an approval
+  reference is supplied — and it owns the two containers the deployment
+  workstream provisions. Everything this workstream adds on top of that account
+  is declared below, against an existing reference, so neither template
+  redefines what the other owns.
+*/
 module storage 'storage.bicep' = {
   name: 'sunsum-storage'
   params: {
     storageAccountName: storageAccountName
     location: location
     tags: union(tags, { purpose: 'site-documents' })
-    blobDataContributorPrincipalIds: blobDataContributorPrincipalIds
-    blobDataContributorPrincipalType: blobDataContributorPrincipalType
-    /*
-      Empty strings when the private path is off, which is what storage.bicep
-      checks to decide whether to create the endpoint. The ?: is required
-      rather than stylistic: a module output cannot be referenced at all when
-      the module did not deploy.
-    */
-    privateEndpointSubnetId: enablePrivateBlobAccess ? network!.outputs.privateEndpointSubnetId : ''
-    privateDnsZoneId: enablePrivateBlobAccess ? network!.outputs.privateDnsZoneId : ''
+  }
+}
+
+resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' existing = {
+  name: storageAccountName
+}
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2024-01-01' existing = {
+  parent: storageAccount
+  name: 'default'
+}
+
+/*
+  One container per disclosure class, matching DOCUMENT_CONTAINERS in
+  src/backend/core/documents/storage.ts.
+
+  The application already enforces disclosure on every read. Splitting the
+  containers puts a second boundary underneath that check: a credential scoped
+  to investor-tier-1 cannot name a blob in owner-private at all, so an
+  authorization bug in the application cannot by itself expose an owner's
+  electricity bill.
+*/
+var documentContainerNames = [
+  'owner-private'
+  'investor-tier-1'
+]
+
+resource documentContainers 'Microsoft.Storage/storageAccounts/blobServices/containers@2024-01-01' = [
+  for name in documentContainerNames: {
+    parent: blobService
+    name: name
+    properties: {
+      publicAccess: 'None'
+    }
+    dependsOn: [
+      storage
+    ]
+  }
+]
+
+// Storage Blob Data Contributor. Built-in role ids are constant across clouds.
+var blobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+
+resource blobDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
+  for principalId in blobDataContributorPrincipalIds: {
+    name: guid(storageAccount.id, principalId, blobDataContributorRoleId)
+    scope: storageAccount
+    properties: {
+      roleDefinitionId: subscriptionResourceId(
+        'Microsoft.Authorization/roleDefinitions',
+        blobDataContributorRoleId
+      )
+      principalId: principalId
+      principalType: blobDataContributorPrincipalType
+    }
+    dependsOn: [
+      storage
+    ]
+  }
+]
+
+/*
+  The only route to the data plane, given publicNetworkAccess is pinned to
+  Disabled by policy. Skipped by default because it needs a subnet, and the
+  smoke App Service currently runs on a Free F1 plan, which cannot do VNet
+  integration at all.
+
+  The ?: on the subnet and zone ids is required rather than stylistic: a module
+  output cannot be referenced at all when the module did not deploy.
+*/
+resource privateEndpoint 'Microsoft.Network/privateEndpoints@2023-11-01' = if (enablePrivateBlobAccess) {
+  name: '${storageAccountName}-blob-pe'
+  location: location
+  tags: tags
+  properties: {
+    subnet: {
+      id: enablePrivateBlobAccess ? network!.outputs.privateEndpointSubnetId : ''
+    }
+    privateLinkServiceConnections: [
+      {
+        name: '${storageAccountName}-blob'
+        properties: {
+          privateLinkServiceId: storageAccount.id
+          groupIds: ['blob']
+        }
+      }
+    ]
+  }
+  dependsOn: [
+    storage
+  ]
+}
+
+resource privateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-11-01' = if (enablePrivateBlobAccess) {
+  parent: privateEndpoint
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-blob'
+        properties: {
+          privateDnsZoneId: enablePrivateBlobAccess ? network!.outputs.privateDnsZoneId : ''
+        }
+      }
+    ]
   }
 }
 
@@ -128,9 +231,9 @@ resource vnetIntegration 'Microsoft.Web/sites/networkConfig@2023-12-01' = if (en
   ]
 }
 
-output storageAccountName string = storage.outputs.storageAccountName
+output storageAccountName string = storageAccountName
 output blobEndpoint string = storage.outputs.blobEndpoint
-output containerNames array = storage.outputs.containerNames
+output containerNames array = documentContainerNames
 output privateBlobAccessEnabled bool = enablePrivateBlobAccess
 
 @description('Empty until the App Service is given a managed identity. That is the one step this template cannot take, because identity is a property of the site.')

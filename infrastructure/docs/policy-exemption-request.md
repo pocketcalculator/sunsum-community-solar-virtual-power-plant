@@ -18,8 +18,8 @@ inside the resource group.
 
 Site documents — the electricity bill collected at intake, and the screening
 reports, site summaries and land reports the charter adds later — are stored as
-blobs in `stsunsumsolardevcus`. The account, its containers, soft delete and
-its template all exist and are correct.
+blobs in `stsunsumsolardevcus`. The account, its containers and its template all
+exist and are correct.
 
 The data plane is unreachable. Uploading or downloading a document against the
 deployed environment fails, so `SUNSUM_BLOB` is pinned to `memory` or `azurite`
