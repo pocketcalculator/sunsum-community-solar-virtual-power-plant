@@ -1,84 +1,82 @@
 name: Deploy SunSum Infrastructure
 
 on:
-push:
-branches:
-- main
-paths:
-- 'infrastructure/**'
- 
-workflow_dispatch:
- 
+  push:
+    branches:
+      - main
+    paths:
+      - "infrastructure/**"
+  workflow_dispatch:
+
 permissions:
-id-token: write
-contents: read
- 
+  id-token: write
+  contents: read
+
 env:
-TEMPLATE_FILE: infrastructure/templates/resources.bicep
-PARAMETER_FILE: infrastructure/templates/resources.parameters.json
- 
+  TEMPLATE_FILE: infrastructure/templates/resources.bicep
+  PARAMETER_FILE: infrastructure/templates/resources.parameters.json
+
 jobs:
- 
-validate:
-runs-on: ubuntu-latest
- 
-steps:
-- uses: actions/checkout@v4
- 
-- name: Azure Login
-uses: azure/login@v2
-with:
-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
- 
-- name: Build Bicep
-run: |
-az bicep build \
---file $TEMPLATE_FILE
- 
-- name: Validate Deployment
-run: |
-az deployment group validate \
---resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
---template-file $TEMPLATE_FILE \
---parameters @$PARAMETER_FILE
- 
-- name: What-If
-run: |
-az deployment group what-if \
---resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
---template-file $TEMPLATE_FILE \
---parameters @$PARAMETER_FILE
- 
-deploy:
-if: github.ref == 'refs/heads/main'
-needs: validate
- 
-runs-on: ubuntu-latest
- 
-steps:
-- uses: actions/checkout@v4
- 
-- name: Azure Login
-uses: azure/login@v2
-with:
-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
- 
-- name: Deploy Infrastructure
-run: |
-az deployment group create \
---name sunsum-${{ github.run_number }} \
---resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
---template-file $TEMPLATE_FILE \
---parameters @$PARAMETER_FILE \
---mode Incremental
- 
-- name: Show Outputs
-run: |
-az deployment group show \
---name sunsum-${{ github.run_number }} \
---resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
---query properties.outputs
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build Bicep
+        run: |
+          az bicep build \
+            --file $TEMPLATE_FILE
+
+      - name: Validate Deployment
+        run: |
+          az deployment group validate \
+            --resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
+            --template-file $TEMPLATE_FILE \
+            --parameters @$PARAMETER_FILE
+
+      - name: What-If
+        run: |
+          az deployment group what-if \
+            --resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
+            --template-file $TEMPLATE_FILE \
+            --parameters @$PARAMETER_FILE
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: validate
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Infrastructure
+        run: |
+          az deployment group create \
+            --name sunsum-${{ github.run_number }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
+            --template-file $TEMPLATE_FILE \
+            --parameters @$PARAMETER_FILE \
+            --mode Incremental
+
+      - name: Show Outputs
+        run: |
+          az deployment group show \
+            --name sunsum-${{ github.run_number }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
+            --query properties.outputs
