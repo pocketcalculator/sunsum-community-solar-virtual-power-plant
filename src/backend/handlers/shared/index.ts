@@ -10,6 +10,7 @@ export {
   failureResponse,
   jsonResponse,
   rejectCrossSiteRequest,
+  rejectCrossSiteWrite,
 } from "./http";
 export { toDomainRole, toWireRole } from "./vocabulary";
 export {

@@ -143,6 +143,40 @@ describe.skipIf(!databaseUrl)("the PostgreSQL store matches the mock", () => {
 
     expect(auburn?.openFundingNeedsCount).toBe(2);
   });
+
+  /*
+   * An investor profile is the one record that is rewritten in place, so it is
+   * the only one whose `updated_at` can disagree with its `created_at`. The
+   * table originally had no `updated_at` column and the store answered it from
+   * `created_at`, which nothing noticed while the handler replied with the
+   * object it had just built rather than the row it had just stored.
+   *
+   * Comparing the two stores field for field would not catch it: both would
+   * report *a* timestamp. The substitution only shows up across an edit, so
+   * this writes twice and asserts the second write moved.
+   */
+  it("moves an investor profile's updated_at when it is edited", async () => {
+    const existing = await store.getInvestorProfileByUserId(investor.userId);
+
+    expect(existing, "the seed's investor profile is missing").not.toBeNull();
+
+    if (existing === null) return;
+
+    const edited = new Date(Date.now() + 1_000).toISOString();
+    await store.upsertInvestorProfile({
+      ...existing,
+      organizationName: `${existing.organizationName} (edited)`,
+      updatedAt: edited,
+    });
+
+    const reread = await store.getInvestorProfileByUserId(investor.userId);
+
+    expect(reread?.updatedAt).toBe(edited);
+    expect(reread?.updatedAt).not.toBe(reread?.createdAt);
+    expect(reread?.createdAt).toBe(existing.createdAt);
+
+    await store.upsertInvestorProfile(existing);
+  });
 });
 
 describe.skipIf(Boolean(databaseUrl))("store parity", () => {

@@ -14,13 +14,19 @@ info:
     Unknown input is rejected. Optional objects are omitted; nullable scalar values
     use null. The viability engine remains a separate server-to-server service.
 
-    **Authentication:** every operation resolves its caller from the signed
-    `sunsum_session` cookie and answers 401 when there is none. The role is read
+    **Authentication:** every operation except `POST /auth/demo-switch` and
+    `POST /auth/logout` resolves its caller from the signed `sunsum_session`
+    cookie and answers 401 when there is none. Those two are how a session
+    starts and ends, so requiring one would be circular. The role is read
     from the user record on each request rather than from the token, so a caller
     cannot select their own role through a header, cookie, query parameter, or
     request body, and a role changed in the database takes effect on the next
-    request. Cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production;
-    `SameSite=Lax` is the CSRF defence for the write operations.
+    request. Cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
+    `SameSite=Lax` is not on its own a CSRF defence — it is scoped to the site,
+    not the origin, so a sibling origin's forged write still carries the cookie.
+    Every state-changing operation is additionally checked against
+    `Sec-Fetch-Site`, falling back to `Origin`, and answers 403 when the request
+    came from a browsing context that is not ours.
 
     How a session *starts* is not authentication. `POST /auth/demo-switch` hands
     out one of three seeded identities so the three roles can be demonstrated

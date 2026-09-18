@@ -23,6 +23,7 @@ import {
 } from "../../core/identity";
 import { failure, ok, type Result } from "../../core/shared";
 import { backendStore, type BackendStore } from "../../core/store";
+import { rejectCrossSiteWrite } from "../shared";
 
 export const SESSION_COOKIE_NAME = "sunsum_session";
 
@@ -156,6 +157,14 @@ export async function resolveIdentity(
   if (token === undefined) {
     return failure("unauthenticated", "Sign in to continue.");
   }
+
+  /*
+   * Ordered after the cookie check on purpose: a request with no session has
+   * nothing to forge with, and answering it `unauthenticated` is both true and
+   * more useful than naming an origin rule it never reached.
+   */
+  const crossSite = rejectCrossSiteWrite(request);
+  if (crossSite !== null) return { ok: false, failure: crossSite };
 
   const secret = resolveSessionSecret();
   if (!secret.ok) return secret;

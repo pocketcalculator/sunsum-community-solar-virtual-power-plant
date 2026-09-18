@@ -797,7 +797,7 @@ export class PostgresBackendStore implements BackendStore {
       visiblePortfolioScope: toStringArray(row.visiblePortfolioScope),
       onboardingCompletedAt: toIso(row.onboardingCompletedAt),
       createdAt: row.createdAt.toISOString(),
-      updatedAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
     };
   }
 
@@ -827,6 +827,12 @@ export class PostgresBackendStore implements BackendStore {
       dealRoomProfile: profile.dealRoomProfile ?? null,
       visiblePortfolioScope: [...(profile.visiblePortfolioScope ?? [])],
       onboardingCompletedAt: toDate(profile.onboardingCompletedAt),
+      /**
+       * Carried through on both arms of the upsert, so an edit reports when it
+       * happened rather than when the row was first created. The domain stamps
+       * this; the column default only covers rows written by another route.
+       */
+      updatedAt: new Date(profile.updatedAt ?? new Date().toISOString()),
     };
 
     await this.db

@@ -29,9 +29,11 @@ vocabulary and backend wire vocabulary go through the `@/backend` adapter.
 Handlers reject unknown input; core services authorize and enforce workflow
 rules.
 
-> **Sessions, but demo sign-in.** Every implemented route resolves its caller
+> **Sessions, but demo sign-in.** Every implemented route except
+> `POST /auth/demo-switch` and `POST /auth/logout` resolves its caller
 > from a signed `sunsum_session` cookie and answers `401 unauthenticated` when
-> there is none. The role is read from the user row on each request, not from
+> there is none. Those two start and end a session, so requiring one would be
+> circular. The role is read from the user row on each request, not from
 > the token, so a caller cannot select their own role and a role changed in the
 > database takes effect immediately.
 >

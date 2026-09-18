@@ -483,6 +483,20 @@ describe("signing in and out", () => {
       expect((await switchTo("operator")).status).toBe(200);
     });
 
+    /*
+     * A literal `Origin: null` is not an absent header. A sandboxed iframe, a
+     * `data:` document and a `file:` page all send it, and all of them are
+     * browsers running markup the attacker chose — which is the exact case
+     * this guard exists for. Treating it as "no header" would have reopened
+     * the hole for any browser that does not send `Sec-Fetch-Site`.
+     */
+    it("is refused on an opaque Origin", async () => {
+      const response = await switchFrom({ origin: "null" });
+
+      expect(response.status).toBe(403);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    });
+
     it("cannot sign a victim out from another site", () => {
       const response = handlePostLogout(
         new Request("https://sunsum.test/api/auth/logout", {
@@ -585,9 +599,18 @@ describe("a deployment with no usable session secret", () => {
     vi.stubEnv("SUNSUM_SESSION_SECRET", SECRET);
 
     const response = await signIn();
+    const cookie = response.headers.get("set-cookie") ?? "";
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("set-cookie")).toContain(SESSION_COOKIE_NAME);
+    expect(cookie).toContain(SESSION_COOKIE_NAME);
+    /*
+     * `Secure` is production-only, so this is the only place it can be
+     * asserted. Without it the session cookie would travel over plain HTTP,
+     * and a test that only checks the cookie exists would not notice.
+     */
+    expect(cookie).toContain("Secure");
+    expect(cookie).toContain("HttpOnly");
+    expect(cookie).toContain("SameSite=Lax");
   });
 });
 
@@ -607,7 +630,12 @@ describe("a deployment with no usable session secret", () => {
  * sees, which is the thing that must not change.
  */
 describe("every protected route", () => {
-  const SITE_ID = "11111111-2222-3333-4444-555555555555";
+  /*
+ * Strictly valid: the path validator checks the version and variant nibbles,
+ * so an id that merely looks UUID-shaped is refused as a bad request before
+ * the role check ever runs — which would quietly hollow out the table below.
+ */
+const SITE_ID = "11111111-2222-4333-8444-555555555555";
 
   type Gate = "site_owner" | "operator" | "investor" | "any";
   type Route = (request: Request, context: RouteContext) => unknown;
@@ -756,25 +784,158 @@ describe("every protected route", () => {
   });
 
   /*
-   * The two multi-role routes are the ones a stricter gate would silently
-   * break: §8.1 has them open to any signed-in caller, so each role must get
-   * past the gate. What happens after it — a missing record, an unparsable
-   * body — is the handler's business and not what this asserts.
+   * The two multi-role routes are not open to everyone, and the roles differ
+   * between them: site documents are for the owner or an operator, funding
+   * needs for an investor or an operator. Their wrappers gate on "signed in"
+   * and core decides the role a layer down, so the allowed set is recorded
+   * per route rather than shared.
    */
+  const MULTI_ROLE: Record<string, readonly string[]> = {
+    postSiteDocument: ["site_owner", "operator"],
+    getProjectFundingNeeds: ["investor", "operator"],
+  };
+
+  /*
+   * `postSiteDocument` validates its body before it reaches the role check, so
+   * a refused role answers 400 rather than 403 for the empty body used here.
+   * The wrapper's own contract — anonymous is refused — is still covered by
+   * the table above; only the role matrix is left to core's own tests.
+   */
+  const BODY_VALIDATED_FIRST: ReadonlySet<string> = new Set(["postSiteDocument"]);
+
   it.each(
     ROUTES.filter(([, , gate]) => gate === "any").flatMap(
       ([name, route, , method]) =>
-        (["site_owner", "operator", "investor"] as const).map((role) => ({
-          name,
-          route,
-          method,
-          role,
-        })),
+        (MULTI_ROLE[name] ?? []).map((role) => ({ name, route, method, role })),
     ),
-  )("lets a signed-in $role past the gate on $name", async ({ route, method, role }) => {
+  )(
+    "lets a signed-in $role past the gate on $name",
+    async ({ route, method, role }) => {
+      const response = await call(route, method, await cookieFor(role));
+
+      expect(response.status).not.toBe(401);
+      expect(response.status).not.toBe(403);
+    },
+  );
+
+  it.each(
+    ROUTES.filter(
+      ([name, , gate]) => gate === "any" && !BODY_VALIDATED_FIRST.has(name),
+    ).flatMap(([name, route, , method]) =>
+      (["site_owner", "operator", "investor"] as const)
+        .filter((role) => !(MULTI_ROLE[name] ?? []).includes(role))
+        .map((role) => ({ name, route, method, role })),
+    ),
+  )("refuses $name to a signed-in $role", async ({ route, method, role }) => {
     const response = await call(route, method, await cookieFor(role));
 
-    expect(response.status).not.toBe(401);
+    expect(response.status).toBe(403);
+  });
+});
+
+/*
+ * The other half of the CSRF problem.
+ *
+ * `SameSite=Lax` is scoped to the site, not the origin, so a sibling origin
+ * under the same registrable domain still has the session cookie attached to
+ * a forged POST — Lax alone was never a CSRF defence for the write routes.
+ * The check therefore sits in `resolveIdentity`, which every gated route goes
+ * through, so a route cannot be added without it.
+ */
+describe("a cookie-authenticated write from another site", () => {
+  let store: BackendStore;
+  let previous: BackendStore;
+  let cookie: string;
+
+  beforeEach(async () => {
+    vi.stubEnv("SUNSUM_DEMO_AUTH", "enabled");
+    vi.stubEnv("SUNSUM_SESSION_SECRET", SECRET);
+    store = createMemoryBackendStore({ seedDemoProjects: true });
+    previous = setActiveStore(store);
+
+    const signIn = await handlePostDemoSwitch(
+      new Request("https://sunsum.test/api/auth/demo-switch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: "site_owner" }),
+      }),
+      store,
+    );
+    cookie = (signIn.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+  });
+
+  afterEach(() => {
+    setActiveStore(previous);
+    vi.unstubAllEnvs();
+  });
+
+  function write(headers: Record<string, string>): Promise<Response> {
+    return routes.postSiteRoute(
+      new Request("https://sunsum.test/api/sites", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie, ...headers },
+        body: JSON.stringify({ name: "A site" }),
+      }),
+    );
+  }
+
+  it.each([["cross-site"], ["same-site"]])(
+    "is refused from a %s origin",
+    async (site) => {
+      const response = await write({ "sec-fetch-site": site });
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ code: "forbidden_origin" });
+    },
+  );
+
+  it("is refused on a foreign Origin", async () => {
+    const response = await write({
+      origin: "https://attacker.test",
+      host: "sunsum.test",
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("is allowed from our own page", async () => {
+    const response = await write({ "sec-fetch-site": "same-origin" });
+
     expect(response.status).not.toBe(403);
+  });
+
+  /*
+   * A cross-site GET is a read the caller could have made anyway, so refusing
+   * it would break legitimate embedding and buy nothing. Only the methods that
+   * can change state are guarded.
+   */
+  it("does not refuse a cross-site read", async () => {
+    const response = await routes.getOwnerSitesRoute(
+      new Request("https://sunsum.test/api/sites", {
+        headers: { cookie, "sec-fetch-site": "cross-site" },
+      }),
+    );
+
+    expect(response.status).not.toBe(403);
+  });
+
+  /*
+   * Ordered after the cookie check: a request with no session has nothing to
+   * forge with, and `unauthenticated` is both true and more useful than naming
+   * an origin rule it never reached.
+   */
+  it("answers an anonymous cross-site write as unauthenticated", async () => {
+    const response = await routes.postSiteRoute(
+      new Request("https://sunsum.test/api/sites", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "sec-fetch-site": "cross-site",
+        },
+        body: "{}",
+      }),
+    );
+
+    expect(response.status).toBe(401);
   });
 });

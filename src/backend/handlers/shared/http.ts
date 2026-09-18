@@ -80,9 +80,13 @@ export function failureResponse(failure: Failure): Response {
  *
  * Absent the header the caller is not a modern browser — curl, a test, a
  * server-to-server call — and is not subject to this attack, so fall back to
- * `Origin` and allow the request when neither is present. `Origin` is compared
- * by host against the `Host` header rather than against `request.url`, because
- * behind App Service's proxy those need not agree on scheme or port.
+ * `Origin` and allow the request when neither is present. A literal
+ * `Origin: null` is *not* an absent header: sandboxed iframes and `data:` and
+ * `file:` documents send it, and those are browsers running an attacker's
+ * markup, which is the case this exists to refuse. `Origin` is otherwise
+ * compared by host against the `Host` header rather than against
+ * `request.url`, because behind App Service's proxy those need not agree on
+ * scheme or port.
  */
 export function rejectCrossSiteRequest(request: Request): Failure | null {
   const refusal: Failure = {
@@ -96,7 +100,8 @@ export function rejectCrossSiteRequest(request: Request): Failure | null {
   }
 
   const origin = request.headers.get("origin");
-  if (origin === null || origin === "null") return null;
+  if (origin === null) return null;
+  if (origin === "null") return refusal;
 
   const host = request.headers.get("host");
   if (host === null) return refusal;
@@ -108,4 +113,30 @@ export function rejectCrossSiteRequest(request: Request): Failure | null {
     return refusal;
   }
   return originHost === host ? null : refusal;
+}
+
+/**
+ * The methods that cannot change state, and so cannot be forged into one.
+ *
+ * A cross-site `GET` is a read the caller could have made anyway; refusing it
+ * would break legitimate embedding and buy nothing.
+ */
+const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * Refuse a cookie-authenticated write that a different site initiated.
+ *
+ * `SameSite=Lax` is scoped to the *site*, not the origin, so a sibling origin
+ * under the same registrable domain still has the session cookie attached to
+ * its forged `POST`. Lax is therefore not a CSRF defence for the write routes
+ * on its own, and every state-changing route needs the origin check — not just
+ * the two that hand out a cookie.
+ *
+ * This is applied once, at the point where a request becomes an identity, so
+ * that a new route cannot be added without it.
+ */
+export function rejectCrossSiteWrite(request: Request): Failure | null {
+  return SAFE_METHODS.has(request.method.toUpperCase())
+    ? null
+    : rejectCrossSiteRequest(request);
 }
