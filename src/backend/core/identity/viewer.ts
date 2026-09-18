@@ -41,3 +41,16 @@ export type Viewer =
       readonly userId: string;
       readonly investor: InvestorProfile;
     };
+
+/**
+ * Who the caller is, without their investor profile.
+ *
+ * Almost every rule needs a full {@link Viewer}, because an investor rule is
+ * usually a question about their mandate. Onboarding is the exception: the
+ * request that creates the profile cannot be asked to present one first. A
+ * `Viewer` is assignable here, so a rule that takes this accepts both.
+ */
+export type ViewerIdentity =
+  | { readonly role: "site_owner"; readonly userId: string }
+  | { readonly role: "operator"; readonly userId: string }
+  | { readonly role: "investor"; readonly userId: string };

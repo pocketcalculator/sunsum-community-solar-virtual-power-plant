@@ -89,6 +89,7 @@ Available routes:
 | ------- | ---------------------------------------------------------------- |
 | `/`     | Value proposition, the three ways to take part, journey, and FAQ |
 | `/join` | The guided create-profile workflow                               |
+| `GET /api/portfolio` | Selected fixture or PostgreSQL store with a fixed demo investor |
 | `/dashboard/site-owner` | Interactive site-owner dashboard design prototype |
 
 `/join` accepts an optional `?start=` parameter so the landing page can open the
@@ -119,6 +120,19 @@ The shared header offers light, dark, and system theme modes. The selected mode
 is stored in the browser and all application surfaces consume the same semantic
 design tokens.
 
+The secondary header navigation exposes the three role workspaces: Site Owner,
+Investor, and Platform Operator. Its labels, role IDs, and destinations are
+defined in `src/features/participation/components/PublicShell.tsx` in the
+`ROLE_NAV` collection. To connect a button to a new page, create the route under
+`app/` and update that item's `href` in `ROLE_NAV`.
+
+All role buttons are intentionally visible while authentication and participant
+data are unavailable. When identity is connected, resolve the signed-in user's
+authorized `ParticipantRoleId` values at the server boundary in
+`app/layout.tsx`, then pass them to `PublicShell` through its `visibleRoleIds`
+prop. Do not infer access from a hidden button: each role page and API must also
+enforce the same authorization at its service boundary.
+
 The public header also includes an **AI assistant** preview. It opens a
 right-side guidance drawer with the same rooftop, land and funding entry paths,
 plus deterministic replies for basic greetings and questions. This preview does
@@ -142,9 +156,15 @@ and investor authorization require the backend and domain handoffs described in
 
 **Azure Database for PostgreSQL Flexible Server with Drizzle ORM is the
 selected persistence stack**, with Drizzle Kit for schema and migrations.
-It is not yet provisioned, installed, or connected; the portfolio API uses
-explicit in-memory demo fixtures. The public preview has been smoke-tested on
-Linux Azure App Service F1, without adding a database or identity provider.
+The implemented [PostgreSQL store](src/backend/db/README.md) is selected by
+`SUNSUM_STORE=db` and configured with `DATABASE_URL` and `SUNSUM_DB_AUTH`.
+The default remains the in-memory fixture store. The separate
+[connection and migration tooling](src/backend/infrastructure/database/README.md)
+uses `PG*` and `SUNSUM_DATABASE_AUTH`; those settings do not configure the
+application adapter. The [development deployment guide](infrastructure/docs/deployment.md)
+records an Azure PostgreSQL-backed deployment. That evidence is separate from
+the public frontend smoke test and does not establish authenticated participants
+or verify every prepared provisioning path.
 
 The visual baseline remains provisional, informed by earlier SolarEase mockups
 and the project's VPP flow board. Hosting the preview does not establish a
@@ -212,6 +232,24 @@ npm run start
 The lockfile pins versions and integrity without embedding a contributor's
 registry/proxy URLs. npm resolves those locked versions through the configured
 registry. Do not add credentials or a private registry address to `.npmrc`.
+
+### Infrastructure preparation
+
+The [infrastructure runbook](infrastructure/docs/app-service-postgres.md)
+uses **Bicep and Azure CLI** for F1 Linux App Service code deployment and
+separately billable PostgreSQL and Standard LRS private Blob containers.
+Approved internal/guest sign-in and container-scoped Blob grants are separate
+administrator-gated steps. No container registry or new orchestration framework
+is required. Templates and local checks do not authorize or establish cloud
+provisioning. Python viability and deployed logging/health configuration remain
+pending, as do user-to-business-role mapping and document upload/download services.
+
+The [database guide](src/backend/infrastructure/database/README.md) documents
+the shared environment contract, managed identity, dependency injection,
+`npm run db:check`, and reviewed Azure migrations using main's canonical
+`src/backend/db` SQL. Existing local database commands remain local-only.
+These do not make `/join` persistent
+or the demo portfolio authenticated.
 
 ## Checks
 

@@ -33,7 +33,13 @@ export {
   type InvestorProfilePayload,
   type InvestorType,
 } from "./investors";
-export { ROLES, type InvestorProfile, type Role, type Viewer } from "./identity";
+export {
+  ROLES,
+  type InvestorProfile,
+  type Role,
+  type Viewer,
+  type ViewerIdentity,
+} from "./identity";
 export {
   isProjectStage,
   isViabilityStatus,

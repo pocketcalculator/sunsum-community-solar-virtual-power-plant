@@ -49,3 +49,27 @@ before finishing. Report any check that could not be run.
 
 Do not claim regulatory compliance, production readiness, security, or test
 coverage without verifiable evidence.
+
+## Database and Azure delivery
+
+- Use Bicep and Azure CLI for Linux App Service **F1 code deployment** and
+  separately billable Azure PostgreSQL. No orchestration framework is required.
+  Do not add ACR, Container Apps, or a paid web-tier upgrade.
+- The existing application client and `PostgresBackendStore` live in
+  `src/backend/db`; `src/backend/composition.ts` selects that store with
+  `SUNSUM_STORE=db`, otherwise the fixture store is the default. New clients for
+  the separate Azure/operator tooling belong in `src/backend/infrastructure/database`.
+  Inject stores at the composition boundary; core, handlers, and browser code
+  must not construct clients. `/join` still saves nothing and endpoint identities
+  remain fixed demo principals, not authenticated participants.
+- Application persistence uses `DATABASE_URL` and `SUNSUM_DB_AUTH`; the separate
+  connection/migration tooling uses `PG*` and `SUNSUM_DATABASE_AUTH`. Supplying
+  `PG*` alone does not activate or configure the application store. Do not merge
+  the contracts or add another client implementation without a reviewed change.
+  Azure deployments must retain managed-identity authentication and verified TLS.
+  Never use `NEXT_PUBLIC_*` for database configuration, log credentials, disable
+  certificate checks, or fall back to demo data after an explicitly requested
+  database operation fails.
+- Provisioning, provider registration, narrow firewall approvals, Entra SQL
+  bootstrap, migrations, and routine code deployment are distinct operations.
+  Setup documentation is not permission to perform a cloud write.

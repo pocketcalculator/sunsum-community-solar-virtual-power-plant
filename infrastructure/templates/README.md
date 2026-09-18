@@ -8,46 +8,86 @@ description: Deployable infrastructure templates and parameter examples for Suns
 Store infrastructure-as-code templates and non-sensitive parameter examples in
 this directory. Keep environment-specific values outside committed templates.
 
-## Templates
+## Development environment
 
-| Template | Deploys |
-| --- | --- |
-| [`main.bicep`](./main.bicep) | Everything below, composed. The entry point. |
-| [`storage.bicep`](./storage.bicep) | The site-document storage account, its two disclosure-class containers, soft delete, and optionally a private endpoint and the data-plane role assignments. See [blob storage](../docs/blob-storage.md). |
-| [`network.bicep`](./network.bicep) | The VNet, the delegated App Service subnet, the private-endpoint subnet and the `privatelink.blob` DNS zone that the private endpoint needs to resolve. |
+- `app-service.bicep` declares the App Service plan, web app, managed identity
+  and application settings for the existing development environment.
+- `app-service.dev.bicepparam` contains the non-secret shared development values
+  introduced on main. It does not contain a database password.
 
-`main.bicep` has two shapes, and the default one changes nothing:
+See the [development deployment guide](../docs/deployment.md) for that path and
+the database grant required for a newly created web identity. This is distinct
+from the preparation entry points below; review which template owns a site's
+settings before applying either to the same app. Keep new approval records and
+identity details for the preparation workflow in ignored local configuration.
 
-```powershell
-# Storage only. This is the current state of the resource group; costs nothing.
-az deployment group create `
-  --resource-group rg-sunsum-solar-dev-centralus `
-  --template-file infrastructure/templates/main.bicep
+## Prepared entry points
 
-# Additionally build the network that makes the blob data plane reachable.
-# Moves the App Service plan from Free F1 to B1, which bills.
-az deployment group create `
-  --resource-group rg-sunsum-solar-dev-centralus `
-  --template-file infrastructure/templates/main.bicep `
-  --parameters enablePrivateBlobAccess=true
-```
+| Template | Scope | Use |
+| --- | --- | --- |
+| `resources.bicep` | Resource group | Fixture-only Linux F1 App Service and separately billable Entra-only PostgreSQL in an existing group; database activation is separate. |
+| `postgres-firewall.bicep` | Resource group | Only approved individual IPv4 rules for an existing PostgreSQL server; no rules by default. |
+| `storage.bicep` | Resource group | Standard LRS Hot private containers, shared keys disabled; closed by default with explicit policy-approved authenticated-public mode. |
+| `storage-role-grants.bicep` | Resource group | Separate administrator grant to the web identity at the two container scopes only. |
+| `web-sign-in.bicep` | Resource group | Explicit opt-in Easy Auth on an existing app; precreated workforce registration and nonempty approved-user/guest allowlist. |
 
-The private path is opt-in because it is the fallback. The cheaper route is a
-policy exemption, which nobody in this workstream can grant — the request is
-written up in
-[policy exemption request](../docs/policy-exemption-request.md), and
-`npm run blob:doctor` reports which blockers are currently active.
+`web.bicep` and `postgres.bicep` are reusable core modules. The
+`resources.parameters.example.json` placeholders are intentionally not
+deployable. Copy them into ignored local configuration; never replace
+them with real environment/identity details in source control.
 
-Check a template against the live resource group before deploying it:
+Compile locally with `az bicep build --file <entry-point> --outfile <local-json>`.
+Use an ignored `.azure\artifacts\` output directory. Compilation makes no cloud
+changes and does not validate quotas, cost, directory membership or Azure
+policy. The web module has no implicit paid-tier fallback.
 
-```powershell
-az deployment group what-if `
-  --resource-group rg-sunsum-solar-dev-centralus `
-  --template-file infrastructure/templates/main.bicep
-```
+`web.bicep` explicitly sets `SUNSUM_STORE=mock` and has no database parameters or
+database app settings. The root retains `PG*` outputs for separate operator setup;
+app activation requires reviewed `DATABASE_URL`/`SUNSUM_DB_AUTH` settings and grants.
+Do not reapply the preparation template over an activated app to deploy code.
 
-Both shapes were checked that way. With the private path off, what-if reports no
-change beyond server-populated defaults. With it on, it reports the VNet, DNS
-zone, zone link and private endpoint as creates, the plan as `F1 => B1`, and the
-App Service itself as **ignored** — the site is never declared, so its app
-settings and current release are untouched.
+`resources.bicep` allows only `sunsum_runtime` for its output-contract
+`runtimeRoleName`, including direct-template deployments. The provisioning
+wrapper rejects other names before Azure calls. This is a configuration guard,
+not SQL privilege enforcement; the separate bootstrap must verify that the role
+maps to the runtime identity and is non-admin. Custom runtime names need a
+reviewed contract change rather than a parameter override.
+
+The deployable `postgres.bicep` module validates the database resource name:
+1-63 lowercase ASCII letters/digits/underscores, starting with a letter, no
+`pg_` or `azure_` prefix, and not `postgres`, `public`, `template0` or `template1`.
+This matches provisioning, bootstrap and Azure migration policy. Direct-template
+inputs are checked too; valid custom names and the `sunsum` default are preserved.
+Compiler-backed tests evaluate boundary inputs and verify that the database
+resource uses the validated expression. This is not a SQL permission check.
+
+Use the validating firewall script rather than passing raw IP input to the
+network template. Incremental deployment does not remove old allowances.
+The firewall template also validates the entire address list before generating
+rules: canonical decimal IPv4 only, no duplicate entries, maximum 128, and the
+same excluded address ranges as the wrapper (including the `0.0.0.0` bypass).
+An invalid list fails evaluation rather than deploying just its valid entries.
+These exclusions implement this repository's policy, not an assertion that every
+accepted address is routable or approved. The wrapper still binds input to the
+reviewed target and approval record.
+
+The core template does not enforce first-time creation; that guard remains in
+the supported `Provision-Infrastructure.ps1` entry point, together with provider
+name-availability checks and exact existing-web target validation. Preflights
+do not reserve names or make an ARM deployment transactional. A caller with direct
+Azure write permissions can submit a different template or direct resource write;
+enforcing restrictions against that caller requires separately managed Azure
+Policy/RBAC controls. No such policy enforcement is provisioned here.
+
+The Blob-role template takes `webAppName` and `approvedWebPrincipalId`, which
+the wrapper supplies from its reviewed `webPrincipalId` input. It compares that
+approval with the named web app's current system-assigned identity and fails
+on drift or an absent identity. Assignments consume only the approved principal;
+the template cannot silently grant to a newly recreated identity. Assignment
+names now derive from the web resource ID rather than the principal ID. Review
+existing assignments before upgrading from older templates or recreating an
+identity; do not automatically delete or retarget conflicting assignments.
+
+Follow the [operating guide](../docs/app-service-postgres.md) for approval,
+provisioning, bootstrap and code-only deployment; never use group complete mode
+or resource-group deletion to clean up this shared/persistent foundation.

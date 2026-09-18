@@ -6,7 +6,7 @@ import {
 } from "../../core/engagements";
 import type { Viewer } from "../../core/identity";
 import { demoBackendStore, type BackendStore } from "../../core/store";
-import { resolveDemoInvestor, resolveDemoOperator } from "../identity";
+import { requireRole, resolveViewer } from "../identity";
 import {
   failureResponse,
   isUuid,
@@ -58,9 +58,11 @@ export async function postEngagementRoute(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
+  const viewer = await requireRole(request, "investor");
+  if (!viewer.ok) return failureResponse(viewer.failure);
   return handlePostEngagement(
     request,
-    await resolveDemoInvestor(),
+    viewer.value,
     (await context.params).id,
   );
 }
@@ -78,10 +80,12 @@ export async function handleGetProjectFundingNeeds(
 }
 
 export async function getProjectFundingNeedsRoute(
-  _request: Request,
+  request: Request,
   context: RouteContext,
 ): Promise<Response> {
-  return handleGetProjectFundingNeeds(await resolveDemoInvestor(), (await context.params).id);
+  const viewer = await resolveViewer(request);
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetProjectFundingNeeds(viewer.value, (await context.params).id);
 }
 
 export async function handleGetMyEngagements(
@@ -92,8 +96,10 @@ export async function handleGetMyEngagements(
   return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
 }
 
-export async function getMyEngagementsRoute(): Promise<Response> {
-  return handleGetMyEngagements(await resolveDemoInvestor());
+export async function getMyEngagementsRoute(request: Request): Promise<Response> {
+  const viewer = await requireRole(request, "investor");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetMyEngagements(viewer.value);
 }
 
 export async function handleGetProjectEngagements(
@@ -108,11 +114,13 @@ export async function handleGetProjectEngagements(
 }
 
 export async function getProjectEngagementsRoute(
-  _request: Request,
+  request: Request,
   context: RouteContext,
 ): Promise<Response> {
+  const viewer = await requireRole(request, "operator");
+  if (!viewer.ok) return failureResponse(viewer.failure);
   return handleGetProjectEngagements(
-    resolveDemoOperator(),
+    viewer.value,
     (await context.params).id,
   );
 }

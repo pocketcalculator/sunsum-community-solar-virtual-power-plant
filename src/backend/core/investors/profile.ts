@@ -1,8 +1,7 @@
-import type { InvestorProfile, Viewer } from "../identity";
+import type { InvestorProfile, Viewer, ViewerIdentity } from "../identity";
 import { FUNDING_STAGES, type FundingStage } from "../projects";
 import { failure, ok, type Result } from "../shared";
 import { demoBackendStore, type BackendStore } from "../store";
-import { DEMO_INVESTOR_ID } from "../../demo-principals";
 
 // Mirrors PR #11's src/backend/db/enums.ts until that branch merges.
 export const INVESTOR_TYPES = [
@@ -74,8 +73,15 @@ export async function getMyInvestorProfile(
   return ok(toInvestorProfilePayload(stored ?? viewer.investor));
 }
 
+/**
+ * Create or replace the calling investor's profile.
+ *
+ * Takes a {@link ViewerIdentity} rather than a {@link Viewer} because this is
+ * the endpoint that brings a profile into existence: requiring one here would
+ * make onboarding unreachable for the account it exists to onboard.
+ */
 export async function upsertMyInvestorProfile(
-  viewer: Viewer,
+  viewer: ViewerIdentity,
   input: InvestorProfileInput,
   store: BackendStore = demoBackendStore,
 ): Promise<Result<InvestorProfilePayload>> {
@@ -94,29 +100,40 @@ export async function upsertMyInvestorProfile(
     });
   }
 
-  const existing = await store.getInvestorProfileByUserId(viewer.userId);
-  const now = new Date().toISOString();
-  const profile: InvestorProfile = {
-    id: existing?.id ?? viewer.investor.id ?? DEMO_INVESTOR_ID,
-    userId: viewer.userId,
-    organizationName: input.organizationName,
-    investorType: input.investorType,
-    capitalType: input.capitalType,
-    fundingStageFocus: input.fundingStageFocus,
-    ticketSizeMin: input.ticketSizeMin,
-    ticketSizeMax: input.ticketSizeMax,
-    geographies: input.geographies,
-    investmentObjectives: input.investmentObjectives,
-    impactPriorities: input.impactPriorities,
-    decisionCriteria: input.decisionCriteria,
-    dealRoomProfile: existing?.dealRoomProfile ?? defaultDealRoomProfile(input.investorType),
-    visiblePortfolioScope: existing?.visiblePortfolioScope ?? [],
-    onboardingCompletedAt: now,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  };
-  await store.upsertInvestorProfile(profile);
-  return ok(toInvestorProfilePayload(profile));
+  /**
+   * One transaction around read, allocate, write and re-read. Re-reading alone
+   * was not enough: nothing stopped two first-time posts from both observing
+   * no profile, minting different ids, and racing the upsert. Serialising the
+   * whole sequence means the second caller sees the first caller's row as
+   * `existing` and reuses its id, so only one id is ever allocated and the
+   * response cannot disagree with what is stored.
+   */
+  return store.transaction(async (transaction) => {
+    const existing = await transaction.getInvestorProfileByUserId(viewer.userId);
+    const now = new Date().toISOString();
+    const profile: InvestorProfile = {
+      id: existing?.id ?? transaction.nextId("investor"),
+      userId: viewer.userId,
+      organizationName: input.organizationName,
+      investorType: input.investorType,
+      capitalType: input.capitalType,
+      fundingStageFocus: input.fundingStageFocus,
+      ticketSizeMin: input.ticketSizeMin,
+      ticketSizeMax: input.ticketSizeMax,
+      geographies: input.geographies,
+      investmentObjectives: input.investmentObjectives,
+      impactPriorities: input.impactPriorities,
+      decisionCriteria: input.decisionCriteria,
+      dealRoomProfile: existing?.dealRoomProfile ?? defaultDealRoomProfile(input.investorType),
+      visiblePortfolioScope: existing?.visiblePortfolioScope ?? [],
+      onboardingCompletedAt: now,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    await transaction.upsertInvestorProfile(profile);
+    const stored = await transaction.getInvestorProfileByUserId(viewer.userId);
+    return ok(toInvestorProfilePayload(stored ?? profile));
+  });
 }
 
 export function toInvestorProfilePayload(

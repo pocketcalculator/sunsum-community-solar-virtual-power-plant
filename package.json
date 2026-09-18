@@ -16,6 +16,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "db:check": "node --conditions=react-server --import=tsx scripts/db-check.ts",
+    "db:migrate:azure": "node --conditions=react-server --import=tsx scripts/db-migrate.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/db.mjs migrate",
     "db:studio": "node scripts/db.mjs studio",
@@ -37,7 +39,8 @@
     "next": "16.3.4",
     "pg": "8.23.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "server-only": "0.0.1"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
@@ -53,6 +56,7 @@
     "eslint": "9.39.5",
     "eslint-config-next": "16.3.4",
     "jsdom": "30.0.1",
+    "tsx": "4.23.13",
     "typescript": "5.9.3",
     "vite": "8.2.2",
     "vitest": "5.0.0"

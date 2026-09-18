@@ -14,14 +14,37 @@ info:
     Unknown input is rejected. Optional objects are omitted; nullable scalar values
     use null. The viability engine remains a separate server-to-server service.
 
-    **Demo identity warning:** consistent with PR #10's identity seam, the
-    implemented routes do not authenticate the caller. Each route runs as one
-    fixed, role-specific demo principal selected by server code. Callers cannot
-    select a role or identity through a header, cookie, query parameter, or
-    request body. These principals preserve the core authorization paths for the
-    demo, but they are not production authentication. Real request-to-viewer
-    resolution and CSRF protection for cookie sessions or bearer-token protection
-    are future WS3 work and are not implemented here.
+    **Authentication:** every operation except `POST /auth/demo-switch` and
+    `POST /auth/logout` resolves its caller from the signed `sunsum_session`
+    cookie and answers 401 when there is none. Those two are how a session
+    starts and ends, so requiring one would be circular. The role is read
+    from the user record on each request rather than from the token, so a caller
+    cannot select their own role through a header, cookie, query parameter, or
+    request body, and a role changed in the database takes effect on the next
+    request. Cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
+    `SameSite=Lax` is not on its own a CSRF defence — it is scoped to the site,
+    not the origin, so a sibling origin's forged write still carries the cookie.
+    Every state-changing operation is additionally checked against
+    `Sec-Fetch-Site`, falling back to `Origin`, and answers 403 when the request
+    came from a browsing context that is not ours.
+
+    How a session *starts* is not authentication. `POST /auth/demo-switch` hands
+    out one of three seeded identities so the three roles can be demonstrated
+    without an identity provider, and verifies no credential. It is opt-in per
+    deployment and is the single endpoint a real identity provider replaces.
+
+    Resolving a session needs a signing secret, and the two ways to get that
+    wrong fail differently. A *configured* `SUNSUM_SESSION_SECRET` shorter than
+    32 characters is refused in every environment. An *unset* one is refused
+    only in production — outside it the server invents a per-process secret and
+    warns, so local development needs no configuration and sessions simply end
+    when the process does. Either refusal answers 503 with
+    `code: service_unavailable` rather than 401 on every operation that needs a
+    caller: the caller is not at fault and signing in again will not help.
+
+    A production deployment missing its secret still starts and still serves
+    everything that needs no caller. The refusal happens per request, when the
+    secret is first needed, not at boot.
   contact:
     name: Workstream 2 — Backend & Workflow
   license:
@@ -30,7 +53,11 @@ info:
 servers:
   - url: /api
     description: Next.js server endpoints (§3 — "Next.js/Node.js server endpoints")
+security:
+  - sessionCookie: []
 tags:
+  - name: Identity
+    description: Session sign-in, sign-out, and the current caller
   - name: Sites
     description: S-SITE — draft save, missing-field computation, submission lifecycle
   - name: Submissions
@@ -42,6 +69,96 @@ tags:
   - name: Engagements
     description: S-ENG and S-VIEW — interest, operator review, and deal-room disclosure
 paths:
+  /auth/demo-switch:
+    post:
+      tags: [Identity]
+      operationId: demoSwitch
+      security: []
+      summary: Sign in as one of the three seeded demo identities
+      description: |
+        Not a credential check. Hands out a session for a **seeded** account so
+        the three roles can be demonstrated without an identity provider, which
+        means anyone who can reach it can become any of those three users. It is
+        therefore opt-in per deployment; where it is off, it answers 404 so the
+        endpoint's existence is not advertised. This is the one operation a real
+        identity provider replaces.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              additionalProperties: false
+              properties:
+                role:
+                  type: string
+                  enum: [site_owner, operator, investor]
+      responses:
+        "200":
+          description: Signed in; the session cookie is set on the response.
+          headers:
+            Set-Cookie:
+              description: The `sunsum_session` cookie.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Identity" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/CrossSiteRefused" }
+        "404":
+          description: Demo sign-in is not enabled on this deployment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description:
+            The demo accounts are unusable — absent from this database, or
+            holding a role other than the one requested — or the session secret
+            is missing or too short. No cookie is issued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /auth/logout:
+    post:
+      tags: [Identity]
+      operationId: logout
+      security: []
+      summary: Sign out
+      description: Clears the session cookie. Safe to call without a session.
+      responses:
+        "200":
+          description: Signed out; the session cookie is expired on the response.
+          headers:
+            Set-Cookie:
+              description: The cleared `sunsum_session` cookie.
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [signed_out]
+                properties:
+                  signed_out: { type: boolean, enum: [true] }
+        "403": { $ref: "#/components/responses/CrossSiteRefused" }
+  /me:
+    get:
+      tags: [Identity]
+      operationId: getMe
+      summary: The current caller
+      description: |
+        Answers for any signed-in role. An investor who has not completed
+        onboarding is reported with `onboarded: false` rather than refused, so a
+        client can route them to the profile form instead of treating them as
+        unauthorized.
+      responses:
+        "200":
+          description: The caller's identity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Identity" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /sites:
     post:
       tags: [Sites]
@@ -59,6 +176,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SiteWithMissing" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "422":
           description: Required submission fields or consent are missing.
@@ -66,7 +184,10 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ValidationError" }
         "503":
-          description: Viability service unavailable; no site or assessment is persisted.
+          description:
+            Viability service unavailable; no site or assessment is persisted.
+            Also returned when the session secret is missing or too short — see
+            `AuthUnavailable`. The `code` field distinguishes the two.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -89,9 +210,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SiteWithMissing" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /sites/{id}/submit:
     post:
       tags: [Sites]
@@ -106,6 +229,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SiteWithMissing" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
@@ -115,7 +239,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ValidationError" }
         "503":
-          description: Viability service unavailable; no status or assessment change is persisted.
+          description:
+            Viability service unavailable; no status or assessment change is
+            persisted. Also returned when the session secret is missing or too
+            short — see `AuthUnavailable`. The `code` field distinguishes the
+            two.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -138,6 +266,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Document" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
   /sites/{id}/documents/{documentId}/content:
@@ -183,8 +312,10 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
     get:
       tags: [Sites]
       operationId: getSiteDocumentContent
@@ -216,6 +347,7 @@ paths:
                 type: string
                 format: binary
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404":
           description: |
@@ -225,6 +357,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /me/sites:
     get:
       tags: [Sites]
@@ -238,7 +371,9 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/OwnerDashboardItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /submissions:
     get:
       tags: [Submissions]
@@ -274,7 +409,9 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/SubmissionSummary" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /submissions/{id}:
     get:
       tags: [Submissions]
@@ -289,8 +426,10 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SubmissionDetail" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /submissions/{id}/decision:
     post:
       tags: [Submissions]
@@ -310,6 +449,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SubmissionDecisionResult" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
@@ -318,6 +458,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ValidationError" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /pipeline:
     get:
       tags: [Projects]
@@ -348,7 +489,9 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PipelineBoard" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /projects/{id}:
     patch:
       tags: [Projects]
@@ -368,6 +511,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Project" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422":
@@ -375,6 +519,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ValidationError" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /projects/{id}/stage:
     post:
       tags: [Projects]
@@ -394,9 +539,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Project" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /projects/{id}/visibility:
     patch:
       tags: [Projects]
@@ -416,8 +563,10 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Project" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /projects/{id}/engagements:
     get:
       tags: [Engagements]
@@ -434,8 +583,10 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/Engagement" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
     post:
       tags: [Engagements]
       operationId: expressInterest
@@ -454,9 +605,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Engagement" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /projects/{id}/funding-needs:
     get:
       tags: [Engagements]
@@ -473,8 +626,10 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/FundingNeed" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /projects/{id}/deal-room:
     get:
       tags: [Engagements]
@@ -494,8 +649,10 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/DealRoom" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /investors/me/profile:
     get:
       tags: [Portfolio]
@@ -507,7 +664,9 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/InvestorProfile" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
     post:
       tags: [Portfolio]
       operationId: upsertMyInvestorProfile
@@ -524,12 +683,14 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/InvestorProfile" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "422":
           description: Ticket size range is invalid.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ValidationError" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /me/engagements:
     get:
       tags: [Engagements]
@@ -537,13 +698,17 @@ paths:
       summary: Current investor's own engagement pipeline
       responses:
         "200":
-          description: Engagements for the fixed demo investor only.
+          description:
+            Engagements belonging to the signed-in investor. Scoped to the
+            caller resolved from the session cookie, not to a fixed account.
           content:
             application/json:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/EngagementPipelineItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /me/outstanding:
     get:
       tags: [Sites]
@@ -557,7 +722,9 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/OutstandingItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /portfolio:
     get:
       tags: [Portfolio]
@@ -587,8 +754,20 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PortfolioResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sunsum_session
+      description: |
+        A signed session cookie issued by `POST /auth/demo-switch`. The token
+        names only the user; the role is read from the user record on every
+        request, so it cannot be forged or held stale by an old cookie. Expires
+        eight hours after it is issued.
   parameters:
     ResourceId:
       name: id
@@ -616,6 +795,46 @@ components:
         type: string
         format: uuid
   responses:
+    Unauthorized:
+      description: |
+        No session, or one that is expired, unreadable, or signed for a user who
+        no longer exists. Always `code: unauthenticated`. Distinct from 403: this
+        says the caller is nobody, not that they are the wrong somebody. Sign in
+        through `POST /auth/demo-switch` and retry.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CrossSiteRefused:
+      description: |
+        The request was initiated by another site. `POST /auth/demo-switch` and
+        `POST /auth/logout` answer with `Set-Cookie` and take no credential, so
+        they refuse a cross-site caller outright — `SameSite=Lax` stops a cookie
+        being *sent* cross-site but not one being *set*. Determined from
+        `Sec-Fetch-Site`, falling back to `Origin`; a non-browser client that
+        sends neither is unaffected. Always `code: forbidden_origin`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    AuthUnavailable:
+      description: |
+        The deployment cannot resolve sessions. Either `SUNSUM_SESSION_SECRET`
+        is configured but shorter than 32 characters — refused in every
+        environment — or it is unset while running in production. Always
+        `code: service_unavailable`. This is a deployment fault, not a caller
+        fault: retrying will not clear it.
+
+        Only two kinds of request reach it. A request that *carries* a session
+        cookie, because the secret is needed to verify the signature; and
+        sign-in, because the secret is needed to mint one. A protected request
+        with no cookie is answered `401 unauthenticated` first and never
+        observes this condition, so a missing secret presents as "nobody can
+        sign in", not as "every endpoint is down".
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     BadRequest:
       description: Malformed request — bad JSON, unknown enum value, or a missing required field.
       content:
@@ -624,11 +843,20 @@ components:
             $ref: "#/components/schemas/Error"
     Forbidden:
       description: |
-        The core authorization check rejected the route's fixed demo principal.
-        Covers three distinct cases, distinguished by `code`: wrong role for the
-        endpoint, right role but not the owner of this record, or right role but
-        an insufficient disclosure tier (§7.7). A real authenticated caller is
-        future WS3 work and is not implied by this response.
+        The caller is not allowed. Three codes concern authorization:
+        `forbidden_role` (wrong role for the endpoint), `forbidden_owner`
+        (right role, but not the owner of this record), and `forbidden_tier`
+        (right role, but an insufficient disclosure tier under §7.7 — which is
+        also how an investor who has not completed onboarding is refused).
+
+        A fourth code is not about authorization at all. On writes, a request
+        that carries a session cookie but originates from another site is
+        refused with `code: forbidden_origin` before identity is considered, so
+        clients must not read a 403 as a role or ownership failure without
+        checking `code`. See `CrossSiteRefused`.
+
+        Compare 401, which means no valid session at all, and 404, which is
+        what a project hidden from investors returns rather than a 403.
       content:
         application/json:
           schema:
@@ -649,6 +877,35 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    Identity:
+      type: object
+      required: [user_id, role]
+      description: |
+        Who the caller is. `onboarded` and `investor` appear only for the
+        investor role; `investor` is present only once a profile exists.
+      properties:
+        user_id: { type: string, format: uuid }
+        role:
+          type: string
+          enum: [site_owner, operator, investor]
+        onboarded:
+          type: boolean
+          description:
+            Investor only. False until onboarding is complete — that is, until
+            `investor.onboarding_completed_at` is set. A profile can exist with
+            a null timestamp, and the investor rules treat that as unfinished,
+            so a client should send the caller to the profile form whenever this
+            is false rather than testing for the presence of `investor`.
+        investor:
+          type: object
+          required: [id, organization_name, onboarding_completed_at]
+          properties:
+            id: { type: string, format: uuid }
+            organization_name: { type: string }
+            onboarding_completed_at:
+              type: string
+              format: date-time
+              nullable: true
     Activity:
       type: object
       required: [id, action, created_at]
@@ -1082,8 +1339,17 @@ components:
 
             Authorization codes map to the §8.2 matrix:
             `forbidden_role` (wrong role), `forbidden_owner` (right role, not your
-            record), `forbidden_tier` (right role, insufficient disclosure tier),
-            `forbidden_visibility` (project not investor-visible).
+            record), `forbidden_tier` (right role, but an insufficient disclosure
+            tier — which includes an investor who has not completed onboarding).
+
+            A project the operator has not made visible to investors answers
+            `404 not_found`, not a `403`. That is deliberate: a distinct
+            "exists but hidden" code would confirm the project exists to
+            exactly the caller who is not allowed to know it.
+
+            `forbidden_origin` is not an authorization decision about the
+            caller: it means the request was initiated by another site and was
+            refused before any identity was considered.
           example: forbidden_tier
         message:
           type: string

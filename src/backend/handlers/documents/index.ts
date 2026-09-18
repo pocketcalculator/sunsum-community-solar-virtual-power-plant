@@ -11,7 +11,7 @@ import {
 import { failure, ok, type Result } from "../../core/shared";
 import { demoBackendStore, type BackendStore } from "../../core/store";
 import { documentBlobClient } from "../../blob";
-import { resolveDemoSiteOwner } from "../identity";
+import { resolveViewer } from "../identity";
 import {
   failureResponse,
   jsonResponse,
@@ -49,7 +49,9 @@ export async function postSiteDocumentRoute(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
-  return handlePostSiteDocument(request, resolveDemoSiteOwner(), (await context.params).id);
+  const viewer = await resolveViewer(request);
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handlePostSiteDocument(request, viewer.value, (await context.params).id);
 }
 
 /**
@@ -137,20 +139,24 @@ export async function putSiteDocumentContentRoute(
   context: DocumentRouteContext,
 ): Promise<Response> {
   const params = await context.params;
+  const viewer = await resolveViewer(request);
+  if (!viewer.ok) return failureResponse(viewer.failure);
   return handlePutSiteDocumentContent(
     request,
-    resolveDemoSiteOwner(),
+    viewer.value,
     params.id,
     params.documentId,
   );
 }
 
 export async function getSiteDocumentContentRoute(
-  _request: Request,
+  request: Request,
   context: DocumentRouteContext,
 ): Promise<Response> {
   const params = await context.params;
-  return handleGetSiteDocumentContent(resolveDemoSiteOwner(), params.id, params.documentId);
+  const viewer = await resolveViewer(request);
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetSiteDocumentContent(viewer.value, params.id, params.documentId);
 }
 
 export function parseDocumentCreate(body: JsonObject): Result<DocumentCreateInput> {

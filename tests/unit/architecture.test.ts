@@ -99,6 +99,32 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/core/shared/probe.ts", "../investors"],
     ["src/backend/core/shared/probe.ts", "../projects"],
     ["src/backend/core/shared/probe.ts", "../identity/viewer"],
+    ["src/components/ui/probe.tsx", "pg"],
+    ["src/domain/probe.ts", "drizzle-orm"],
+    ["src/features/onboarding/probe.tsx", "drizzle-orm/node-postgres"],
+    ["src/features/participation/probe.tsx", "@azure/identity"],
+    ["src/features/example/probe.tsx", "pg"],
+    ["app/api/probe.ts", "pg"],
+    ["app/api/probe.ts", "drizzle-orm/node-postgres"],
+    ["app/api/probe.ts", "@/backend/infrastructure/database"],
+    ["src/backend/core/projects/probe.ts", "pg"],
+    ["src/backend/core/projects/probe.ts", "drizzle-orm/node-postgres"],
+    ["src/backend/core/projects/probe.ts", "../../infrastructure/database"],
+    ["src/backend/core/shared/probe.ts", "@/backend/infrastructure/database"],
+    ["src/backend/handlers/investors/probe.ts", "@azure/identity"],
+    ["src/backend/handlers/investors/probe.ts", "../../infrastructure/database"],
+    ["src/backend/db/probe.ts", "@/backend/infrastructure"],
+    ["src/backend/db/probe.ts", "@/backend/infrastructure/database"],
+    ["src/backend/db/probe.ts", "../infrastructure"],
+    ["src/backend/db/probe.ts", "../infrastructure/database"],
+    ["src/backend/db/nested/probe.ts", "../../infrastructure"],
+    ["src/backend/db/nested/probe.ts", "../../infrastructure/database/pool"],
+    /**
+     * The dependency between rules and storage runs one way: `db` imports
+     * domain vocabulary from `core`, and `core` never imports `db`. That is
+     * what keeps `ProjectStore` an interface a domain owns rather than a shape
+     * the database dictates.
+     */
     ["src/backend/core/probe.ts", "@/backend/db"],
     ["src/backend/core/probe.ts", "../db"],
     ["src/backend/core/projects/probe.ts", "@/backend/db"],
@@ -170,6 +196,12 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/handlers/probe.ts", "node:crypto"],
     ["src/backend/core/probe.ts", "@/domain/roles"],
     ["src/backend/core/probe.ts", "node:crypto"],
+    ["src/backend/infrastructure/database/probe.ts", "pg"],
+    ["src/backend/infrastructure/database/probe.ts", "drizzle-orm/node-postgres"],
+    ["src/backend/infrastructure/database/probe.ts", "@azure/identity"],
+    ["src/backend/infrastructure/database/probe.ts", "../../db/schema"],
+    ["src/backend/index.ts", "./infrastructure/database"],
+    /** Persistence imports domain vocabulary, which is the allowed direction. */
     ["src/backend/db/probe.ts", "@/backend/core/identity"],
     ["src/backend/db/probe.ts", "@/backend/core/projects"],
     ["src/backend/db/probe.ts", "../core/projects"],
@@ -212,6 +244,7 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/handlers/probe.ts", 'export * from "@/backend/db/schema";'],
     ["src/backend/core/probe.ts", 'export * from "pg";'],
     ["src/backend/handlers/probe.ts", 'export * from "drizzle-orm";'],
+    ["src/backend/db/probe.ts", 'export * from "../infrastructure/database";'],
   ])("rejects prohibited re-exports from %s", async (file, source) => {
     expect(await lintBoundary(file, source)).not.toHaveLength(0);
   });

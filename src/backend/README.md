@@ -9,16 +9,23 @@ sections 9 and 10 of
 investor workflow endpoints now follow the same handler/core split. It runs
 against either an in-memory fixture or a real PostgreSQL database, chosen by
 one environment variable, so that later endpoints have a pattern to copy; see
-[Adding an endpoint](#adding-an-endpoint). Identity is still a demo seam: each
-route uses a fixed role-specific identity.
+[Adding an endpoint](#adding-an-endpoint). Identity is resolved per request
+from a signed `sunsum_session` cookie; only how a session *starts* is still a
+demo seam.
 
 > [!WARNING]
-> **Do not expose these privileged demo routes as a production API.** They do
-> not authenticate requests: each route always resolves to a fixed demo owner,
-> operator, or investor. The core authorization checks and role-specific route
-> wiring must remain in place, but production exposure additionally requires
-> authenticated request-to-viewer resolution plus CSRF protection for
-> cookie-based sessions or appropriate bearer-token protection.
+> **Requests are authenticated; sign-in is not.** Every implemented route
+> except `POST /auth/demo-switch` and `POST /auth/logout` resolves its caller
+> from a signed, `HttpOnly` `sunsum_session` cookie and answers
+> `401 unauthenticated` without one. Writes are additionally checked against
+> `Sec-Fetch-Site`, falling back to `Origin`, and a cross-site write is refused
+> `403 forbidden_origin`.
+>
+> What is not production-ready is the sign-in endpoint. `POST /auth/demo-switch`
+> hands out one of three **seeded** identities and verifies no credential, so
+> anyone who can reach it can become any demo user. It is opt-in per deployment
+> (`SUNSUM_DEMO_AUTH=enabled`) and is the one endpoint a real identity provider
+> replaces. Until it does, do not expose this API to untrusted callers.
 
 ## Layout
 
@@ -49,6 +56,8 @@ src/backend/
     engagements/        S-ENG   interest and operator engagement reads
     views/              S-VIEW  composed reads
   db/                   schema, migrations, driver, store. Imports core; core never imports it
+  infrastructure/
+    database/           server-only PostgreSQL/Drizzle connection and tooling seam
 ```
 
 Each directory's `index.ts` is its public face. A sibling imports
@@ -85,17 +94,21 @@ layers, each with an `index.ts`. An empty directory is not worth the import.
 
 | Directory   | Owns                                                                                                                                    | Must not                                                                       |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `handlers/` | The transport edge: selecting the fixed demo principal, validating the request into typed values, and turning a `Result` into a status code | Decide permission, accept caller-selectable roles, or hold workflow rules, stage transitions or solar math |
+| `handlers/` | The transport edge: authenticating the caller from the session cookie, refusing cross-site writes, validating the request into typed values, and turning a `Result` into a status code | Decide permission, accept caller-selectable roles, or hold workflow rules, stage transitions or solar math |
 | `core/`     | Authorization, workflow rules, visibility scoping and the response payload, written as ordinary functions over plain values              | Import `handlers/`, or reach for `next/server`, `next/headers` or `next/cache` |
 
-Core **authorizes**. In this MVP, handlers do **not authenticate**; each route
-selects its fixed role-specific demo principal and never accepts a
-caller-supplied role. Replacing that seam with authenticated request-to-viewer
-resolution is future WS3 work. Core still decides what the resolved identity
-may see, because a permission that lived only in the handler would be skipped
-the moment a scheduled job, seeding CLI or second route called the same
+Handlers **authenticate**; core **authorizes**. A handler resolves the viewer
+from the signed session cookie and never accepts a caller-supplied role — the
+role is read from the user row on each request, so a stale cookie cannot claim
+a role its owner was never granted. Core then decides what that resolved
+identity may see, because a permission that lived only in the handler would be
+skipped the moment a scheduled job, seeding CLI or second route called the same
 function. This is what "enforce authorization at service boundaries, not only
 in the user interface" means here.
+
+The remaining demo seam is how a session *starts*, not whether one is required:
+`POST /auth/demo-switch` issues a cookie for a seeded identity without checking
+a credential. Replacing it with a real identity provider is the future work.
 
 `index.ts` is the public entry point. Routes import `@/backend` and nothing
 deeper, which keeps handler and core module paths free to move.
@@ -220,14 +233,16 @@ of the separate boundary.
 
 [The technical design](../../docs/sunsum_technical_design_doc.md) selects
 **Azure Database for PostgreSQL Flexible Server with Drizzle ORM** for
-persistence and private Blob Storage for document files. Drizzle Kit is the
-selected schema/migration tooling. The database schema has since landed (see
-below) and the storage account is provisioned, but neither is wired to the
-running endpoints: the API is still served entirely from the in-memory store.
-The proposed Entra integration and the broader WS2 deployment topology also
-remain separate from this scaffold.
+persistence and private Blob Storage for document files. Drizzle Kit is the selected schema/migration tooling.
+[The connection foundation](infrastructure/database/README.md) now provides
+validated server-only configuration, a pooled `pg`/Drizzle client, managed-identity
+token refresh and a read-only connectivity command. It reuses the canonical
+`db/` schema and migrations from main rather than maintaining a second schema.
+The `db/` directory also provides the PostgreSQL-backed `BackendStore` selected
+by the composition root. Application-user mapping remains separate from
+database access and Azure provisioning.
 
-Three seams allow those integrations without changing the workflow rules:
+Two seams allow those integrations without changing the workflow rules:
 
 - **Persistence.** `core/store/index.ts` provides the shared in-memory demo
   implementation behind `BackendStore`; `createMemoryBackendStore` gives tests
@@ -237,224 +252,33 @@ Three seams allow those integrations without changing the workflow rules:
 
   A schema now exists in [`db/`](./db/README.md) and
   [ADR 0001](../../infrastructure/docs/adr-0001-database-and-persistence.md)
-  records the decision, but **nothing is wired up yet**: the running endpoints
-  are still served by the in-memory store. Adopting it means adding a
-  Drizzle-backed implementation behind `BackendStore`, not moving persistence
-  into the handlers.
-- **Identity.** `handlers/identity/viewer.ts` exposes fixed demo owner, operator
-  and investor resolvers. **They have no security value.** They read nothing
-  from the request, so a caller cannot choose a role. Before production, replace
-  them with authenticated request-to-viewer resolution and add CSRF protection
-  for cookie sessions or suitable bearer-token protection.
-- **Document storage.** `core/documents/storage.ts` decides where a document
-  lives; `blob/index.ts` is the only module that talks to Azure, selected by
-  `SUNSUM_BLOB` exactly as `SUNSUM_STORE` selects persistence. See
-  [Document blob storage](#document-blob-storage).
+  records the decision. `composition.ts` selects the Drizzle-backed
+  `BackendStore` with `SUNSUM_STORE=db`; the default remains the explicit
+  in-memory fixture. Persistence stays outside the handlers.
+- **Identity.** Routes resolve their viewer from the signed `sunsum_session`
+  cookie in `handlers/identity/session.ts`. The deprecated fixed resolvers in
+  `handlers/identity/viewer.ts` are no longer on any request path — they survive
+  only as fixtures for core tests that need a `Viewer` without a session, and
+  must not be reintroduced into a route. What is still not production ready is
+  `POST /auth/demo-switch`, which issues a session for a seeded identity without
+  checking a credential; it is opt-in per deployment and is what a real identity
+  provider replaces.
 
-Neither the persistence nor the identity seam is production ready. The App
-Service smoke test exercises the in-memory-backed API, not a real database,
-data set, or identity provider.
+The App Service smoke test exercises a fixture-backed API, not a real data set
+or identity provider.
 
-## Document blob storage
+Infrastructure clients must not be constructed in `core/`, `handlers/`, routes,
+or presentation. The composition boundary supplies dependencies to adapters
+behind core interfaces; ESLint and the boundary tests enforce this separation.
+Database configuration is never a `NEXT_PUBLIC_*` value.
 
-Document *metadata* is a row; the file itself is a blob. The split follows the
-same shape as the persistence seam, so the demo runs with no Azure account and
-no credentials.
-
-| Layer | Module | Knows about Azure |
-| --- | --- | --- |
-| Where a blob lives | `core/documents/storage.ts` | no |
-| Moving bytes | `blob/index.ts` | yes, lazily |
-
-Keeping the layout in `core` means it is unit-testable without mocking an SDK,
-and that both implementations of the client necessarily agree on the path.
-
-### Blob path layout
-
-```text
-{container}/owners/{ownerId}/{sites|projects}/{parentId}/{docType}/{documentId}/{filename}
-```
-
-The owner id leads the blob name so every document belonging to one site owner
-sits under a single prefix, across all of their sites and projects. That is what
-makes "everything this owner has" a prefix listing rather than a scan, and it is
-the unit a future per-owner SAS or lifecycle rule would be scoped to.
-
-The parent scope is the **site** id for anything uploaded during intake, and the
-project id only for documents created against a project. A project is created
-*from* a site at acceptance, so the site id is the one identifier that exists for
-the whole life of the record — documents arrive during intake, before any project
-does, and `blob_path` is immutable once written. Anchoring intake documents on a
-project id would either strand them under a prefix the project never uses or
-force copying every blob at acceptance.
-
-The document id is its own segment rather than a filename prefix, so two
-uploads of the same filename cannot collide and a blob can be located from its
-record without re-deriving a timestamp.
-
-`documents.blob_path` stores this **fully qualified**, including the container.
-Deriving the container from `disclosure_class` at read time would instead make
-the record wrong the moment a document is re-disclosed and copied.
-
-### One container per disclosure class
-
-`owner-private` and `investor-tier-1`, mapped by `DOCUMENT_CONTAINERS`.
-
-`core` already enforces disclosure on every read, so this is not the access
-check — it is a coarser boundary underneath it. A credential scoped to
-`investor-tier-1` cannot name a blob in `owner-private` at all, so an
-authorization bug in the application cannot by itself expose an owner's
-electricity bill. This is only safe because a document's class is fixed at
-upload: `addSiteDocument` is the only writer and there is no re-classification
-path.
-
-The disclosure split stays at the *container* level rather than becoming another
-folder under the owner prefix. Azure containers cannot nest — a "folder" is only
-a prefix in the blob name — so demoting it would turn a boundary a credential
-cannot cross into a naming convention, and the owner grouping above is delivered
-inside each container instead.
-
-### Untrusted input in a path
-
-`original_filename` and `doc_type` are caller-supplied and both become path
-segments. `safeFilename` drops any directory part before sanitising — only the
-leaf is meaningful, and keeping the rest would let the caller choose the
-prefix — and `safeSegment` removes `..` and separators rather than escaping
-them. `tests/unit/backend/document-storage.test.ts` asserts a crafted
-`../../../etc/passwd` cannot escape its prefix.
-
-### Configuration
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `SUNSUM_BLOB` | `memory` | `memory` keeps blobs in-process; `azurite` uses the local emulator; `azure` uses the account below. |
-| `AZURE_STORAGE_CONNECTION_STRING` | the published Azurite credential | Only read when `SUNSUM_BLOB=azurite`. |
-| `AZURE_STORAGE_ACCOUNT_NAME` | — | Required when `SUNSUM_BLOB=azure`. |
-
-An unrecognised `SUNSUM_BLOB` throws rather than falling back to `memory`. A
-typo would otherwise look exactly like a working deployment whose uploads vanish
-on restart, which is the failure this seam exists to make impossible.
-
-In `azure` mode there is no connection string and no account key, because the
-account has shared-key access disabled: the credential is `az login` locally and
-the app's managed identity when deployed.
-
-The account, its containers and the access it still needs are described in
-[`infrastructure/docs/blob-storage.md`](../../infrastructure/docs/blob-storage.md).
-**The deployed account is not reachable yet** — see the blockers recorded there.
-That is why `azurite` exists: it is what makes the Azure SDK path runnable and
-verifiable today.
-
-### Running the emulator locally
-
-Two ways, same emulator pinned to the same version:
-
-```bash
-npm run blob:up                      # the npm dev dependency, no Docker; state in ./.azurite
-docker compose up -d --wait azurite  # the same pinned image, if the database is already up that way
-```
-
-Then point the app at it:
-
-```bash
-SUNSUM_BLOB=azurite npm run dev
-```
-
-The first start takes up to a minute to begin listening while Azurite
-initialises its metadata store; a port check straight after the command will be
-refused until it finishes. Never delete the state directory or volume while
-Azurite is running — that corrupts the LokiJS store underneath and produces
-failures that look like code defects. Stop it first.
-
-In `azurite` mode the client creates the two containers on first use. That
-bootstrap is emulator-only on purpose: in Azure the containers are Bicep's to
-create, and an application that can create containers is an application holding
-more rights than it needs.
-
-`tests/integration/blob-azurite.test.ts` exercises the real Blob REST API
-against it — upload, download, overwrite, missing-blob and the container split.
-It probes the port first and skips cleanly when the emulator is not running, so
-a clean checkout with no Docker still passes.
-
-### Putting bytes behind the seeded documents
-
-`npm run db:seed` writes document *rows*. Without something writing the blobs
-those rows point at, every seeded document answers `GET .../content` with a 404
-— the schema looks populated and the demo's download button is broken.
-
-```bash
-npm run blob:up                       # in one terminal
-npm run blob:seed                     # writes the placeholder blobs
-npm run blob:list                     # what is actually in the emulator
-```
-
-`scripts/blob.mjs` reads the `documents` rows out of `src/backend/db/seed.sql`
-rather than restating their paths, so moving a document in the seed moves its
-placeholder too and the two cannot drift. It writes a real one-page PDF sized to
-the byte — `size_bytes` is enforced on upload, so filler of a convenient length
-would make the seeded rows the one case the API refuses. `seed` is idempotent;
-re-running overwrites.
-
-It refuses any endpoint that is not on `127.0.0.1`/`localhost`, so pointing it
-at a real account by leaving a connection string in the environment fails rather
-than writing placeholder PDFs into Azure.
-
-Two limits worth knowing: it covers the SQL seed only, so the default
-`SUNSUM_STORE=mock` demo document still has no bytes behind it, and the size
-arithmetic is what `tests/unit/backend/blob-seed.test.ts` pins — including the
-padding boundaries, which is where it was wrong first time.
-
-### When the Azure account will not answer
-
-`npm run blob:doctor` reports why. The deployed `stsunsumsolardevcus` account is
-currently unreachable for two separate reasons, and the failure modes look
-alike: a network rejection is evaluated before RBAC, so while the firewall is
-closed a correct role assignment and a missing one produce the same 403. The
-tell is the error code — `AuthorizationFailure` is the network, and
-`AuthorizationPermissionMismatch` is the role.
-
-The script is read-only, pinned to the target subscription rather than to
-whichever one the Azure CLI is pointed at, and orders the blockers so that
-fixing them top-down works. It is the shortcut past
-[`infrastructure/docs/blob-storage.md`](../../infrastructure/docs/blob-storage.md),
-which explains the same two blockers and what it takes to clear them.
-
-Local development is unaffected — Azurite has neither a firewall nor RBAC, which
-is why `blob:up` plus `blob:seed` is the supported path until the account opens.
-
-### Transferring the bytes
-
-`PUT` and `GET /sites/{id}/documents/{documentId}/content` are the only callers
-of `documentBlobClient()`. They are deliberately separate from registration:
-`POST /sites/{id}/documents` is contracted to carry document *metadata* only,
-and that contract is frozen, so content was added alongside it rather than
-folded into it.
-
-- The blob location comes from the stored `blob_path`, never from the request,
-  so an uploader cannot choose where its bytes land or overwrite another
-  document's blob.
-- The request's `Content-Type` is **ignored**. The record already carries a type
-  validated against the allow-list at registration; honouring the upload's own
-  header would let a caller register `application/pdf` and then serve back
-  something the browser will execute.
-- The uploaded length must equal the registered `size_bytes`. Storing different
-  bytes would leave the record describing something that is not there, and every
-  consumer reads the record.
-- Reads set `Content-Disposition: attachment` with an RFC 5987 encoded filename
-  and `X-Content-Type-Options: nosniff`, so a document is never rendered in the
-  origin.
-- A registered document with nothing uploaded returns `not_found` rather than an
-  error. It is a normal state — registration and upload are two steps — and it
-  is what an owner's outstanding-items list is reading.
-
-Investor access to document *content* is not wired: `core` admits only the site
-owner and operators. Investors see tier-1 document *metadata* through the deal
-room, which is the §7.6 short-lived-SAS design and needs data-plane access the
-subscription has not granted.
-
-`tests/unit/backend/document-content.test.ts` covers the round trip, the size
-and empty-body rejections, cross-owner and cross-site refusal, the ignored
-request content type and the response headers.
+The application `db/` client must not import the separate
+`infrastructure/database` operator client. ESLint rejects this direction,
+including re-exports, so the `DATABASE_URL`/`SUNSUM_DB_AUTH` application contract
+does not silently adopt `PG*`/`SUNSUM_DATABASE_AUTH` configuration. The composition
+and operator boundaries remain allowed to construct their own dependencies;
+operator tooling may import `db/schema` to reuse tables without importing the
+application client or store.
 
 ### Reconciling with the database schema
 

@@ -27,8 +27,16 @@ The web application uses Linux App Service code deployment; its F1 smoke test
 does not require Container Apps or a container registry. See the
 [technical design](../../docs/sunsum_technical_design_doc.md) for the decision.
 
-PostgreSQL has not been provisioned or connected, and Drizzle packages and
-migrations have not been added. The current backend uses in-memory fixtures.
+The [App Service / PostgreSQL operating guide](app-service-postgres.md) describes
+the prepared Bicep/Azure CLI foundation, local checks, exact-IP approval and explicit
+Entra SQL bootstrap. This preparation does not provision or connect a cloud
+database. No orchestration framework is required.
+
+The separate [development deployment guide](deployment.md) records the existing
+Azure environment and its verified PostgreSQL-backed application deployment.
+That path uses managed identity rather than a database password. It also records
+the one-time database grant that a template cannot perform. These recorded
+results do not certify a new deployment of the broader preparation foundation.
 F1 is the web-hosting tier only; PostgreSQL compute and storage costs must be
 confirmed separately.
 
@@ -39,16 +47,18 @@ development server can enable that feature without a tier and budget decision.
 
 ## Needed provider registrations
 
-The following is a September 16, 2026 snapshot for the hackathon subscription,
-not a guarantee of current access, quotas, or deployment permission.
+The following is a previously recorded September 16, 2026 snapshot, not a
+check performed by the new templates and not a guarantee of current access,
+quotas, or deployment permission. Confirm the chosen subscription explicitly.
 
 | Service | Provider | Observed state | Action |
 | --- | --- | --- | --- |
-| Azure Database for PostgreSQL Flexible Server | `Microsoft.DBforPostgreSQL` | Not registered | **Enable before database provisioning.** |
+| Azure Database for PostgreSQL Flexible Server | `Microsoft.DBforPostgreSQL` | Registered (September 16, 2026 update) | Verify in the selected subscription; do not re-register routinely. |
 | New Azure-billed Fabric capacity | `Microsoft.Fabric` | Not registered | Enable only if creating new capacity; existing capacity or an eligible trial is a separate path. |
 
-An authorized subscription administrator can register the selected database
-provider once:
+After separate authorization, a subscription administrator can register the
+selected database provider only if a target subscription actually needs it
+(the observed subscription does not; this preparation does not execute it):
 
 ```azurecli
 az provider register --subscription <subscription-id> --namespace Microsoft.DBforPostgreSQL --wait

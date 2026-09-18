@@ -24,7 +24,9 @@ export {
 } from "./composition";
 
 export {
+  demoSwitchRoute,
   getInvestorProfileRoute,
+  getMeRoute,
   getPipelineRoute,
   getMyEngagementsRoute,
   getOwnerOutstandingRoute,
@@ -42,6 +44,7 @@ export {
   getPortfolioRoute,
   getProjectEngagementsRoute,
   getSubmissionsRoute,
+  logoutRoute,
   patchProjectVisibilityRoute,
   postEngagementRoute,
   postProjectStageRoute,
