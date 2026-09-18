@@ -130,14 +130,14 @@ describe("signing in and out", () => {
     vi.unstubAllEnvs();
   });
 
-  function switchTo(role: string): Promise<Response> {
+  function switchTo(role: string, into: BackendStore = store): Promise<Response> {
     return handlePostDemoSwitch(
       new Request("https://sunsum.test/api/auth/demo-switch", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ role }),
       }),
-      store,
+      into,
     );
   }
 
@@ -220,6 +220,30 @@ describe("signing in and out", () => {
     const viewer = await resolveViewer(withCookie(signedIn), demoted);
 
     expect(viewer.ok && viewer.value.role).toBe("site_owner");
+  });
+
+  /*
+   * The flip side of reading the role from the row: the role asked for at
+   * sign-in is only a claim about that row. Were the seeded investor ever set
+   * to `operator`, asking for an investor session would otherwise hand back an
+   * operator one — a way up for anyone who can reach the endpoint.
+   */
+  it("refuses to sign in when the demo account holds a different role", async () => {
+    const promoted = new Proxy(store, {
+      get(target, property) {
+        if (property === "getUser") {
+          return (id: string) =>
+            Promise.resolve({ id, role: "operator" as const });
+        }
+        const member = Reflect.get(target, property, target) as unknown;
+        return typeof member === "function" ? member.bind(target) : member;
+      },
+    });
+
+    const response = await switchTo("investor", promoted);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("set-cookie")).toBeNull();
   });
 
   it("refuses the wrong role with 403, not 401", async () => {

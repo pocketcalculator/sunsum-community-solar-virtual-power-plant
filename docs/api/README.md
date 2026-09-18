@@ -17,7 +17,8 @@ the proposed internal S-VIA contract.
 | Operator | `GET /projects/{id}/engagements` |
 | Investor | `GET /investors/me/profile`, `POST /investors/me/profile`, `GET /portfolio` |
 | Investor | `POST /projects/{id}/engagements`, `GET /me/engagements`, `GET /projects/{id}/funding-needs`, `GET /projects/{id}/deal-room` |
-| Any signed-in role | `POST /auth/demo-switch`, `POST /auth/logout`, `GET /me` |
+| Anonymous | `POST /auth/demo-switch`, `POST /auth/logout` |
+| Any signed-in role | `GET /me` |
 
 ## Section 10 paths not in the MVP slice
 

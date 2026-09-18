@@ -153,6 +153,21 @@ export async function handlePostDemoSwitch(
     });
   }
 
+  /**
+   * The cookie names a user, not a role — §8.1 reads the role from the row on
+   * every request precisely so a role change takes effect at once. That makes
+   * the requested role a claim about the row, and an unchecked claim here would
+   * be a way up: if the seeded investor's row were ever set to `operator`,
+   * asking to sign in as an investor would hand back an operator session. Refuse
+   * instead of silently issuing a stronger session than the caller asked for.
+   */
+  if (user.role !== role.value) {
+    return failureResponse({
+      code: "service_unavailable",
+      message: "The demo account for this role does not hold that role.",
+    });
+  }
+
   const cookie = issueSessionCookie(userId);
   if (!cookie.ok) return failureResponse(cookie.failure);
 
