@@ -6,12 +6,13 @@ import type { Viewer } from "../identity";
 import { failure, ok, type Result } from "../shared";
 import { demoBackendStore, type BackendStore } from "../store";
 import { journeyStageId } from "../journey";
-import { toSitePayload, type SitePayload, type SubmissionQuery } from "../sites";
+import { toSitePayload, toAssessmentPayload, type AssessmentPayload, type AssessmentRecord, type SitePayload, type SubmissionQuery } from "../sites";
 import {
   fundingStageForProject,
   PROJECT_STAGES,
   type ProjectRecord,
   type ProjectStage,
+  type ViabilityStatus,
 } from "./types";
 
 export type SubmissionDecision = "accept" | "reject" | "request_info";
@@ -221,6 +222,107 @@ export async function decideSubmission(
       site: toSitePayload(acceptedSite),
       project: toProjectPayload(project),
     });
+  });
+}
+
+export interface AssessmentOverrideInput {
+  readonly viabilityStatus: ViabilityStatus;
+  readonly reason: string;
+}
+
+export interface AssessmentOverrideResponse {
+  readonly assessment: AssessmentPayload;
+}
+
+/**
+ * Feature C's operator override: "I can override or update the automated
+ * result and record a reason."
+ *
+ * The override is written as a *new* assessment rather than an edit to the
+ * screening it replaces. `assessments` is append-only — section 5.2, and since
+ * migration 0001 a database trigger enforces it — so the original machine
+ * result stays readable next to the human one. That is the point: an owner who
+ * is told their site is not eligible should be able to see both what the
+ * screening said and who decided otherwise, and an audit that can be rewritten
+ * is not an audit.
+ *
+ * Only `viabilityStatus` is the operator's to set. The estimates, flags and
+ * missing information are carried forward untouched, because an operator
+ * disagreeing with a conclusion is not the same as them re-measuring the roof —
+ * letting this endpoint rewrite the numbers would let a judgement call
+ * masquerade as new evidence. `rulesetVersion` is carried forward for the same
+ * reason: it records which ruleset produced the estimates, and those estimates
+ * have not changed.
+ *
+ * A reason is mandatory and stored trimmed. An override with no stated reason
+ * is exactly the case the charter's "record a reason" exists to prevent.
+ */
+export async function overrideAssessment(
+  viewer: Viewer,
+  siteId: string,
+  input: AssessmentOverrideInput,
+  store: BackendStore = demoBackendStore,
+): Promise<Result<AssessmentOverrideResponse>> {
+  if (viewer.role !== "operator") {
+    return failure(
+      "forbidden_role",
+      "Only an operator can override a viability result.",
+    );
+  }
+
+  const reason = input.reason.trim();
+  if (reason === "") {
+    return failure(
+      "validation_failed",
+      "A reason is required to override a viability result.",
+      { missing_fields: [{ field: "reason", message: "A reason is required." }] },
+    );
+  }
+
+  return store.transaction(async (transaction) => {
+    const site = await transaction.getSite(siteId);
+    if (site === null) return failure("not_found", "Site not found.");
+
+    /**
+     * Overriding nothing is a conflict rather than a fresh screening: the
+     * estimates below are carried forward from the result being replaced, and
+     * there is nothing to carry forward before the site has been submitted.
+     */
+    const assessments = await transaction.listAssessments(siteId);
+    const latest = assessments.at(-1);
+    if (latest === undefined) {
+      return failure(
+        "conflict",
+        "The site has no viability assessment to override.",
+      );
+    }
+
+    const now = new Date().toISOString();
+    const assessment: AssessmentRecord = {
+      ...latest,
+      id: transaction.nextId("assessment"),
+      viabilityStatus: input.viabilityStatus,
+      isOverride: true,
+      overrideReason: reason,
+      overriddenByUserId: viewer.userId,
+      createdAt: now,
+    };
+
+    await transaction.addAssessment(assessment);
+    await transaction.addActivity(
+      activity(
+        transaction,
+        viewer.userId,
+        siteParent(site.id),
+        "assessment_overridden",
+        reason,
+        latest.viabilityStatus,
+        assessment.viabilityStatus,
+        now,
+      ),
+    );
+
+    return ok({ assessment: toAssessmentPayload(assessment) });
   });
 }
 
