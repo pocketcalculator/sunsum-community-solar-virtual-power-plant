@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 
-import { getOwnerSitesRoute } from "@/backend";
+import { getMeRoute, getOwnerSitesRoute, isDemoAuthEnabled } from "@/backend";
+import { DemoRoleSwitcher } from "@/features/demo-auth";
 import {
   DASHBOARD_LOCATIONS,
   SiteOwnerDashboard,
@@ -51,8 +52,7 @@ const SAMPLE: OwnerSitesRead = {
  * honestly shows they have submitted nothing; substituting the sample there
  * would tell them they own sites that do not exist.
  */
-async function readOwnerSites(): Promise<OwnerSitesRead> {
-  const cookieHeader = (await cookies()).toString();
+async function readOwnerSites(cookieHeader: string): Promise<OwnerSitesRead> {
   if (cookieHeader.length === 0) return SAMPLE;
 
   try {
@@ -75,7 +75,47 @@ async function readOwnerSites(): Promise<OwnerSitesRead> {
   }
 }
 
+/**
+ * Which role the browser is signed in as, for the demo switcher to mark.
+ *
+ * Read separately from the sites because the two answer different questions:
+ * an operator is signed in perfectly validly and still gets no owner sites, and
+ * the switcher should show them as signed in rather than as nobody.
+ */
+async function readActiveRole(cookieHeader: string): Promise<string | null> {
+  if (cookieHeader.length === 0) return null;
+
+  try {
+    const response = await getMeRoute(
+      new Request("http://internal/api/me", {
+        headers: { cookie: cookieHeader },
+      }),
+    );
+    if (!response.ok) return null;
+
+    const identity: unknown = await response.json();
+    const role =
+      typeof identity === "object" && identity !== null
+        ? (identity as { role?: unknown }).role
+        : null;
+    return typeof role === "string" ? role : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function SiteOwnerDashboardPage() {
-  const { locations, dataSource } = await readOwnerSites();
-  return <SiteOwnerDashboard locations={locations} dataSource={dataSource} />;
+  const cookieHeader = (await cookies()).toString();
+  const [{ locations, dataSource }, activeRole] = await Promise.all([
+    readOwnerSites(cookieHeader),
+    readActiveRole(cookieHeader),
+  ]);
+  return (
+    <>
+      {isDemoAuthEnabled() ? (
+        <DemoRoleSwitcher activeRole={activeRole} />
+      ) : null}
+      <SiteOwnerDashboard locations={locations} dataSource={dataSource} />
+    </>
+  );
 }
