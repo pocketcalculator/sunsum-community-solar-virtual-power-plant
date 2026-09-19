@@ -22,7 +22,12 @@ import { postgresProjectStore } from "./db/project-store";
 export type StoreName = "mock" | "db";
 
 export function selectedStoreName(): StoreName {
-  return process.env.SUNSUM_STORE === "db" ? "db" : "mock";
+  const selected = process.env.SUNSUM_STORE;
+
+  if (selected === undefined || selected === "mock") return "mock";
+  if (selected === "db") return "db";
+
+  throw new Error(`Unsupported SUNSUM_STORE value: ${selected}`);
 }
 
 export function selectProjectStore(): ProjectStore {
