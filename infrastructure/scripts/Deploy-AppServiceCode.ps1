@@ -37,7 +37,7 @@ try {
         throw 'This Azure CLI must support webapp deploy --track-status and --clean; update tooling separately.'
     }
     $raw = & az webapp show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
-        --query '{id:id,host:defaultHostName,httpsOnly:httpsOnly,kind:kind,serverFarmId:serverFarmId}' --output json --only-show-errors
+        --query '{id:id,host:defaultHostName,httpsOnly:httpsOnly,kind:kind}' --output json --only-show-errors
     if ($LASTEXITCODE -ne 0) { throw 'Could not verify the existing App Service target.' }
     $app = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
     if ($app.httpsOnly -isnot [bool] -or $app.httpsOnly -ne $true -or $app.kind -isnot [string] -or
@@ -45,8 +45,6 @@ try {
         $app.host -cnotmatch '^[a-z0-9][a-z0-9.-]*\.azurewebsites\.net$') {
         throw 'The target must be the HTTPS-only Linux app in Azure public cloud.'
     }
-    Assert-AppServiceFreePlan -SubscriptionId $SubscriptionId -PlanResourceId $app['serverFarmId']
-
     $raw = & az webapp config show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
         --query '{linuxFxVersion:linuxFxVersion,appCommandLine:appCommandLine,minTlsVersion:minTlsVersion,scmMinTlsVersion:scmMinTlsVersion,ftpsState:ftpsState}' --output json --only-show-errors
     if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the existing Node and startup configuration before source deployment.' }

@@ -259,9 +259,14 @@ authorization and uses the same workflow for creation, updates and unchanged rer
 
 Infrastructure deployment does **not** upload application code, run migrations,
 grant runtime database access or activate the PostgreSQL-backed application store.
-The web app remains `SUNSUM_STORE=mock`. The separate code-deployment script and
-legacy provisioning workflow still use F1 guards and are not the entry points for
-this B1 test stack. See the [operating guide](infrastructure/docs/app-service-postgres.md)
+The web app remains `SUNSUM_STORE=mock`. Use the separate
+[code-deployment entry](infrastructure/docs/deployment.md#application-code-deployment)
+to package, upload and build the application without reapplying infrastructure.
+Both commands default to [one shared dev config](infrastructure/config/dev.json).
+Use the same `-ConfigPath` for both when targeting a local config; infrastructure
+validation rejects a web-app name that differs from the compiled Bicep parameters.
+Code deployment does not inspect or change the plan SKU; legacy provisioning
+retains its F1 guard. See the [operating guide](infrastructure/docs/app-service-postgres.md)
 for separately authorized network approvals, SQL bootstrap, sign-in and Blob grants.
 No container registry or orchestration framework is required.
 

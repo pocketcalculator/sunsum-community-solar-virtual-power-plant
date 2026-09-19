@@ -49,7 +49,7 @@ do not publish credentials or personal administrator data.
 
 | Input | Owns |
 | --- | --- |
-| `../config/dev.json` | Explicit subscription, resource group, stable deployment name, `templatePath` and `parametersPath`. Paths resolve from this config's directory. |
+| `../config/dev.json` | Shared subscription, resource group and web-app name; `infrastructure` holds the deployment name and input paths, while `code` holds the HTTP check mode. Infrastructure paths resolve from this config's directory. |
 | `resources.dev.bicepparam` | Test resource names and compute settings, with tenant/administrator placeholders; bound to `resources.bicep` by its native `using` declaration. |
 | `resources.bicep` and `modules/` | Desired resource state: B1/Basic plan, fixture-only web app, private Storage, and a new Entra-only PostgreSQL server/database. |
 
@@ -58,6 +58,9 @@ redacted identity values supplied locally. The ignored identity backup is not
 automatically loaded, and generated `.azure/` artifacts are not required inputs.
 There are no SQL/plan/web creation-mode switches. The deployment script
 compiles the parameters and root together and verifies that their binding matches.
+It also requires the compiled `webAppName` to match the shared config; update both
+when renaming the app. Code deployment reads only the shared target and `code`
+section, without requiring Bicep or private database identity inputs.
 See [infrastructure deployment](../docs/deployment.md#infrastructure-deployment)
 for commands, artifact handling and normal create/update/no-change behavior.
 
@@ -100,6 +103,11 @@ This matches provisioning, bootstrap and Azure migration policy. Direct-template
 inputs are checked too; valid custom names and the `sunsum` default are preserved.
 Compiler-backed tests evaluate boundary inputs and verify that the database
 resource uses the validated expression. This is not a SQL permission check.
+
+PostgreSQL child writes are serialized after server creation: secure transport,
+minimum TLS, Entra administrator, then database. This avoids competing provider
+updates within the module; it is not a cross-deployment lock or a guarantee of
+data-plane readiness. Inspect partial failures before an authorized rerun.
 
 Use the validating firewall script rather than passing raw IP input to the
 network template. Incremental deployment does not remove old allowances.

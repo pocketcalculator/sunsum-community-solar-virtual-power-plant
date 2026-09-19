@@ -82,7 +82,7 @@ describe("the bounded Azure preparation contract", () => {
     ], { cwd: root, encoding: "utf8", timeout: 45_000 });
     expect(result).toContain("MVP access safety checks passed");
   }, 50_000);
-  it("creates the requested B1 plan without relaxing other commands' F1 guards", () => {
+  it("keeps provisioning SKU guards separate from plan-independent code deployment", () => {
     const web = read("infrastructure/templates/modules/web.bicep").replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
     expect(web).toContain("resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {");
     expect(web).not.toContain("existingPlan");
@@ -92,13 +92,14 @@ describe("the bounded Azure preparation contract", () => {
     expect(web).toContain("reserved: true");
     const deploy = read("infrastructure/scripts/Deploy-Infrastructure.ps1");
     const validation = read("infrastructure/scripts/InfrastructureValidation.psm1");
-    expect(deploy).toContain("Assert-InfrastructureConfig $config");
+    expect(deploy).toContain("Assert-DeploymentConfiguration -Config $config -Operation Infrastructure");
     expect(deploy).toContain("Assert-InfrastructureTemplate -Compiled $compiled -Inputs $inputs");
+    expect(deploy).toContain("-ExpectedWebAppName $config.webAppName");
     expect(deploy).toContain("Get-ValidatedInfrastructureChanges -Result $result");
     expect(validation).toContain("$plan.sku.name -ine 'B1'");
     expect(validation).toContain("$plan.sku.tier -ine 'Basic'");
     expect(validation).not.toContain("'F1'");
-    expect(read("infrastructure/scripts/Deploy-AppServiceCode.ps1")).toContain("Assert-AppServiceFreePlan");
+    expect(read("infrastructure/scripts/Deploy-AppServiceCode.ps1")).not.toContain("Assert-AppServiceFreePlan");
     expect(validation).toContain("$change.after.sku['name'] -ine 'B1'");
     expect(validation).toContain("$change.after.sku['tier'] -ine 'Basic'");
     expect(web).toContain("alwaysOn: false");
@@ -150,7 +151,25 @@ describe("the bounded Azure preparation contract", () => {
     expect(deploy).toContain("if (-not $Apply)");
   });
 
-  it("runs the actual network and archive guard tests without Azure calls", () => {
+  it("shares one dev target across infrastructure and code deployment", () => {
+    const config = JSON.parse(read("infrastructure/config/dev.json"));
+    expect(Object.keys(config).sort()).toEqual([
+      "code", "infrastructure", "resourceGroupName", "subscriptionId", "webAppName",
+    ]);
+    expect(config.webAppName).toBe("app-sunsum-dev-test-centralus");
+    expect(config.code).toEqual({ expectedAccessMode: "Preview" });
+    expect(existsSync(join(root, "infrastructure/config/code.dev.json"))).toBe(false);
+    const entry = read("infrastructure/scripts/Deploy-Application.ps1");
+    expect(entry).toContain("..\\config\\dev.json");
+    expect(entry).toContain("Assert-DeploymentConfiguration -Config $config -Operation Code");
+    expect(entry).toContain("New-AppServicePackage.ps1");
+    expect(entry).toContain("Deploy-AppServiceCode.ps1");
+    expect(entry).toContain("deployment-record.json");
+    expect(entry).not.toContain("Deploy-Infrastructure.ps1");
+    expect(entry).not.toMatch(/postgresAdmin|BicepPath|build-params/u);
+  });
+
+  it("runs the actual network, archive and unified code-entry guards without Azure calls", () => {
     const result = execFileSync("pwsh", [
       "-NoProfile", "-NonInteractive", "-Command",
       runnerCommand("deployment-safety"),
@@ -160,17 +179,17 @@ describe("the bounded Azure preparation contract", () => {
 
   it("compiles versioned dev sources and supports repeat deployments without Azure calls", () => {
     const config = JSON.parse(read("infrastructure/config/dev.json"));
-    expect(config.templatePath).toBe("../templates/resources.bicep");
-    expect(config.parametersPath).toBe("../templates/resources.dev.bicepparam");
-    expect(config.deploymentName).toBe("sunsum-dev-test-infrastructure");
-    expect(Object.keys(config).sort()).toEqual([
-      "deploymentName", "parametersPath", "resourceGroupName", "subscriptionId", "templatePath",
+    expect(config.infrastructure.templatePath).toBe("../templates/resources.bicep");
+    expect(config.infrastructure.parametersPath).toBe("../templates/resources.dev.bicepparam");
+    expect(config.infrastructure.deploymentName).toBe("sunsum-dev-test-infrastructure");
+    expect(Object.keys(config.infrastructure).sort()).toEqual([
+      "deploymentName", "parametersPath", "templatePath",
     ]);
     const parameters = read("infrastructure/templates/resources.dev.bicepparam");
     expect(parameters).toContain("using './resources.bicep'");
     expect(parameters).toContain("param environmentName = 'dev-test'");
     expect(parameters).toContain("param appServicePlanName = 'asp-sunsum-dev-test-centralus'");
-    expect(parameters).toContain("param webAppName = 'app-sunsum-dev-test-centralus'");
+    expect(parameters).toContain(`param webAppName = '${config.webAppName}'`);
     expect(parameters).toContain("param storageAccountName = 'stsunsumdevtestcentralus'");
     expect(parameters).toContain("param postgresServerName = 'db-sunsum-dev-test-centralus'");
     expect(parameters).toContain("param databaseName = 'sunsum_test'");

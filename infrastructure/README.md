@@ -5,7 +5,7 @@ description: Location for infrastructure templates, documentation, and architect
 
 ## Contents
 
-* `config/dev.json` selects the dev target and versioned source inputs
+* `config/dev.json` shares the dev target between infrastructure and code deployment, with separate operation settings
 * `templates/` contains deployment entry templates and native Bicep parameter files
 * `templates/modules/` contains reusable Bicep modules invoked by entry templates
 * `scripts/` contains guarded packaging, network-approval, deployment, and SQL-bootstrap tools
@@ -22,6 +22,11 @@ Start with the [deployment guide](docs/deployment.md#infrastructure-deployment)
 for local validation, Azure preview and explicitly authorized deployment.
 Creating, updating and reapplying infrastructure use the same source-driven
 entry point; generated artifacts are not prerequisites.
+
+Infrastructure and code deployment read the same [shared config](docs/deployment.md#shared-deployment-configuration).
+Use the same local `-ConfigPath` with either command. Code deployment does not
+require the infrastructure inputs; infrastructure compilation verifies the web-app
+name agrees with the shared target before any Azure call.
 
 Public parameters compile locally but redact tenant and administrator identity
 values. Follow [local identity setup](docs/deployment.md#local-identity-setup)
@@ -40,8 +45,10 @@ parameterized Bicep, approved-user sign-in, private Blob containers, Azure CLI s
 separately authorized operations. Azure uses Linux
 App Service code deployment plus separately billable Entra-only
 PostgreSQL Flexible Server and Standard LRS Hot Blob storage; no customer
-container image or registry is needed. The separate code-deployment script retains
-its F1-only guard and does not yet support the new B1 experiment.
+container image or registry is needed. Use
+[application code deployment](docs/deployment.md#application-code-deployment)
+for one-command source packaging, Azure-side build and upload. This path does
+not read or change the hosting-plan SKU; legacy provisioning still requires F1.
 
 Exact-IP review and privileged SQL bootstrap are distinct from
 routine code deployment. Only local preparation/checks are represented here,

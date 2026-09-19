@@ -12,6 +12,21 @@ function Assert-Throws([scriptblock] $Action, [string] $Message) {
     if (-not $threw) { throw $Message }
 }
 
+function Assert-TestFileReleased([string] $Path) {
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+    try {
+        if (-not $stream.CanWrite) { throw "The fixture is not writable after snapshot cleanup: $Path" }
+    } finally { $stream.Dispose() }
+}
+
+function New-TestJsonFixture([string] $Directory, [hashtable] $Value) {
+    $path = Join-Path $Directory "input-$([guid]::NewGuid().ToString('N')).json"
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes(($Value | ConvertTo-Json -Depth 5) + [Environment]::NewLine)
+    $stream = [System.IO.File]::Open($path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+    return $path
+}
+
 function Update-TestDeploymentApproval([hashtable] $Arguments, [string] $Operation) {
     $record = @{
         operation = $Operation; subscriptionId = $Arguments.SubscriptionId; resourceGroupName = $Arguments.ResourceGroupName
@@ -24,19 +39,20 @@ function Update-TestDeploymentApproval([hashtable] $Arguments, [string] $Operati
         $record.databaseBudgetApproval = $Arguments.DatabaseBudgetApproval
         $record.storageBudgetApproval = $Arguments.StorageBudgetApproval
     }
-    $record | ConvertTo-Json | Set-Content -LiteralPath $Arguments.ApprovalPath -Encoding utf8NoBOM
+    if (Test-Path -LiteralPath $Arguments.ApprovalPath) { Assert-TestFileReleased $Arguments.ApprovalPath }
+    $Arguments.ApprovalPath = New-TestJsonFixture -Directory (Split-Path -Parent $Arguments.ApprovalPath) -Value $record
     $Arguments.ApprovalSha256 = (Get-FileHash -LiteralPath $Arguments.ApprovalPath -Algorithm SHA256).Hash
 }
 
 function Test-DeploymentApprovalRejections([hashtable] $Arguments, [string] $ScriptPath) {
-    $original = [System.IO.File]::ReadAllBytes($Arguments.ApprovalPath)
+    $originalPath = $Arguments.ApprovalPath
     $originalHash = $Arguments.ApprovalSha256
     $record = Get-Content -LiteralPath $Arguments.ApprovalPath -Raw | ConvertFrom-Json -AsHashtable
     try {
         foreach ($key in $record.Keys) {
             $changed = $record.Clone()
             $changed[$key] = 'unreviewed-value'
-            $changed | ConvertTo-Json | Set-Content -LiteralPath $Arguments.ApprovalPath -Encoding utf8NoBOM
+            $Arguments.ApprovalPath = New-TestJsonFixture -Directory (Split-Path -Parent $originalPath) -Value $changed
             $Arguments.ApprovalSha256 = (Get-FileHash -LiteralPath $Arguments.ApprovalPath -Algorithm SHA256).Hash
             foreach ($apply in @($false, $true)) {
                 $message = ''
@@ -44,15 +60,20 @@ function Test-DeploymentApprovalRejections([hashtable] $Arguments, [string] $Scr
                 if ($message -notlike '*Deployment approval does not match*' -or $global:AzureSafetyTestCalls -ne 0) {
                     throw "Unbound deployment approval field reached Azure or bypassed the review check: $key."
                 }
+                Assert-TestFileReleased $Arguments.ApprovalPath
             }
         }
         $Arguments.ApprovalSha256 = $originalHash
         $message = ''
         try { & $ScriptPath @Arguments -Apply | Out-Null } catch { $message = $_.Exception.Message }
         if ($message -notlike '*no longer matches the reviewed SHA-256*') { throw 'A changed approval file retained its old reviewed digest.' }
+        Assert-TestFileReleased $Arguments.ApprovalPath
     } finally {
-        [System.IO.File]::WriteAllBytes($Arguments.ApprovalPath, $original)
+        $Arguments.ApprovalPath = $originalPath
         $Arguments.ApprovalSha256 = $originalHash
+    }
+    if ((Get-FileHash -LiteralPath $originalPath -Algorithm SHA256).Hash -cne $originalHash) {
+        throw 'Independent rejection fixtures changed the original approval.'
     }
 }
 
@@ -202,8 +223,7 @@ try {
             postgresAdminPrincipalName = @{ value = 'synthetic-administrator' }
         }
     }
-    $provisionPath = Join-Path $fixture 'provision.json'
-    $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+    $provisionPath = New-TestJsonFixture -Directory $fixture -Value $provisionParameters
     $provision = @{
         SubscriptionId = $target.subscriptionId
         ResourceGroupName = $target.resourceGroupName
@@ -217,6 +237,8 @@ try {
     Update-TestDeploymentApproval $provision ProvisionInfrastructure
     Test-DeploymentApprovalRejections $provision (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1')
     & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision | Out-Null
+    Assert-TestFileReleased $provisionPath
+    Assert-TestFileReleased $provision.ApprovalPath
     $rejectedRoles = @('postgres', 'azure_pg_admin', 'pg_read_all_data', 'sunsum_migrator', 'other_existing_role', 'SUNSUM_RUNTIME')
     foreach ($mode in @('Existing', 'Create')) {
         $provisionParameters.parameters.webAppMode = @{ value = $mode }
@@ -224,28 +246,34 @@ try {
             'SunSum', '_sunsum', '1sunsum', 'sunsum.prod', 'sunsum prod', ('a' * 64), ('db' + [char]0xe9),
             '', ' sunsum', 'sunsum ', "sunsum`n", 'app;drop', 123, $null)) {
             $provisionParameters.parameters.databaseName = @{ value = $databaseName }
-            $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+            $provisionPath = New-TestJsonFixture -Directory $fixture -Value $provisionParameters
+            $provision.ParametersPath = $provisionPath
             $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
             foreach ($apply in @($false, $true)) {
                 $message = ''
                 try { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply:$apply | Out-Null } catch { $message = $_.Exception.Message }
                 if ($message -eq '' -or $global:AzureSafetyTestCalls -ne 0) { throw 'Invalid database names must fail before any Azure call.' }
                 if ($databaseName -ceq 'sunsum-prod' -and $message -notlike '*databaseName must match the bootstrap contract*') { throw 'Expected the database-name preflight rejection.' }
+                Assert-TestFileReleased $provisionPath
             }
         }
         foreach ($databaseName in @('a', 'sunsum', 'sunsum_prod', 'app123', ('a' * 63))) {
             $provisionParameters.parameters.databaseName = @{ value = $databaseName }
-            $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+            $provisionPath = New-TestJsonFixture -Directory $fixture -Value $provisionParameters
+            $provision.ParametersPath = $provisionPath
             $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
             Update-TestDeploymentApproval $provision ProvisionInfrastructure
             & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision | Out-Null
+            Assert-TestFileReleased $provisionPath
+            Assert-TestFileReleased $provision.ApprovalPath
         }
     }
     $provisionParameters.parameters.Remove('databaseName')
     $provisionParameters.parameters.Remove('webAppMode')
     foreach ($roleName in $rejectedRoles) {
         $provisionParameters.parameters.runtimeRoleName = @{ value = $roleName }
-        $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+        $provisionPath = New-TestJsonFixture -Directory $fixture -Value $provisionParameters
+        $provision.ParametersPath = $provisionPath
         $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
         foreach ($apply in @($false, $true)) {
             $message = ''
@@ -253,19 +281,25 @@ try {
             if ($message -notlike '*requires runtimeRoleName=sunsum_runtime*' -or $global:AzureSafetyTestCalls -ne 0) {
                 throw 'An unsupported runtime role must be rejected before Azure calls.'
             }
+            Assert-TestFileReleased $provisionPath
         }
     }
     $provisionParameters.parameters.runtimeRoleName = @{ value = 'sunsum_runtime' }
-    $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+    $provisionPath = New-TestJsonFixture -Directory $fixture -Value $provisionParameters
+    $provision.ParametersPath = $provisionPath
     $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
     Update-TestDeploymentApproval $provision ProvisionInfrastructure
     & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision | Out-Null
+    Assert-TestFileReleased $provisionPath
     $provision.ExpectedSha256 = '0' * 64
     Assert-Throws { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply } 'Accepted changed provisioning parameters.'
+    Assert-TestFileReleased $provisionPath
     $provisionParameters.parameters.webAppName.value = '<placeholder>'
-    $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+    $provisionPath = New-TestJsonFixture -Directory $fixture -Value $provisionParameters
+    $provision.ParametersPath = $provisionPath
     $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
     Assert-Throws { & (Join-Path $PSScriptRoot '..\Provision-Infrastructure.ps1') @provision -Apply } 'Accepted placeholder provisioning parameters.'
+    Assert-TestFileReleased $provisionPath
     $approvalPath = Join-Path $fixture 'approval.json'
     $approval | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $approvalPath -Encoding utf8NoBOM
     $parametersPath = Join-Path $fixture 'firewall.parameters.json'
@@ -527,7 +561,9 @@ try {
         $global:AzureWebReads = 0
         $global:AzureAvailabilityChecks = @()
         $provisionParameters.parameters.webAppMode = @{ value = $mode }
-        $provisionParameters | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $provisionPath -Encoding utf8NoBOM
+        $provisionPath = New-TestJsonFixture -Directory $fixture -Value $provisionParameters
+        $provision.ParametersPath = $provisionPath
+        $global:AzureProvisionOriginalPath = [System.IO.Path]::GetFullPath($provisionPath)
         $provision.ExpectedSha256 = (Get-FileHash -LiteralPath $provisionPath -Algorithm SHA256).Hash
         $global:AzureProvisionExpectedHash = $provision.ExpectedSha256
         Update-TestDeploymentApproval $provision ProvisionInfrastructure
@@ -551,6 +587,8 @@ try {
         if ($global:AzureProvisionWrites -ne 1) { throw 'Available names and a valid web target should permit first-time provisioning.' }
         if ($global:AzurePlanReads -ne $(if ($mode -eq 'Existing') { 1 } else { 0 })) { throw 'Only Existing mode should inspect the existing linked plan.' }
         if (Test-Path -LiteralPath (Split-Path -Parent $global:AzureProvisionSnapshotPath)) { throw 'Provisioning must clean up its snapshot on success.' }
+        Assert-TestFileReleased $provisionPath
+        Assert-TestFileReleased $provision.ApprovalPath
         $expectedChecks = @('Microsoft.DBforPostgreSQL/flexibleServers', 'Microsoft.Storage/storageAccounts')
         if ($mode -ceq 'Create') { $expectedChecks += 'Microsoft.Web/sites' }
         if (($global:AzureAvailabilityChecks -join '|') -cne ($expectedChecks -join '|') -or
@@ -608,6 +646,8 @@ try {
         $global:AzureProvisionFailure = $false
         if ($message -notlike '*Provisioning did not report success*' -or
             (Test-Path -LiteralPath (Split-Path -Parent $global:AzureProvisionSnapshotPath))) { throw 'Failed provisioning must clean up its snapshot and report failure.' }
+        Assert-TestFileReleased $provisionPath
+        Assert-TestFileReleased $provision.ApprovalPath
         if ($mode -ceq 'Existing') {
             foreach ($response in @($freePlan.Replace('F1', 'S1').Replace('Free', 'Standard'), $freePlan.Replace('F1', 'P1v3').Replace('Free', 'PremiumV3'),
                 $freePlan.Replace('F1', 'B1'), $freePlan.Replace('Free', 'Shared'), $freePlan.Replace('sample-plan', 'wrong-plan'),
@@ -779,14 +819,17 @@ try {
             if ($global:AzureCodeWrites -ne 1 -or $message -notlike 'Deployment did not report success*') { throw 'Supported site/SCM TLS should reach the mocked deployment.' }
         }
     }
-    foreach ($response in @($freePlan.Replace('F1', 'S1').Replace('Free', 'Standard'), $freePlan.Replace('F1', 'P1v3').Replace('Free', 'PremiumV3'),
+    foreach ($response in @($freePlan, $freePlan.Replace('F1', 'S1').Replace('Free', 'Standard'), $freePlan.Replace('F1', 'P1v3').Replace('Free', 'PremiumV3'),
         $freePlan.Replace('F1', 'B1'), $freePlan.Replace('Free', 'Shared'), $freePlan.Replace('sample-plan', 'wrong-plan'),
         '{}', '{"sku":null}', '[]', 'null', 'invalid-json', 'read-failure')) {
         $global:AzurePlanResponse = $response
         $global:AzurePlanReads = 0
         $global:AzureCodeWrites = 0
-        Assert-Throws { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply } 'A paid or unknown plan permitted code deployment.'
-        if ($global:AzurePlanReads -ne 1 -or $global:AzureCodeWrites -ne 0) { throw 'Plan rejection must block code upload.' }
+        $message = ''
+        try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+        if ($global:AzurePlanReads -ne 0 -or $global:AzureCodeWrites -ne 1 -or $message -notlike 'Deployment did not report success*') {
+            throw 'Code upload must not depend on plan SKU or plan read permissions.'
+        }
     }
     $global:AzurePlanResponse = $freePlan
     foreach ($link in $invalidPlanLinks) {
@@ -795,8 +838,8 @@ try {
         $global:AzureCodeWrites = 0
         $message = ''
         try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
-        if ($message -notlike '*must identify its App Service plan*' -or $global:AzurePlanReads -ne 0 -or $global:AzureCodeWrites -ne 0) {
-            throw 'Invalid linked plan must stop before plan reads or ZIP upload.'
+        if ($message -notlike 'Deployment did not report success*' -or $global:AzurePlanReads -ne 0 -or $global:AzureCodeWrites -ne 1) {
+            throw 'Code upload must not require a plan reference.'
         }
     }
     $global:AzureCodePlanId = $global:AzurePlanId
@@ -915,6 +958,16 @@ try {
         $compiledJson = & $BicepPath build $databaseTemplate --no-restore --stdout
         if ($LASTEXITCODE -ne 0) { throw 'Cannot compile the PostgreSQL database-name guard.' }
         $compiled = ($compiledJson -join "`n") | ConvertFrom-Json -AsHashtable
+        foreach ($dependency in @{
+            secureTransport='server'
+            minimumTls='secureTransport'
+            entraAdmin='minimumTls'
+            database='entraAdmin'
+        }.GetEnumerator()) {
+            if ($dependency.Value -cnotin $compiled.resources[$dependency.Key].dependsOn) {
+                throw "PostgreSQL child writes must be serialized: $($dependency.Key) must depend on $($dependency.Value)."
+            }
+        }
         if ($compiled.variables.validatedDatabaseName -cne "[__bicep.validateDatabaseName(parameters('databaseName'))]" -or
             -not $compiled.resources.database.name.Contains("variables('validatedDatabaseName')") -or
             $compiled.parameters.databaseName.defaultValue -cne 'sunsum') {
@@ -956,10 +1009,123 @@ try {
         }
         Write-Output "PostgreSQL database-name guard passed: $($databaseNames.Count) Bicep evaluations, shared policy parity and compiled resource wiring."
     }
+    $entryScripts = Join-Path $fixture 'entry/infrastructure/scripts'
+    $entryConfigDirectory = Join-Path $fixture 'entry/infrastructure/config'
+    $entryOutput = Join-Path $fixture 'entry/.azure/code/deployments'
+    $null = New-Item -ItemType Directory -Path $entryScripts, $entryConfigDirectory -Force
+    foreach ($name in @('Deploy-Application.ps1', 'New-AppServicePackage.ps1', 'Test-AppServicePackage.ps1', 'DeploymentSafety.psm1', 'DeploymentConfiguration.psm1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../$name") -Destination (Join-Path $entryScripts $name)
+    }
+    $entry = Join-Path $entryScripts 'Deploy-Application.ps1'
+    $entryConfig = Join-Path $entryConfigDirectory 'dev.json'
+    $codeConfig = @{
+        subscriptionId=$target.subscriptionId; resourceGroupName=$target.resourceGroupName; webAppName='sample-web'
+        infrastructure=@{deploymentName='sample-infra';templatePath='missing.bicep';parametersPath='missing.bicepparam'}
+        code=@{expectedAccessMode='Preview'}
+    }
+    $codeConfig | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $entryConfig -Encoding utf8NoBOM
+    $global:ApplicationEntryCalls = [System.Collections.Generic.List[object]]::new()
+    $global:ApplicationEntryFail = $false
+    @'
+param($SubscriptionId, $ResourceGroupName, $WebAppName, $PackagePath, $ExpectedSha256, $ApprovalReference, $ApprovalPath, $ApprovalSha256, $ExpectedAccessMode, [switch] $Apply)
+Import-Module (Join-Path $PSScriptRoot 'DeploymentSafety.psm1') -Force
+$record = New-DeploymentApproval -Path $ApprovalPath -ExpectedSha256 $ApprovalSha256 -Expected @{
+    operation='CodeDeployment'; subscriptionId=[string]$SubscriptionId; resourceGroupName=$ResourceGroupName
+    webAppName=$WebAppName; payloadSha256=$ExpectedSha256; approvalReference=$ApprovalReference; expectedAccessMode=$ExpectedAccessMode
+}
+try {
+    $archive = & (Join-Path $PSScriptRoot 'Test-AppServicePackage.ps1') -Path $PackagePath
+    if ($archive.SHA256 -cne $ExpectedSha256 -or $archive.Files -ne 6) { throw 'Entry did not bind the validated source ZIP.' }
+    $global:ApplicationEntryCalls.Add(@{ Apply=[bool]$Apply; PackagePath=$PackagePath; Reference=$ApprovalReference; Mode=$ExpectedAccessMode; Target=$WebAppName; Subscription=[string]$SubscriptionId; Group=$ResourceGroupName })
+    if ($Apply -and $global:ApplicationEntryFail) { throw 'Simulated build/upload failure.' }
+} finally { Remove-DeploymentSnapshot $record }
+'@ | Set-Content -LiteralPath (Join-Path $entryScripts 'Deploy-AppServiceCode.ps1') -Encoding utf8NoBOM
+    Push-Location ([System.IO.Path]::GetTempPath())
+    try {
+        & $entry -SourceRoot $source | Out-Null
+        & $entry -SourceRoot $source | Out-Null
+        if ($global:ApplicationEntryCalls.Count -ne 2 -or $global:ApplicationEntryCalls[0].Apply -or
+            $global:ApplicationEntryCalls[1].Apply -or $global:ApplicationEntryCalls[0].PackagePath -ceq $global:ApplicationEntryCalls[1].PackagePath) {
+            throw 'Default entry must validate locally with unique artifacts on repeated runs from any directory.'
+        }
+        foreach ($badConfig in @('{}', 'null', '[]', 'invalid-json')) {
+            Set-Content -LiteralPath $entryConfig -Value $badConfig
+            Assert-Throws { & $entry -SourceRoot $source } 'Malformed code config was accepted.'
+        }
+        foreach ($field in @('subscriptionId', 'resourceGroupName', 'webAppName')) {
+            foreach ($badValue in @('', $null, $true, '<unreviewed>', 'invalid/value')) {
+                $changedConfig = $codeConfig.Clone()
+                $changedConfig[$field] = $badValue
+                $changedConfig | ConvertTo-Json | Set-Content -LiteralPath $entryConfig
+                Assert-Throws { & $entry -SourceRoot $source -Apply -ApprovalReference 'review-123' } 'Invalid code target reached deployment.'
+            }
+        }
+        foreach ($missingField in $codeConfig.Keys) {
+            $changedConfig=$codeConfig.Clone()
+            $null=$changedConfig.Remove($missingField)
+            $changedConfig | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $entryConfig
+            Assert-Throws { & $entry -SourceRoot $source } 'Missing shared code config field was accepted.'
+        }
+        foreach ($badSection in @($null, @(), 'invalid', @{}, @{expectedAccessMode='Preview';Apply=$true})) {
+            $changedConfig=$codeConfig.Clone()
+            $changedConfig.code=$badSection
+            $changedConfig | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $entryConfig
+            Assert-Throws { & $entry -SourceRoot $source -Apply -ApprovalReference 'review-123' } 'Malformed code section reached deployment.'
+        }
+        foreach ($badMode in @('', $null, $true, '<unreviewed>', 'unknown')) {
+            $changedConfig=$codeConfig.Clone()
+            $changedConfig.code=@{expectedAccessMode=$badMode}
+            $changedConfig | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $entryConfig
+            Assert-Throws { & $entry -SourceRoot $source -Apply -ApprovalReference 'review-123' } 'Invalid HTTP mode reached deployment.'
+        }
+        $legacy=@{subscriptionId=$target.subscriptionId;resourceGroupName=$target.resourceGroupName;webAppName='sample-web';expectedAccessMode='Preview'}
+        $legacy | ConvertTo-Json | Set-Content -LiteralPath $entryConfig
+        Assert-Throws { & $entry -SourceRoot $source } 'Legacy independent code config was accepted.'
+        $changedConfig = $codeConfig.Clone()
+        $changedConfig.Apply = $true
+        $changedConfig | ConvertTo-Json | Set-Content -LiteralPath $entryConfig
+        Assert-Throws { & $entry -SourceRoot $source } 'Config enabled deployment.'
+        $codeConfig.code.expectedAccessMode = 'ApprovedSignIn'
+        $codeConfig | ConvertTo-Json | Set-Content -LiteralPath $entryConfig
+        foreach ($invalidReference in @(' ', '<review>', "review`nother")) {
+            Assert-Throws { & $entry -SourceRoot $source -Apply -ApprovalReference $invalidReference } 'Invalid review reference was accepted.'
+        }
+        Assert-Throws { & $entry -SourceRoot (Join-Path $fixture 'missing-source') -Apply -ApprovalReference 'review-123' } 'Missing source reached deployment.'
+        if ($global:ApplicationEntryCalls.Count -ne 2) { throw 'Invalid inputs reached the code uploader.' }
+        & $entry -SourceRoot $source -Apply -ApprovalReference 'review-123' | Out-Null
+        $last = $global:ApplicationEntryCalls[2]
+        if (-not $last.Apply -or $last.Reference -cne 'review-123' -or $last.Mode -cne 'ApprovedSignIn' -or $last.Target -cne 'sample-web') {
+            throw 'Entry did not preserve explicit apply, target, review and HTTP mode.'
+        }
+        $global:ApplicationEntryFail = $true
+        Assert-Throws { & $entry -SourceRoot $source -Apply -ApprovalReference 'review-123' } 'Failed upload/build was swallowed.'
+        if ($global:ApplicationEntryCalls.Count -ne 4) { throw 'Entry retried a failed upload/build.' }
+        if (@(Get-ChildItem -LiteralPath $entryOutput -Filter deployment-record.json -Recurse).Count -ne 4) { throw 'Expected one execution record per packaged run.' }
+        $global:ApplicationEntryFail = $false
+        foreach ($unusedInfrastructure in @($null, 'not-ready', @{templatePath='not-a-template';parametersPath='missing-private-values'})) {
+            $changedConfig=$codeConfig.Clone()
+            $changedConfig.infrastructure=$unusedInfrastructure
+            $changedConfig | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $entryConfig
+            & $entry -SourceRoot $source -Apply -ApprovalReference 'review-123' | Out-Null
+        }
+        $localConfig=Join-Path $fixture 'shared.local.json'
+        $changedConfig=$codeConfig.Clone()
+        $changedConfig.subscriptionId='44444444-4444-4444-8444-444444444444'
+        $changedConfig.resourceGroupName='other-approved-group'
+        $changedConfig.webAppName='other-approved-web'
+        $changedConfig | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $localConfig
+        & $entry -ConfigPath $localConfig -SourceRoot $source -Apply -ApprovalReference 'review-456' | Out-Null
+        $last=$global:ApplicationEntryCalls[$global:ApplicationEntryCalls.Count - 1]
+        if ($global:ApplicationEntryCalls.Count -ne 8 -or $last.Target -cne $changedConfig.webAppName -or
+            $last.Subscription -cne $changedConfig.subscriptionId -or $last.Group -cne $changedConfig.resourceGroupName) {
+            throw 'Code entry must use the shared target without resolving unused infrastructure sources or identities.'
+        }
+    } finally { Pop-Location }
     $zip = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Update)
     try { $null = $zip.CreateEntry('.env') } finally { $zip.Dispose() }
     Assert-Throws { & (Join-Path $PSScriptRoot '..\Test-AppServicePackage.ps1') -Path $zipPath } 'Accepted a tampered archive.'
 } finally {
+    Remove-Variable -Name ApplicationEntryCalls, ApplicationEntryFail -Scope Global -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath Function:\az -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureSafetyTestCalls -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable -Name AzureProvisionInventory, AzureProvisionExitCode, AzureProvisionWrites -Scope Global -ErrorAction SilentlyContinue

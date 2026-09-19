@@ -87,6 +87,9 @@ resource entraAdmin 'Microsoft.DBforPostgreSQL/flexibleServers/administrators@20
     principalName: adminPrincipalName
     principalType: adminPrincipalType
   }
+  dependsOn: [
+    minimumTls
+  ]
 }
 
 resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
@@ -117,6 +120,9 @@ resource minimumTls 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@20
     value: 'TLSv1.2'
     source: 'user-override'
   }
+  dependsOn: [
+    secureTransport
+  ]
 }
 
 // Firewall rules are intentionally absent. Approval is a separate deployment.

@@ -3,6 +3,35 @@ title: Deployment
 description: Default dev infrastructure commands, deployment behavior, and earlier smoke-app notes
 ---
 
+## Shared deployment configuration
+
+Both `Deploy-Infrastructure.ps1` and `Deploy-Application.ps1` default to
+[`infrastructure/config/dev.json`](../config/dev.json). Use the same `-ConfigPath`
+for both when selecting a local environment config. Infrastructure and code
+remain separate commands; running either never invokes the other.
+
+| Config field | Used by |
+| --- | --- |
+| `subscriptionId`, `resourceGroupName`, `webAppName` | Shared target for both commands. |
+| `infrastructure.deploymentName` | Infrastructure deployment record. |
+| `infrastructure.templatePath`, `infrastructure.parametersPath` | Infrastructure Bicep inputs; paths resolve from the config directory. |
+| `code.expectedAccessMode` | Code deployment's HTTP response check: `Preview` or `ApprovedSignIn`. |
+
+Each command validates the shared target and only its own section. Code deployment
+does not read Bicep inputs, compile templates or require PostgreSQL identity values.
+Native `.bicepparam` files still own resource settings and private identity inputs.
+The compiled `webAppName` must match the shared config (case-insensitive); a
+missing or different name stops infrastructure validation before Azure calls,
+even in local-only mode. When changing the app name, update both declarations.
+This check prevents input drift; it does not verify that a live app was previously
+created by these templates. Code deployment always targets the selected config.
+
+For an older local config, move `deploymentName`, `templatePath` and `parametersPath`
+under `infrastructure`, add the shared `webAppName`, and add
+`code: { "expectedAccessMode": "Preview" }`. Review the target while migrating.
+The earlier separate code config is retired; the scripts reject the old flat
+schemas rather than choosing a fallback target. Config cannot enable apply.
+
 ## Infrastructure deployment
 
 Use `infrastructure/scripts/Deploy-Infrastructure.ps1` for the first deployment
@@ -86,13 +115,15 @@ local compilation command. No compiled artifacts or approval files are inputs.
    `.azure/dev/deployment.local.json` and `infrastructure/templates/resources.dev.bicepparam`
    to `.azure/dev/resources.local.bicepparam`. Do not overwrite existing local
    copies without reviewing them.
-2. In the local config, keep the approved subscription, resource group and
-   deployment name. Set `templatePath` to `../../infrastructure/templates/resources.bicep`
+2. In the local config, keep the approved shared subscription, resource group and
+  web-app name, plus the code section. Under `infrastructure`, keep the deployment
+  name, set `templatePath` to `../../infrastructure/templates/resources.bicep`
    and `parametersPath` to `resources.local.bicepparam`.
 3. In the local parameters, set the first line to
    `using '../../infrastructure/templates/resources.bicep'`. Supply the approved
    values for the fields below and verify that `postgresAdminPrincipalType`
-   matches the selected identity (`User`, `Group` or `ServicePrincipal`).
+  matches the selected identity (`User`, `Group` or `ServicePrincipal`). Keep the
+  native `webAppName` equal to the shared config's `webAppName`.
 4. Keep both local copies ignored by Git. Do not force-add them, paste real values
    into the public parameter file, or include generated artifacts in a commit.
 
@@ -108,7 +139,7 @@ and the repository does not provide the real values. Obtain them through your
 approved identity process if you do not have that local reference. Do not change
 the Azure CLI deployment identity or grant roles as part of filling these fields.
 
-Both config paths resolve relative to `.azure/dev/`; the native `using` path
+Both infrastructure paths resolve relative to `.azure/dev/`; the native `using` path
 resolves relative to the local parameter file. The script verifies that they
 refer to the same Bicep root. Local copies do not automatically pick up later
 changes to the tracked dev inputs: compare them before each deployment.
@@ -133,8 +164,8 @@ pwsh -NoProfile -File infrastructure/scripts/Deploy-Infrastructure.ps1 -ConfigPa
 pwsh -NoProfile -File infrastructure/scripts/Deploy-Infrastructure.ps1 -ConfigPath .azure/dev/deployment.local.json -Apply
 ```
 
-Without `-ConfigPath`, the script reads `infrastructure/config/dev.json`, whose
-parameters still contain redactions. Adding only `-Preview` or `-Apply` will
+Without `-ConfigPath`, the infrastructure script reads `infrastructure/config/dev.json`,
+whose referenced parameters still contain redactions. Adding only `-Preview` or `-Apply` will
 therefore fail locally until real identity inputs are supplied. `-Preview` and
 `-Apply` are mutually exclusive; neither is implied by the config. See the
 [template configuration contract](../templates/README.md#configuration-contract)
@@ -190,12 +221,107 @@ success or failure; it does not add application, resource or SQL probes after
 deployment. A successful infrastructure operation alone does not prove the
 application or its database connection works.
 
+### Recovering from a partial failure
+
+On an unsuccessful apply, the command saves `deployment-error.txt` under that
+run's ignored artifact directory, shows any parsed Azure error codes, and prints
+a read-only command to inspect failed deployment operations. Raw diagnostics can
+contain identity values; keep them local. If the failed target is a nested
+deployment, inspect its operations using its name as well. A deployment's summary
+error can contain only wrapper codes while its operations hold the provider error.
+
+`ServerIsBusy` indicates another operation on the PostgreSQL server. An accompanying
+`AadAuthOperationCannotBePerformedWhenServerIsNotAccessible` can reflect readiness
+rather than an incorrect administrator. Neither message alone proves the cause.
+The PostgreSQL module serializes secure-transport configuration, minimum TLS,
+Entra administrator and database creation after the server to prevent its own
+child writes from competing. Other deployments and provider settling can still
+cause temporary failures.
+
+Before a manual retry, inspect partial resources and confirm the server is `Ready`
+with no other updates running. Run a fresh preview and then apply the same config;
+existing resources are reconciled rather than intentionally recreated. Do not
+delete the server or resource group, change identity or weaken TLS to get past a
+busy error. Persistent readiness failures need investigation; authorization,
+policy and validation errors require resolution, not repeated retries. Only
+continue to code deployment after infrastructure apply succeeds. No automated
+wait/retry loop or extra post-apply Azure calls are added.
+
 The legacy `Provision-Infrastructure.ps1` wrapper is not the entry point for this
 test composition. Migration of the Azure deployment workflow to
 the current entry remains deferred; the commands above are the manual path.
-The separate `Deploy-AppServiceCode.ps1` and legacy provisioning guards still
-require F1/Free and will reject this B1 app. Their scope has not been expanded by
-this infrastructure experiment; code deployment needs a separate reviewed change.
+Legacy provisioning still requires F1/Free. Code-only deployment is separate and
+does not inspect the plan SKU or change infrastructure.
+
+## Application code deployment
+
+Use `infrastructure/scripts/Deploy-Application.ps1` as the single source-to-service
+entry. It packages the source, validates the ZIP and records its hash and target.
+With `-Apply`, it calls the existing guarded uploader, waits for the Azure CLI
+deployment result and performs the existing bounded homepage/sign-in check.
+
+```powershell
+# Package and validate locally; no build, installation, or Azure calls.
+pwsh -NoProfile -File infrastructure/scripts/Deploy-Application.ps1
+# Package, upload, build on Azure and verify HTTP, only after authorization.
+pwsh -NoProfile -File infrastructure/scripts/Deploy-Application.ps1 -Apply -ApprovalReference 'approved-code-review'
+```
+
+Replace the illustrative review reference with the actual approved change or
+operator decision. Applying uploads code and can restart the app. It does not
+create resources, change the plan, mutate app settings or grant database/Blob
+access. It never retries the upload automatically or rolls back a partial failure.
+
+The [shared dev config](../config/dev.json) supplies the same subscription,
+resource group and web-app name used for infrastructure. `code.expectedAccessMode`
+selects an HTTP verification expectation (`Preview` or `ApprovedSignIn`), not a
+deployment mode or identity configuration. Code deployment ignores the
+`infrastructure` section and needs neither Bicep nor PostgreSQL identity inputs.
+It can package or deploy code even while the native parameters remain redacted.
+
+If infrastructure uses a local config, pass that same file here rather than
+falling back to the committed target:
+
+```powershell
+pwsh -NoProfile -File infrastructure/scripts/Deploy-Application.ps1 -ConfigPath .azure/dev/deployment.local.json -Apply -ApprovalReference 'approved-code-review'
+```
+
+Inspect the shared target before every apply; `-ConfigPath` does not activate
+infrastructure deployment or change the application's runtime configuration.
+
+The default source is the repository containing the script, independent of the
+current terminal directory; `-SourceRoot <directory>` overrides it. The packager
+uses its existing path allowlist and can include local/uncommitted application
+edits, so review the source before deploying. Each invocation creates a unique
+ignored `.azure/code/deployments/<app>-<guid>/` with `web-source.zip` and
+`deployment-record.json`. `-OutputRoot <directory>` overrides that destination;
+keep it outside application source and out of source control. The generated record
+binds the target, review reference, HTTP mode and ZIP digest. It is execution
+evidence, not independent approval or permission to deploy.
+
+The build runs on Azure Linux through Oryx using the existing
+`SCM_DO_BUILD_DURING_DEPLOYMENT=true` and
+`CUSTOM_BUILD_COMMAND=npm ci --include=dev && npm run build` settings. This command
+does not run a local npm build or upload Windows dependencies or `.next` output.
+Without `-Apply`, success means packaging/validation passed, not that the app built.
+An apply packages current sources again; use the lower-level
+[reviewed-artifact path](app-service-postgres.md#7-package-and-deploy-code-only)
+when a separately approved, fixed ZIP must be deployed unchanged.
+
+The existing app must be HTTPS-only Linux with Node 22, the reviewed startup/build
+settings, TLS 1.2 or newer and FTP/SCM basic publishing disabled. Plan SKU and plan
+read permissions are not checked. PowerShell 7.2+ is required; apply also needs an
+authenticated Azure CLI that supports `webapp deploy --clean` and `--track-status`
+and permission to inspect and deploy to the named app. A successful HTTP check
+does not verify application readiness, database access, document storage or user
+authorization. Inspect remote build/deployment logs before retrying a failure.
+
+Runtime setup remains separate: production sessions need `SUNSUM_SESSION_SECRET`
+supplied through an approved secret process. Demo sign-in must be explicitly
+approved and restricted to trusted demo users. For a fixture-only deployment,
+retain `SUNSUM_STORE=mock`, `SUNSUM_BLOB=memory` and `SUNSUM_VIABILITY=demo`; this
+script neither sets nor changes those modes. Real database, Blob and viability
+integration remains a separate rollout decision.
 
 ## Earlier database-backed smoke app
 
