@@ -8,7 +8,7 @@ $scripts = Join-Path $fixture 'infrastructure/scripts'
 $configDirectory = Join-Path $fixture 'infrastructure/config'
 $templates = Join-Path $fixture 'infrastructure/templates'
 $null = New-Item -ItemType Directory -Path $scripts, $configDirectory, $templates -Force
-foreach ($name in @('Deploy-Infrastructure.ps1', 'DeploymentSafety.psm1', 'InfrastructureValidation.psm1')) {
+foreach ($name in @('Deploy-Infrastructure.ps1', 'DeploymentSafety.psm1', 'DeploymentConfiguration.psm1', 'InfrastructureValidation.psm1')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../$name") -Destination (Join-Path $scripts $name)
 }
 $runner = Join-Path $scripts 'Deploy-Infrastructure.ps1'
@@ -20,12 +20,14 @@ $storageId = "${prefix}Microsoft.Storage/storageAccounts/samplestorage"
 $configPath = Join-Path $configDirectory 'dev.json'
 $runnerOptions = @{ BicepPath = 'Invoke-RepeatableTestCompiler' }
 $configuration = @{
-    subscriptionId=$subscription; resourceGroupName='sample-group'; deploymentName='repeatable-test'
-    templatePath='../templates/main.bicep'; parametersPath='../templates/main.bicepparam'
+    subscriptionId=$subscription; resourceGroupName='sample-group'; webAppName='sample-web'
+    infrastructure=@{deploymentName='repeatable-test';templatePath='../templates/main.bicep';parametersPath='../templates/main.bicepparam'}
+    code=@{expectedAccessMode='Preview'}
 }
+$defaultParametersJson = '{"parameters":{"webAppName":{"value":"sample-web"}}}'
 $state = @{
     Mode='Create'; Calls=[System.Collections.Generic.List[string]]::new(); Snapshots=[System.Collections.Generic.List[string]]::new()
-    Compilations=0; TemplateJson='{"resources":[]}'; ParametersJson='{"parameters":{}}'
+    Compilations=0; TemplateJson='{"resources":[]}'; ParametersJson=$defaultParametersJson
 }
 $global:RepeatableDeploymentTestContext = @{
     State=$state; Subscription=$subscription; Prefix=$prefix; Templates=$templates
@@ -90,6 +92,19 @@ function global:az {
     }
     if ($args[2] -ceq 'create') {
         if ($state.Mode -ceq 'apply-failure') { $global:LASTEXITCODE = 1 }
+        if ($state.Mode -cin @('apply-busy', 'apply-busy-stderr', 'apply-auth-unavailable', 'apply-denied', 'apply-invalid-error')) {
+            $global:LASTEXITCODE = 1
+            if ($state.Mode -ceq 'apply-invalid-error') { return 'Unstructured provider output with synthetic-private-marker' }
+            $details = @(@{code='AadAuthOperationCannotBePerformedWhenServerIsNotAccessible';message='synthetic-private-marker'})
+            if ($state.Mode -cin @('apply-busy','apply-busy-stderr')) { $details += @{code='ServerIsBusy';message='synthetic-private-marker'} }
+            if ($state.Mode -ceq 'apply-denied') { $details += @{code='AuthorizationFailed';message='synthetic-private-marker'} }
+            $failureJson = @{status='Failed';error=@{code='DeploymentFailed';details=@(@{code='ResourceDeploymentFailure';details=$details})}} | ConvertTo-Json -Depth 12 -Compress
+            if ($state.Mode -ceq 'apply-busy-stderr') {
+                Write-Error -Message $failureJson -ErrorAction Continue
+                return
+            }
+            return 'ERROR: ' + $failureJson
+        }
         return
     }
     if ($args[2] -cne 'what-if') { throw 'Unexpected Azure operation.' }
@@ -175,6 +190,24 @@ try {
         Assert-Blocked { & $runner @runnerOptions -Apply } $mode $true
     }
     $state.Mode='Create'
+    foreach ($badParameters in @(
+        '{"parameters":{}}',
+        '{"parameters":{"webAppName":{"value":"other-web"}}}',
+        '{"parameters":{"webAppName":{"value":null}}}',
+        '{"parameters":{"webAppName":{"value":true}}}',
+        '{"parameters":{"webAppName":"sample-web"}}'
+    )) {
+        $state.ParametersJson=$badParameters
+        foreach ($operation in @(@{}, @{Preview=$true}, @{Apply=$true})) {
+            $state.Calls.Clear()
+            $message=''
+            try { & $runner @runnerOptions @operation | Out-Null } catch { $message=$_.Exception.Message }
+            if ($message -notlike '*webAppName must match*' -or $state.Calls.Count) { throw 'Mismatched compiled app target must fail locally before any Azure calls.' }
+        }
+    }
+    $state.ParametersJson='{"parameters":{"webAppName":{"value":"SAMPLE-WEB"}}}'
+    & $runner @runnerOptions -Preview | Out-Null
+    $state.ParametersJson=$defaultParametersJson
     foreach ($nested in @(
         @{ mode='Incremental'; templateLink=@{uri='https://example.invalid/template.json'} },
         @{ mode='Incremental'; parametersLink=@{uri='https://example.invalid/parameters.json'}; template=@{resources=@()} },
@@ -185,11 +218,12 @@ try {
     }
     $state.TemplateJson='{"resources":[],"parameters":{"tenantId":{"type":"string"},"postgresAdminObjectId":{"type":"string"},"postgresAdminPrincipalName":{"type":"string"}}}'
     $identityInputs = @{
+        webAppName=@{value='sample-web'}
         tenantId=@{value='22222222-2222-4222-8222-222222222222'}
         postgresAdminObjectId=@{value='33333333-3333-4333-8333-333333333333'}
         postgresAdminPrincipalName=@{value='synthetic-administrator'}
     }
-    foreach ($field in $identityInputs.Keys) {
+    foreach ($field in @('tenantId', 'postgresAdminObjectId', 'postgresAdminPrincipalName')) {
         $invalidValues = @($null, $true, '', '<redacted>', "invalid`nvalue", 'missing-entry')
         if ($field -cne 'postgresAdminPrincipalName') { $invalidValues += @('00000000-0000-0000-0000-000000000000', 'invalid-uuid') }
         foreach ($invalidValue in $invalidValues) {
@@ -201,7 +235,7 @@ try {
             Assert-Blocked { & $runner @runnerOptions -Apply } "redacted identity apply: $field" $true
         }
     }
-    $state.ParametersJson='{"parameters":{"tenantId":{"value":"00000000-0000-0000-0000-000000000000"},"postgresAdminObjectId":{"value":"00000000-0000-0000-0000-000000000000"},"postgresAdminPrincipalName":{"value":"<postgres-admin-principal-name>"}}}'
+    $state.ParametersJson='{"parameters":{"webAppName":{"value":"sample-web"},"tenantId":{"value":"00000000-0000-0000-0000-000000000000"},"postgresAdminObjectId":{"value":"00000000-0000-0000-0000-000000000000"},"postgresAdminPrincipalName":{"value":"<postgres-admin-principal-name>"}}}'
     $state.Calls.Clear()
     & $runner @runnerOptions | Out-Null
     if ($state.Calls.Count) { throw 'Redacted local compilation called Azure.' }
@@ -209,7 +243,7 @@ try {
     & $runner @runnerOptions -Preview | Out-Null
     & $runner @runnerOptions -Apply | Out-Null
     $state.TemplateJson='{"resources":[]}'
-    $state.ParametersJson='{"parameters":{}}'
+    $state.ParametersJson=$defaultParametersJson
     Push-Location ([System.IO.Path]::GetTempPath())
     try {
         $state.Calls.Clear()
@@ -221,32 +255,74 @@ try {
             Set-Content -LiteralPath $configPath -Value $badConfig -Encoding utf8NoBOM
             Assert-Blocked { & $runner @runnerOptions -Apply } 'malformed dev config' $true
         }
-        foreach ($badValue in @('', '<source>', 123, $null, 'missing.bicep', 'compiled.json')) {
-            $changed = $configuration.Clone()
-            $changed.templatePath = $badValue
-            $changed | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
-            Assert-Blocked { & $runner @runnerOptions -Apply } 'invalid dev config field' $true
+        foreach ($field in @('templatePath', 'parametersPath', 'deploymentName')) {
+            $invalidValues = @('', '<source>', 123, $null)
+            $invalidValues += if ($field -ceq 'deploymentName') { 'invalid/value' } else { 'missing.bicep', 'compiled.json' }
+            foreach ($badValue in $invalidValues) {
+                $changed = $configuration.Clone()
+                $changed.infrastructure = $configuration.infrastructure.Clone()
+                $changed.infrastructure[$field] = $badValue
+                $changed | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+                Assert-Blocked { & $runner @runnerOptions -Apply } 'invalid infrastructure config field' $true
+            }
+        }
+        foreach ($badSection in @($null, @(), 'invalid', @{}, @{deploymentName='repeatable-test';templatePath='../templates/main.bicep';parametersPath='../templates/main.bicepparam';Apply=$true})) {
+            $changed=$configuration.Clone()
+            $changed.infrastructure=$badSection
+            $changed | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+            Assert-Blocked { & $runner @runnerOptions -Apply } 'malformed infrastructure section' $true
+        }
+        foreach ($missingField in $configuration.Keys) {
+            $changed=$configuration.Clone()
+            $null=$changed.Remove($missingField)
+            $changed | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+            Assert-Blocked { & $runner @runnerOptions -Apply } 'missing shared config field' $true
         }
         $changed = $configuration.Clone()
         $changed.Apply = $true
         $changed | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
         Assert-Blocked { & $runner @runnerOptions } 'config cannot enable apply' $true
-        foreach ($key in @('subscriptionId', 'resourceGroupName', 'deploymentName')) {
+        foreach ($key in @('subscriptionId', 'resourceGroupName', 'webAppName')) {
             $changedTarget = $configuration.Clone()
             $changedTarget[$key] = 'invalid/value'
             $changedTarget | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
             Assert-Blocked { & $runner @runnerOptions -Apply } "invalid target: $key" $true
         }
+        $legacy=@{subscriptionId=$subscription;resourceGroupName='sample-group';deploymentName='repeatable-test';templatePath='../templates/main.bicep';parametersPath='../templates/main.bicepparam'}
+        $legacy | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+        Assert-Blocked { & $runner @runnerOptions } 'legacy flat config' $true
+        foreach ($unusedCode in @($null, 'not-ready', @{expectedAccessMode='not-configured'})) {
+            $changed=$configuration.Clone()
+            $changed.code=$unusedCode
+            $changed | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+            & $runner @runnerOptions -Preview | Out-Null
+        }
         $configuration | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
     } finally { Pop-Location }
-    $state.Mode='apply-failure'
-    $state.Calls.Clear()
-    $message=''
-    try { & $runner @runnerOptions -Apply | Out-Null } catch { $message=$_.Exception.Message }
-    if ($message -notlike '*partial resources may exist*' -or @($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count -ne 1) {
-        throw 'Failed apply did not stop without retry.'
+    foreach ($mode in @('apply-failure','apply-busy','apply-busy-stderr','apply-auth-unavailable','apply-denied','apply-invalid-error')) {
+        $state.Mode=$mode
+        $state.Calls.Clear()
+        $message=''
+        $failureOutput=[System.Collections.Generic.List[string]]::new()
+        try { & $runner @runnerOptions -Apply | ForEach-Object { $failureOutput.Add([string]$_) } } catch { $message=$_.Exception.Message }
+        if ($message -notlike '*partial resources may exist*' -or $message -notlike '*No automatic retry or rollback*' -or
+            @($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count -ne 1) {
+            throw 'Failed apply did not stop without retry.'
+        }
+        if ($state.Calls[$state.Calls.Count - 1] -notlike 'deployment group create *') { throw 'Failed apply must not add Azure calls after deployment.' }
+        if ($mode -cin @('apply-busy','apply-busy-stderr','apply-auth-unavailable')) {
+            if ($message -notlike '*temporarily busy or not ready*' -or $message -notlike '*server is Ready*') { throw 'Readiness failure did not include actionable conditional retry guidance.' }
+        } elseif ($message -like '*temporarily busy or not ready*') { throw 'Unclassified or authorization failure was treated as transient.' }
+        if ($mode -cin @('apply-busy','apply-busy-stderr') -and $message -notlike '*ServerIsBusy*') { throw 'Nested busy code was lost.' }
+        if ($mode -ceq 'apply-denied' -and $message -notlike '*AuthorizationFailed*') { throw 'Permission failure code was lost.' }
+        $diagnosticLine=@($failureOutput | Where-Object { $_ -like 'Deployment diagnostics (may contain private values): *' })
+        if ($diagnosticLine.Count -ne 1) { throw 'Failed apply did not save diagnostics.' }
+        $diagnosticPath=$diagnosticLine[0].Substring('Deployment diagnostics (may contain private values): '.Length)
+        if (-not (Test-Path -LiteralPath $diagnosticPath) -or -not $diagnosticPath.StartsWith($artifactRoot)) { throw 'Diagnostics are not in the generated run directory.' }
+        if ($mode -cne 'apply-failure' -and (Get-Content -LiteralPath $diagnosticPath -Raw) -notlike '*synthetic-private-marker*') { throw 'Raw diagnostics were not preserved.' }
+        if (($failureOutput -join "`n") -like '*synthetic-private-marker*' -or $message -like '*synthetic-private-marker*') { throw 'Provider message details leaked into the summary.' }
+        if (@($failureOutput | Where-Object { $_ -like '*az deployment operation group list*--name ''repeatable-test''*' }).Count -ne 1) { throw 'Failure did not identify the read-only inspection command.' }
     }
-    if ($state.Calls[$state.Calls.Count - 1] -notlike 'deployment group create *') { throw 'Failed apply must not add Azure calls after deployment.' }
     Write-Output 'Repeatable deployment checks passed: source compilation, fresh checkout, create/update/no-change, snapshots, B1 creation and reference checks, and no retry.'
 } finally {
     Remove-Item -LiteralPath Function:\az -Force

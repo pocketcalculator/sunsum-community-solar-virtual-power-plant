@@ -2,26 +2,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Assert-InfrastructureConfig {
-    param($Config)
-    $fields = @('subscriptionId', 'resourceGroupName', 'deploymentName', 'templatePath', 'parametersPath')
-    if ($Config -isnot [System.Collections.IDictionary] -or $Config.Count -ne $fields.Count) {
-        throw 'Deployment configuration must contain exactly the documented target and artifact path fields.'
-    }
-    foreach ($field in $fields) {
-        if (-not $Config.Contains($field) -or $Config[$field] -isnot [string] -or
-            [string]::IsNullOrWhiteSpace($Config[$field]) -or $Config[$field] -match '[<>\x00-\x1f]') {
-            throw "Invalid deployment configuration field: $field."
-        }
-    }
-    $subscriptionId = [guid]::Empty
-    if (-not [guid]::TryParseExact($Config.subscriptionId, 'D', [ref]$subscriptionId) -or $subscriptionId -eq [guid]::Empty -or
-        $Config.resourceGroupName -notmatch '\A[a-zA-Z0-9_().-]{1,90}\z' -or $Config.resourceGroupName.EndsWith('.') -or
-        $Config.deploymentName -notmatch '\A[a-zA-Z0-9_().-]{1,64}\z') {
-        throw 'A valid subscription, resource group and deployment name are required.'
-    }
-}
-
 function Assert-InlineTemplate {
     param([System.Collections.IDictionary] $Document)
     $resources = $Document['resources']
@@ -40,12 +20,17 @@ function Assert-InlineTemplate {
 }
 
 function Assert-InfrastructureTemplate {
-    param($Compiled, $Inputs, [switch] $RequireDeploymentIdentity)
+    param($Compiled, $Inputs, [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $ExpectedWebAppName, [switch] $RequireDeploymentIdentity)
     if ($Compiled -isnot [System.Collections.IDictionary] -or -not $Compiled.Contains('resources') -or
         $Inputs -isnot [System.Collections.IDictionary] -or $Inputs['parameters'] -isnot [System.Collections.IDictionary]) {
         throw 'Expected a compiled ARM template and ARM parameters JSON.'
     }
     Assert-InlineTemplate $Compiled
+    $webApp = $Inputs.parameters['webAppName']
+    if ($webApp -isnot [System.Collections.IDictionary] -or $webApp['value'] -isnot [string] -or
+        $webApp.value -ine $ExpectedWebAppName) {
+        throw 'Compiled webAppName must match the shared deployment config. Update the native parameters and shared target together. No Azure calls attempted.'
+    }
     if ($RequireDeploymentIdentity -and $Compiled['parameters'] -is [System.Collections.IDictionary] -and
         $Compiled.parameters.Contains('postgresAdminObjectId')) {
         foreach ($field in @('tenantId', 'postgresAdminObjectId', 'postgresAdminPrincipalName')) {
@@ -124,4 +109,36 @@ function Get-ValidatedInfrastructureChanges {
     return $managed
 }
 
-Export-ModuleMember -Function Assert-InfrastructureConfig, Assert-InfrastructureTemplate, Get-ValidatedInfrastructureChanges
+function Get-InfrastructureFailureSummary {
+    param([AllowEmptyString()][string] $ErrorText)
+    $codes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    function Add-FailureCodes {
+        param($Node, [int] $Depth = 0)
+        if ($Depth -gt 32 -or $Node -isnot [System.Collections.IDictionary]) { return }
+        if ($Node['code'] -is [string] -and $Node.code -cmatch '\A[A-Za-z][A-Za-z0-9_.-]{0,127}\z' -and
+            $Node.code -inotin @('DeploymentFailed', 'ResourceDeploymentFailure')) {
+            $null = $codes.Add($Node.code)
+        }
+        Add-FailureCodes -Node $Node['error'] -Depth ($Depth + 1)
+        foreach ($detail in @($Node['details'])) { Add-FailureCodes -Node $detail -Depth ($Depth + 1) }
+    }
+    try {
+        $start = $ErrorText.IndexOf('{')
+        $end = $ErrorText.LastIndexOf('}')
+        if ($start -ge 0 -and $end -ge $start) {
+            $document = $ErrorText.Substring($start, $end - $start + 1) | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+            Add-FailureCodes $document
+        }
+    } catch {
+        $codes.Clear()
+    }
+    if ($codes.Count -eq 0) { return 'Azure returned no recognized structured error codes. Inspect the saved diagnostics and deployment operations before retrying.' }
+    $summary = 'Azure error codes: ' + ((@($codes) | Sort-Object | Select-Object -First 16) -join ', ') + '.'
+    $readinessCodes = @('ServerIsBusy', 'AadAuthOperationCannotBePerformedWhenServerIsNotAccessible')
+    if (@($codes | Where-Object { $_ -inotin $readinessCodes }).Count -eq 0) {
+        return "$summary PostgreSQL may be temporarily busy or not ready. Check that the server is Ready and no other update is running; inspect partial resources, then preview and retry manually with the same config. Persistent failures need investigation; readiness alone is not proof of recovery."
+    }
+    return "$summary Inspect deployment operations and resolve the reported cause before retrying. Do not treat authorization, policy or validation failures as transient."
+}
+
+Export-ModuleMember -Function Assert-InfrastructureTemplate, Get-ValidatedInfrastructureChanges, Get-InfrastructureFailureSummary

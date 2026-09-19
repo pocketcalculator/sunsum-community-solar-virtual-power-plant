@@ -28,16 +28,16 @@ The Storage account is Standard LRS, StorageV2, Hot, with private
 `site-documents` and `project-documents` containers. Shared-key access and
 anonymous Blob access are disabled.
 
-The separate legacy provisioning and code-deployment commands read the named site's
-`serverFarmId`, then inspect that linked plan by resource ID. Both require
-`sku.name=F1` and `sku.tier=Free` before deployment; missing, unreadable, malformed
+The legacy provisioning command reads the named site's
+`serverFarmId`, then inspects that linked plan by resource ID. It requires
+`sku.name=F1` and `sku.tier=Free`; missing, unreadable, malformed
 or paid plans stop the operation. The operator needs read access to the linked
 plan, including when it is in another resource group in the same subscription.
-Neither command changes the plan or offers a paid-tier bypass. This is a
+That preflight does not change the plan or offer a paid-tier bypass. It is a
 preflight, not a lock against concurrent Azure configuration changes; serialize
-plan changes during deployment. These unchanged F1 guards reject the new B1 app;
-supporting code deployment to it requires a separate reviewed change. The dev
-infrastructure entry owns only its explicitly named B1 plan.
+plan changes during provisioning. Code-only deployment does not inspect or
+change the plan SKU. It retains app/runtime, transport, publishing, archive and
+HTTP checks. The dev infrastructure entry owns only its explicitly named B1 plan.
 
 | Surface | Preparation status | Deployment/application gate |
 | --- | --- | --- |
@@ -155,7 +155,10 @@ deployment does **not** require an Owner to repeat these administrator steps.
 Approved application participants require no Azure subscription/RG roles.
 
 The shared non-secret dev target is versioned in `infrastructure/config/dev.json`
-and resource inputs in `infrastructure/templates/resources.dev.bicepparam`.
+for both infrastructure and code deployment. Its `infrastructure` section selects
+the Bicep inputs and its `code` section selects the HTTP check mode. Resource inputs
+remain in `infrastructure/templates/resources.dev.bicepparam`; the compiled
+web-app name must match the shared config before infrastructure calls Azure.
 Tenant and administrator identity values are redacted in the public parameters.
 Keep real values in ignored `.azure/dev/identity-values.json`, supply them only
 in local deployment inputs, and restore placeholders before committing. Preview
@@ -171,7 +174,7 @@ the active subscription or enable basic publishing. The separately approved
 | --- | --- |
 | `templates/resources.bicep` | Dev entry: manages a complete new test stack including the B1 plan, web app, Storage and Entra-only PostgreSQL. |
 | `templates/resources.dev.bicepparam` | Versioned non-secret dev resource names and settings. |
-| `config/dev.json` | Versioned Azure target, stable deployment name and Bicep input paths. |
+| `config/dev.json` | Shared Azure target; `infrastructure` deployment name/Bicep paths and `code` HTTP check mode. |
 | `templates/modules/web.bicep` | Linux B1/Basic plan and fixture-only site with an explicit dependency on the plan. |
 | `templates/modules/postgres.bicep` | Creates the test PostgreSQL server, selected Entra administrator, empty database and TLS configuration; no firewall allowances. |
 | `templates/postgres-firewall.bicep` | Separate incremental exact-IP allowances on an existing server; empty by default. |
@@ -1000,6 +1003,13 @@ deny-all restriction while preserving authentication. Code rollback does not
 restore auth, directory assignments, secrets or sessions.
 
 ## 7. Package and deploy code only
+
+For the normal source-package/build/deploy command, start with
+[application code deployment](deployment.md#application-code-deployment).
+The entry composes the packager and uploader below, generating a fresh target-bound
+execution record automatically. The lower-level path in this section remains
+available when the ZIP and approval digest are supplied by a separate review.
+Neither code path reads or changes the App Service plan.
 
 The packaging script uses a source allowlist: root app manifests/lock/build
 config, `app`, `src` and optional `public`. It excludes local env files, raw

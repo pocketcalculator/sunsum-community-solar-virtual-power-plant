@@ -7,18 +7,20 @@ param(
     [Parameter(ParameterSetName = 'Apply')][switch] $Apply
 )
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'DeploymentSafety.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'DeploymentConfiguration.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'InfrastructureValidation.psm1') -Force
 $configFile = (Resolve-Path -LiteralPath $ConfigPath).Path
 $config = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json -AsHashtable
-Assert-InfrastructureConfig $config
+Assert-DeploymentConfiguration -Config $config -Operation Infrastructure
 $SubscriptionId = [guid]$config.subscriptionId
 $ResourceGroupName = $config.resourceGroupName
-$DeploymentName = $config.deploymentName
+$DeploymentName = $config.infrastructure.deploymentName
 $configDirectory = Split-Path -Parent $configFile
-$TemplatePath = [System.IO.Path]::GetFullPath($config.templatePath, $configDirectory)
-$ParametersPath = [System.IO.Path]::GetFullPath($config.parametersPath, $configDirectory)
+$TemplatePath = [System.IO.Path]::GetFullPath($config.infrastructure.templatePath, $configDirectory)
+$ParametersPath = [System.IO.Path]::GetFullPath($config.infrastructure.parametersPath, $configDirectory)
 if ([System.IO.Path]::GetExtension($TemplatePath) -cne '.bicep' -or
     [System.IO.Path]::GetExtension($ParametersPath) -cne '.bicepparam' -or
     -not (Test-Path -LiteralPath $TemplatePath -PathType Leaf) -or
@@ -54,7 +56,7 @@ try {
     $snapshots.Add($parameters)
     $compiled = Get-Content -LiteralPath $template.Path -Raw | ConvertFrom-Json -AsHashtable
     $inputs = Get-Content -LiteralPath $parameters.Path -Raw | ConvertFrom-Json -AsHashtable
-    Assert-InfrastructureTemplate -Compiled $compiled -Inputs $inputs -RequireDeploymentIdentity:($Preview -or $Apply)
+    Assert-InfrastructureTemplate -Compiled $compiled -Inputs $inputs -ExpectedWebAppName $config.webAppName -RequireDeploymentIdentity:($Preview -or $Apply)
     Write-Output "Compiled artifacts: $runDirectory"
     if (-not $Preview -and -not $Apply) {
         Write-Output 'Bicep sources compiled and validated locally. No Azure calls.'
@@ -70,11 +72,18 @@ try {
     foreach ($snapshot in $snapshots) { Assert-DeploymentSnapshot $snapshot }
     $managed.Values | Sort-Object resourceId | ForEach-Object { Write-Output "$($_.changeType): $($_.resourceId)" }
     if ($Preview) { Write-Output 'Preview passed. No deployment applied.'; return }
-    & az deployment group create --subscription $SubscriptionId --resource-group $ResourceGroupName `
+    $errorPath = Join-Path $runDirectory 'deployment-error.txt'
+    $deploymentOutput = & az deployment group create --subscription $SubscriptionId --resource-group $ResourceGroupName `
         --name $DeploymentName --mode Incremental --template-file $template.Path --parameters "@$($parameters.Path)" `
-        --only-show-errors --output none
+        --only-show-errors --output none 2> $errorPath
     if ($LASTEXITCODE -ne 0) {
-        throw 'Deployment did not report success. Inspect deployment state before retrying; partial resources may exist. No automatic retry or rollback.'
+        $diagnostics = (Get-Content -LiteralPath $errorPath -Raw) + [Environment]::NewLine + ($deploymentOutput -join [Environment]::NewLine)
+        [System.IO.File]::WriteAllText($errorPath, $diagnostics)
+        $summary = Get-InfrastructureFailureSummary -ErrorText $diagnostics
+        Write-Output "Deployment diagnostics (may contain private values): $errorPath"
+        Write-Output "Read-only inspection: az deployment operation group list --subscription '$SubscriptionId' --resource-group '$ResourceGroupName' --name '$DeploymentName' --query `"[?properties.provisioningState=='Failed'].properties`" --output json"
+        Write-Output 'For a failed nested deployment, repeat the inspection with that deployment name. Keep raw diagnostics local.'
+        throw "Deployment '$DeploymentName' did not report success; partial resources may exist. $summary No automatic retry or rollback."
     }
     Write-Output 'Infrastructure deployment reported success. Application, SQL migrations and data-plane checks remain separate.'
 } finally {

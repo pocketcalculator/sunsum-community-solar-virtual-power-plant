@@ -12,8 +12,12 @@ procedures, and decision records in this directory.
 
 - [Deployment](./deployment.md) - default infrastructure commands, generated
   artifacts, update/rerun behavior and separately labeled earlier smoke-app notes.
+- [Shared deployment config](./deployment.md#shared-deployment-configuration) -
+  one target for infrastructure and code with separate operation settings.
 - [Local identity setup](./deployment.md#local-identity-setup) - prepare ignored
   deployment inputs without exposing the tenant or administrator in tracked files.
+- [Application code deployment](./deployment.md#application-code-deployment) -
+  one entry for source packaging, Azure-side build, upload and HTTP verification.
 - [App Service / PostgreSQL operations](./app-service-postgres.md) - network
   approvals, Entra SQL bootstrap, migrations, sign-in and code deployment.
 - [Template configuration](../templates/README.md#configuration-contract) -
