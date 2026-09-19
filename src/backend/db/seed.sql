@@ -210,6 +210,69 @@ ON CONFLICT (id) DO UPDATE
       updated_at = EXCLUDED.updated_at;
 
 -- ---------------------------------------------------------------------------
+-- Investor engagement
+--
+-- The charter's definition of success asks for a portfolio view with "at least
+-- one open deal room". `getDealRoom` (section 7.7) opens one only for an
+-- onboarded investor who also holds a LIVE engagement on the project, so
+-- without this row the seeded demo shows the investor a portfolio whose every
+-- deal room answers 403 — the one screen the role exists to demonstrate.
+--
+-- Exactly one project is engaged, and deliberately so. The other visible
+-- projects stay unengaged so that expressing interest remains demonstrable
+-- live; seeding all of them would leave no before-and-after to show.
+--
+-- `funding_need_id` is NULL: this is interest in the whole project rather than
+-- in one need. That is the case the `investor_engagements_live_unique` partial
+-- index has to COALESCE a sentinel UUID to catch, so seeding it keeps the
+-- interesting branch of that index exercised rather than the easy one.
+--
+-- That index is also why this is not a plain INSERT ... ON CONFLICT (id).
+-- `ON CONFLICT` only handles the target it is given, and the index that would
+-- actually be violated here is the *live* one, not the primary key: once a
+-- demo investor has clicked "express interest" through the UI, the database
+-- holds a live engagement for this investor and project under a different id,
+-- and re-seeding would abort on a unique violation. The guard below keeps the
+-- seed idempotent against a demo that has already been driven.
+--
+--   * nothing present            -> insert the seeded row
+--   * the seeded row present     -> `id <>` excludes it, so ON CONFLICT
+--                                   restores it to `interested`
+--   * a *different* live row     -> no-op; that engagement already opens the
+--                                   deal room, and destroying what the demo
+--                                   just created to replace it with an
+--                                   identical-in-effect row buys nothing
+--
+-- Mirrors the in-memory fixture in src/backend/core/store/index.ts, which
+-- seeds the same engagement against the first investor-visible project — the
+-- same project id. The two stores are required to answer identically, and a
+-- deal room that opens under SUNSUM_STORE=mock but 403s under `db` is exactly
+-- that failure.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO investor_engagements (id, investor_id, project_id, funding_need_id, state,
+                                  state_changed_at, is_binding, created_at)
+SELECT 'e5500000-0000-4000-8000-000000000001'::uuid,
+       '4d7a2c91-8e56-43bf-9a10-5c6d2f7b8e34'::uuid,
+       '3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7101'::uuid,
+       NULL::uuid,
+       'interested'::text,
+       '2026-09-01T00:00:00Z'::timestamptz,
+       false,
+       '2026-09-01T00:00:00Z'::timestamptz
+WHERE NOT EXISTS (
+  SELECT 1 FROM investor_engagements
+   WHERE investor_id = '4d7a2c91-8e56-43bf-9a10-5c6d2f7b8e34'
+     AND project_id = '3f1b9c64-0f0e-4a1b-9c3e-6b0d5a2e7101'
+     AND funding_need_id IS NULL
+     AND state IN ('interested','committed','underwriting','approved','funded')
+     AND id <> 'e5500000-0000-4000-8000-000000000001'
+)
+ON CONFLICT (id) DO UPDATE
+  SET state = EXCLUDED.state, state_changed_at = EXCLUDED.state_changed_at,
+      funding_need_id = EXCLUDED.funding_need_id, is_binding = EXCLUDED.is_binding;
+
+-- ---------------------------------------------------------------------------
 -- Documents
 --
 -- Two rows on the same site, and the difference between them is the whole point
@@ -260,6 +323,8 @@ DECLARE
   draft_is_incomplete bool;
   bill_class text;
   project_before_accept int;
+  open_deal_rooms int;
+  engaged_but_hidden int;
 BEGIN
   SELECT count(*) INTO visible_atlanta
     FROM projects p JOIN sites s ON s.id = p.site_id
@@ -312,6 +377,32 @@ BEGIN
     RAISE EXCEPTION 'Lifecycle broken: % project(s) sit on a site that was never accepted', project_before_accept;
   END IF;
   RAISE NOTICE 'Lifecycle ok: every project sits on an accepted site';
+
+  -- At least one deal room actually opens, and not every one of them does.
+  SELECT count(*) INTO open_deal_rooms
+    FROM investor_engagements e
+    JOIN investors i ON i.id = e.investor_id
+    JOIN projects p ON p.id = e.project_id
+   WHERE e.state IN ('interested','committed','underwriting','approved','funded')
+     AND i.onboarding_completed_at IS NOT NULL
+     AND p.visible_to_investors;
+  IF open_deal_rooms < 1 THEN
+    RAISE EXCEPTION 'S9 unmet: no deal room opens; the investor portfolio has nothing to show';
+  END IF;
+  IF open_deal_rooms >= (SELECT count(*) FROM projects WHERE visible_to_investors) THEN
+    RAISE EXCEPTION 'Every visible project is pre-engaged; expressing interest cannot be demonstrated';
+  END IF;
+  RAISE NOTICE 'Deal room ok: % of % visible projects open, the rest need interest first',
+    open_deal_rooms, (SELECT count(*) FROM projects WHERE visible_to_investors);
+
+  -- An engagement must never be the thing that reveals an unpublished project.
+  SELECT count(*) INTO engaged_but_hidden
+    FROM investor_engagements e JOIN projects p ON p.id = e.project_id
+   WHERE NOT p.visible_to_investors;
+  IF engaged_but_hidden > 0 THEN
+    RAISE EXCEPTION 'Visibility bypass: % engagement(s) sit on an unpublished project', engaged_but_hidden;
+  END IF;
+  RAISE NOTICE 'Visibility ok: no engagement sits on an unpublished project';
 
   SELECT string_agg(c::text, ',' ORDER BY n) INTO need_counts FROM (
     SELECT p.name AS n, count(f.id) FILTER (WHERE f.status = 'open') AS c

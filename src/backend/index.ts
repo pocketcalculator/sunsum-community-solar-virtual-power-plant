@@ -49,6 +49,7 @@ export {
   logoutRoute,
   patchProjectVisibilityRoute,
   postEngagementRoute,
+  postAssessmentOverrideRoute,
   postProjectStageRoute,
   postSiteRoute,
   postSubmissionDecisionRoute,

@@ -32,10 +32,13 @@ export {
 export {
   advanceProjectStage,
   decideSubmission,
+  overrideAssessment,
   toProjectPayload,
   getPipeline,
   updateProject,
   updateProjectVisibility,
+  type AssessmentOverrideInput,
+  type AssessmentOverrideResponse,
   type DecisionInput,
   type DecisionResponse,
   type PipelineCard,
