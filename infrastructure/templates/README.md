@@ -39,9 +39,11 @@ this directory. Keep environment-specific values outside committed templates.
 See the [earlier smoke-app notes](../docs/deployment.md#earlier-database-backed-smoke-app) for that path and
 the database grant required for a newly created web identity. This is distinct
 from the preparation entry points below; review which template owns a site's
-settings before applying either to the same app. Keep identity values in ignored
-`.azure/dev/identity-values.json` and approval records in ignored local
-configuration; do not publish credentials or personal administrator data.
+settings before applying either to the same app. Use the
+[local identity setup](../docs/deployment.md#local-identity-setup) for ignored
+parameter/config copies. An optional `.azure/dev/identity-values.json` is a local
+reference, not an input loaded automatically. Keep approval records local too;
+do not publish credentials or personal administrator data.
 
 ## Configuration contract
 

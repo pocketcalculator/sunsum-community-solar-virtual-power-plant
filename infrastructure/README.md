@@ -23,6 +23,11 @@ for local validation, Azure preview and explicitly authorized deployment.
 Creating, updating and reapplying infrastructure use the same source-driven
 entry point; generated artifacts are not prerequisites.
 
+Public parameters compile locally but redact tenant and administrator identity
+values. Follow [local identity setup](docs/deployment.md#local-identity-setup)
+before preview/apply. An ignored identity backup is not loaded automatically;
+use the documented local config to keep the public parameters redacted.
+
 The current dev entry manages an explicitly requested, billable Linux B1/Basic
 plan, fixture-only web app, private Storage and a new Entra-only PostgreSQL server
 with an empty database. Every top-level resource uses a separate test name in the

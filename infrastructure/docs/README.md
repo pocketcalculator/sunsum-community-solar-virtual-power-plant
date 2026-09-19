@@ -12,6 +12,8 @@ procedures, and decision records in this directory.
 
 - [Deployment](./deployment.md) - default infrastructure commands, generated
   artifacts, update/rerun behavior and separately labeled earlier smoke-app notes.
+- [Local identity setup](./deployment.md#local-identity-setup) - prepare ignored
+  deployment inputs without exposing the tenant or administrator in tracked files.
 - [App Service / PostgreSQL operations](./app-service-postgres.md) - network
   approvals, Entra SQL bootstrap, migrations, sign-in and code deployment.
 - [Template configuration](../templates/README.md#configuration-contract) -
@@ -35,8 +37,9 @@ does not require Container Apps or a container registry. See the
 
 The [App Service / PostgreSQL operating guide](app-service-postgres.md) describes
 the prepared Bicep/Azure CLI foundation, local checks, exact-IP approval and explicit
-Entra SQL bootstrap. This preparation does not provision or connect a cloud
-database. No orchestration framework is required.
+Entra SQL bootstrap. Reading the guide or compiling locally makes no cloud changes;
+an authorized infrastructure apply creates or updates the declared resources but
+does not connect the application to the database. No orchestration framework is required.
 
 The [deployment guide](deployment.md#infrastructure-deployment) is the normal
 entry point for creating, updating and reapplying dev infrastructure. It manages
