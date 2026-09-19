@@ -23,9 +23,9 @@ info:
     > `src/backend/viability/index.ts` (merged in #34) POSTs to `/assessments` and
     > translates WS4's verdict vocabulary (`viable`, `potentially_viable`,
     > `not_viable`, `insufficient_information`) into the three `VIABILITY_STATUSES`
-> > this document lists. Unknown upstream recommendations are rejected at runtime
-> > before they can reach the database; the wire is aligned, and only this document
-    > this document is behind.
+    > this document lists. A response with an unknown recommendation is rejected at
+    > runtime by `toAssessmentResult` before it can reach the database; the wire is
+    > aligned for the known values, and only this document is behind.
     >
     > The body below is preserved as the original WS2 proposal, which is what §9.1's
     > stateless framing was argued from. Reconciling the two — whether the service
