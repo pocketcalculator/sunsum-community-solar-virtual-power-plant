@@ -40,12 +40,28 @@ function Assert-InlineTemplate {
 }
 
 function Assert-InfrastructureTemplate {
-    param($Compiled, $Inputs)
+    param($Compiled, $Inputs, [switch] $RequireDeploymentIdentity)
     if ($Compiled -isnot [System.Collections.IDictionary] -or -not $Compiled.Contains('resources') -or
-        $Inputs -isnot [System.Collections.IDictionary] -or -not $Inputs.Contains('parameters')) {
+        $Inputs -isnot [System.Collections.IDictionary] -or $Inputs['parameters'] -isnot [System.Collections.IDictionary]) {
         throw 'Expected a compiled ARM template and ARM parameters JSON.'
     }
     Assert-InlineTemplate $Compiled
+    if ($RequireDeploymentIdentity -and $Compiled['parameters'] -is [System.Collections.IDictionary] -and
+        $Compiled.parameters.Contains('postgresAdminObjectId')) {
+        foreach ($field in @('tenantId', 'postgresAdminObjectId', 'postgresAdminPrincipalName')) {
+            $entry = $Inputs.parameters[$field]
+            if ($entry -isnot [System.Collections.IDictionary] -or $entry['value'] -isnot [string] -or
+                [string]::IsNullOrWhiteSpace($entry.value) -or $entry.value -match '[<>\x00-\x1f]') {
+                throw "Supply a real $field locally before preview/apply; identity placeholders are for local compilation only. No Azure calls attempted."
+            }
+            if ($field -cne 'postgresAdminPrincipalName') {
+                $identifier = [guid]::Empty
+                if (-not [guid]::TryParseExact($entry.value, 'D', [ref]$identifier) -or $identifier -eq [guid]::Empty) {
+                    throw "Supply a nonempty UUID for $field locally before preview/apply. No Azure calls attempted."
+                }
+            }
+        }
+    }
 }
 
 function Get-ValidatedInfrastructureChanges {
@@ -76,9 +92,10 @@ function Get-ValidatedInfrastructureChanges {
         $change = $managed[$resourceId]
         if ($resourceId -imatch '/providers/Microsoft.Web/serverfarms/[^/]+$') {
             if ($change['after'] -isnot [System.Collections.IDictionary] -or $change.after['sku'] -isnot [System.Collections.IDictionary] -or
-                $change.after.sku['name'] -isnot [string] -or $change.after.sku['name'] -ine 'F1' -or
-                $change.after.sku['tier'] -isnot [string] -or $change.after.sku['tier'] -ine 'Free') {
-                throw 'Planned App Service plans must remain explicitly F1/Free; no paid-tier fallback.'
+                $change.after.sku['name'] -isnot [string] -or $change.after.sku['name'] -ine 'B1' -or
+                ($change.after.sku.Contains('tier') -and
+                    ($change.after.sku['tier'] -isnot [string] -or $change.after.sku['tier'] -ine 'Basic'))) {
+                throw 'What-if must report SKU B1 and, when present, tier Basic for App Service plans; no automatic tier fallback.'
             }
         }
     }
@@ -99,7 +116,7 @@ function Get-ValidatedInfrastructureChanges {
                     $plan['sku'] -isnot [System.Collections.IDictionary] -or
                     $plan.sku['name'] -isnot [string] -or $plan.sku.name -ine 'B1' -or
                     $plan.sku['tier'] -isnot [string] -or $plan.sku.tier -ine 'Basic') {
-                    throw 'This dev infrastructure test requires the existing B1/Basic App Service plan. No plan change was attempted.'
+                    throw 'Referenced App Service plans must be B1/Basic. No plan change was attempted.'
                 }
             }
         }
