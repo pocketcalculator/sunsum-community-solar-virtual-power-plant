@@ -96,6 +96,7 @@ export function demoFundingNeedId(
 }
 
 export const DEMO_DOCUMENT_ID = "d5500000-0000-4000-8000-000000000001";
+export const DEMO_ENGAGEMENT_ID = "e5500000-0000-4000-8000-000000000001";
 
 function demoState(seedDemoProjects: boolean): StoreState {
   const projects = seedDemoProjects
@@ -147,12 +148,50 @@ function demoState(seedDemoProjects: boolean): StoreState {
     createdAt: DEMO_CREATED_AT,
   }));
 
+  /**
+   * One seeded engagement, on the first investor-visible project.
+   *
+   * The charter's definition of success asks for "a portfolio view with at
+   * least one open deal room", and `getDealRoom` opens one only for an
+   * investor with an active engagement. Without this row the investor's first
+   * click in the demo is a 403 on the very screen the role exists to show.
+   *
+   * Deliberately *one*: the remaining visible projects stay unengaged so the
+   * express-interest path is still demonstrable live. Seeding every project
+   * would hide the transition this role's workflow is about.
+   *
+   * Selected by visibility rather than by position, because an engagement on an
+   * unpublished project would let the investor reach a project the operator
+   * never released. `src/backend/db/seed.sql` asserts the same invariant.
+   */
+  const engagedProject = projects.find((project) => project.visibleToInvestors);
+
+  const engagements: EngagementRecord[] =
+    engagedProject === undefined
+      ? []
+      : [
+          {
+            id: DEMO_ENGAGEMENT_ID,
+            investorId: DEMO_INVESTOR_ID,
+            investorUserId: DEMO_INVESTOR_USER_ID,
+            projectId: engagedProject.id,
+            fundingNeedId: null,
+            state: "interested",
+            stateChangedAt: DEMO_CREATED_AT,
+            committedAmount: null,
+            commitmentInstrument: null,
+            isBinding: false,
+            declineReason: null,
+            createdAt: DEMO_CREATED_AT,
+          },
+        ];
+
   return {
     sites,
     assessments,
     projects,
     activities: [],
-    engagements: [],
+    engagements,
     fundingNeeds: projects.flatMap((project, projectIndex) =>
       Array.from({ length: project.openFundingNeedsCount }, (_, needIndex) => ({
         id: demoFundingNeedId(projectIndex, needIndex),

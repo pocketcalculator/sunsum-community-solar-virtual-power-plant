@@ -114,11 +114,23 @@ describe("the export bundle", () => {
   /**
    * The tier gate, proved in both directions. Asserting only the locked case
    * would pass just as well against an export that never read a deal room.
+   *
+   * Uses a second investor rather than the seeded one. The fixture now ships an
+   * engagement so the demo has an open deal room, which means the seeded
+   * investor starts unlocked and cannot show the "before". Running both
+   * directions on an investor who owns no seeded rows also proves the gate is
+   * per-investor rather than a global flag — a stronger claim than the original
+   * had, and the one that actually matters when two investors share a project.
    */
   it("withholds deal-room documents until an engagement unlocks them", async () => {
     const store = seeded();
+    const stranger: Viewer = {
+      role: "investor",
+      userId: "91e3b7c4-2d65-4a08-bf19-7c5e0a6d3b99",
+      investor: { ...onboardedInvestor, id: "4d7a2c91-8e56-43bf-9a10-5c6d2f7b8e99" },
+    };
 
-    const locked = await buildExport(investor, store, FIXED_NOW);
+    const locked = await buildExport(stranger, store, FIXED_NOW);
     if (!locked.ok) throw new Error(locked.failure.code);
     expect(locked.value.projects.length).toBeGreaterThan(0);
     expect(locked.value.documents).toHaveLength(0);
@@ -127,8 +139,8 @@ describe("the export bundle", () => {
       if (row.project_id === null) continue;
       await store.addEngagement({
         id: `engagement-${row.project_id}`,
-        investorId: onboardedInvestor.id,
-        investorUserId: INVESTOR_USER_ID,
+        investorId: stranger.investor.id,
+        investorUserId: stranger.userId,
         projectId: row.project_id,
         fundingNeedId: null,
         state: "interested",
@@ -141,9 +153,20 @@ describe("the export bundle", () => {
       });
     }
 
-    const unlocked = await buildExport(investor, store, FIXED_NOW);
+    const unlocked = await buildExport(stranger, store, FIXED_NOW);
     if (!unlocked.ok) throw new Error(unlocked.failure.code);
     expect(unlocked.value.documents.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * The fixture's own engagement, asserted rather than assumed. The seeded
+   * investor must open a deal room without doing anything first, because that
+   * is what the demo shows.
+   */
+  it("gives the seeded investor a deal room straight away", async () => {
+    const bundle = await bundleFor(investor);
+
+    expect(bundle.documents.length).toBeGreaterThan(0);
   });
 
   /**
