@@ -162,9 +162,10 @@ The default remains the in-memory fixture store. The separate
 [connection and migration tooling](src/backend/infrastructure/database/README.md)
 uses `PG*` and `SUNSUM_DATABASE_AUTH`; those settings do not configure the
 application adapter. The [development deployment guide](infrastructure/docs/deployment.md)
-records an Azure PostgreSQL-backed deployment. That evidence is separate from
-the public frontend smoke test and does not establish authenticated participants
-or verify every prepared provisioning path.
+describes the current infrastructure test stack separately from the
+[earlier PostgreSQL-backed smoke app](infrastructure/docs/deployment.md#earlier-database-backed-smoke-app).
+Creating infrastructure does not activate the application store, establish
+authenticated participants or verify a working three-role journey.
 
 The visual baseline remains provisional, informed by earlier SolarEase mockups
 and the project's VPP flow board. Hosting the preview does not establish a
@@ -233,19 +234,39 @@ The lockfile pins versions and integrity without embedding a contributor's
 registry/proxy URLs. npm resolves those locked versions through the configured
 registry. Do not add credentials or a private registry address to `.npmrc`.
 
-### Infrastructure preparation
+## Infrastructure deployment
 
-The [infrastructure runbook](infrastructure/docs/app-service-postgres.md)
-uses **Bicep and Azure CLI** for F1 Linux App Service code deployment and
-separately billable PostgreSQL and Standard LRS private Blob containers.
-Approved internal/guest sign-in and container-scoped Blob grants are separate
-administrator-gated steps. No container registry or new orchestration framework
-is required. Templates and local checks do not authorize or establish cloud
-provisioning. Python viability and deployed logging/health configuration remain
-pending, as do user-to-business-role mapping and document upload/download services.
+Start with the [infrastructure deployment guide](infrastructure/docs/deployment.md#infrastructure-deployment).
+The current **Bicep and Azure CLI** entry creates or updates a separate dev-test
+stack in an existing resource group: a **paid B1/Basic Linux App Service plan**,
+fixture-backed web app, private Standard LRS Blob Storage and a new Entra-only
+PostgreSQL server with an empty database. PostgreSQL and Storage are separately
+billable. Test names remain in use; this is not a data copy or application rollout.
+
+With PowerShell 7.2+ and Bicep CLI installed, run from the repository root:
+
+```powershell
+pwsh -NoProfile -File infrastructure/scripts/Deploy-Infrastructure.ps1
+```
+
+This default command compiles and validates locally; it makes no Azure calls.
+The public parameters contain redacted tenant/administrator values. Before
+using `-Preview` or `-Apply`, follow the guide's
+[identity setup](infrastructure/docs/deployment.md#local-identity-setup) and
+[commands](infrastructure/docs/deployment.md#commands). The local identity backup
+is not loaded automatically. Preview is read-only; apply requires explicit
+authorization and uses the same workflow for creation, updates and unchanged reruns.
+
+Infrastructure deployment does **not** upload application code, run migrations,
+grant runtime database access or activate the PostgreSQL-backed application store.
+The web app remains `SUNSUM_STORE=mock`. The separate code-deployment script and
+legacy provisioning workflow still use F1 guards and are not the entry points for
+this B1 test stack. See the [operating guide](infrastructure/docs/app-service-postgres.md)
+for separately authorized network approvals, SQL bootstrap, sign-in and Blob grants.
+No container registry or orchestration framework is required.
 
 The [database guide](src/backend/infrastructure/database/README.md) documents
-the shared environment contract, managed identity, dependency injection,
+the separate operator environment contract, managed identity, dependency injection,
 `npm run db:check`, and reviewed Azure migrations using main's canonical
 `src/backend/db` SQL. Existing local database commands remain local-only.
 These do not make `/join` persistent

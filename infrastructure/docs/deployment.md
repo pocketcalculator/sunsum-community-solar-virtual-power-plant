@@ -37,9 +37,11 @@ Names identify resource type, project, environment, test purpose and region;
 Storage omits hyphens to meet its naming rules. Resource tags use `dev-test`.
 The containers retain `site-documents` and `project-documents` under the new
 account; other child names such as `default` and `ftp` are scoped to their new
-parents. These are new deployment targets, not Azure resource renames. Existing
-resources and any partial earlier attempts are not deleted or modified by this
-name change and require separate review before cleanup.
+parents. These names select deployment targets, not Azure resource renames.
+Missing targets are created; targets that already exist are updated to the
+declared state. Inspect the preview rather than assuming every target is new.
+Resources under other names and any partial earlier attempts are not cleaned up
+by changing parameters; cleanup requires a separate review.
 
 PostgreSQL uses the restored creation defaults: version 17, Burstable
 `Standard_B1ms`, 32 GiB, seven-day local backups and Entra-only authentication.
@@ -52,13 +54,9 @@ and `postgresAdminPrincipalName`. The two IDs use the all-zero UUID and the name
 uses `<postgres-admin-principal-name>`. These are compilation placeholders, not
 deployable identities. Preview/apply rejects them locally before any Azure call.
 
-Keep the real values in ignored `.azure/dev/identity-values.json` on your machine;
-that file is a local reference, not automatically loaded by the script. For an
-authorized deployment, supply them in your local native parameter file and restore
-the placeholders before committing. Alternatively, use an ignored copy of the
-parameters and config through `-ConfigPath`, adjusting relative paths and the
-native `using` target. Never force-add the local values or generated artifacts.
-No passwords, tokens or environment variables are required by this input contract.
+Use the [local identity setup](#local-identity-setup) below before preview/apply.
+No passwords, tokens or environment variables are required in these parameter
+files; Azure CLI authentication is still required for cloud operations.
 
 ### Prerequisites
 
@@ -78,22 +76,67 @@ No passwords, tokens or environment variables are required by this input contrac
   Deployment also requires permission to configure the new PostgreSQL Entra
   administrator; selecting an identity is not proof of those permissions.
 
+### Local identity setup
+
+The recommended deployment setup keeps private values out of tracked files.
+The following local copies are needed only for preview/apply, not for the default
+local compilation command. No compiled artifacts or approval files are inputs.
+
+1. Create `.azure/dev/` if needed. Copy `infrastructure/config/dev.json` to
+   `.azure/dev/deployment.local.json` and `infrastructure/templates/resources.dev.bicepparam`
+   to `.azure/dev/resources.local.bicepparam`. Do not overwrite existing local
+   copies without reviewing them.
+2. In the local config, keep the approved subscription, resource group and
+   deployment name. Set `templatePath` to `../../infrastructure/templates/resources.bicep`
+   and `parametersPath` to `resources.local.bicepparam`.
+3. In the local parameters, set the first line to
+   `using '../../infrastructure/templates/resources.bicep'`. Supply the approved
+   values for the fields below and verify that `postgresAdminPrincipalType`
+   matches the selected identity (`User`, `Group` or `ServicePrincipal`).
+4. Keep both local copies ignored by Git. Do not force-add them, paste real values
+   into the public parameter file, or include generated artifacts in a commit.
+
+| Local parameter | Value to supply |
+| --- | --- |
+| `tenantId` | The approved Entra tenant ID, a nonempty UUID. |
+| `postgresAdminObjectId` | The selected administrator's object ID in that tenant, not an app/client ID. |
+| `postgresAdminPrincipalName` | The approved principal name matching that object and principal type. |
+
+If `.azure/dev/identity-values.json` already exists on your machine, it is only a
+local reference for these three values. The script does not create or load it,
+and the repository does not provide the real values. Obtain them through your
+approved identity process if you do not have that local reference. Do not change
+the Azure CLI deployment identity or grant roles as part of filling these fields.
+
+Both config paths resolve relative to `.azure/dev/`; the native `using` path
+resolves relative to the local parameter file. The script verifies that they
+refer to the same Bicep root. Local copies do not automatically pick up later
+changes to the tracked dev inputs: compare them before each deployment.
+
 ### Commands
 
-Run from the repository root:
+Run from the repository root. The first command works with the public redacted
+parameters and needs no Azure login:
 
 ```powershell
 # Compile and validate locally; no Azure calls.
 pwsh -NoProfile -File infrastructure/scripts/Deploy-Infrastructure.ps1
-# Read-only Azure preview.
-pwsh -NoProfile -File infrastructure/scripts/Deploy-Infrastructure.ps1 -Preview
-# Azure writes, only after reviewing the preview and authorizing deployment.
-pwsh -NoProfile -File infrastructure/scripts/Deploy-Infrastructure.ps1 -Apply
 ```
 
-The default config is `infrastructure/config/dev.json`. Its paths resolve from
-the config directory, not the terminal directory. `-ConfigPath <file>` selects
-an explicit alternative; no environment selector is required. See the
+After completing [local identity setup](#local-identity-setup), use the same
+local config for preview and apply:
+
+```powershell
+# Read-only Azure preview.
+pwsh -NoProfile -File infrastructure/scripts/Deploy-Infrastructure.ps1 -ConfigPath .azure/dev/deployment.local.json -Preview
+# Azure writes, only after reviewing the preview and authorizing deployment.
+pwsh -NoProfile -File infrastructure/scripts/Deploy-Infrastructure.ps1 -ConfigPath .azure/dev/deployment.local.json -Apply
+```
+
+Without `-ConfigPath`, the script reads `infrastructure/config/dev.json`, whose
+parameters still contain redactions. Adding only `-Preview` or `-Apply` will
+therefore fail locally until real identity inputs are supplied. `-Preview` and
+`-Apply` are mutually exclusive; neither is implied by the config. See the
 [template configuration contract](../templates/README.md#configuration-contract)
 for the inputs and their ownership.
 
@@ -129,7 +172,9 @@ Service plans must be B1/Basic. What-if must expose `sku.name=B1`; Azure may omi
 the derived `sku.tier`, but when supplied it must be the string `Basic`.
 Existing-plan reads still require both fields. Other SKUs, conflicting or malformed
 tiers and missing SKU names block deployment. What-if can mask or omit properties,
-and the checks do not replace source review, budget approval, Azure Policy or RBAC.
+and a successful preview is not a guarantee that resource-provider validation will
+accept an apply. The checks do not replace source review, budget approval, Azure
+Policy or RBAC.
 
 All top-level test resources use distinct names from the earlier resources.
 Incremental mode leaves those earlier resources in place; it neither deletes
@@ -214,7 +259,8 @@ az deployment group show \
 
 Sign in to the maintenance database as an Entra administrator and create the
 role. The role name must equal the web app name, because that is the name the
-application presents as `PGUSER`:
+earlier template sets as the username in `DATABASE_URL`. This is distinct from
+the current test stack's `PGUSER` operator output:
 
 ```bash
 PGPASSWORD="$(az account get-access-token --resource-type oss-rdbms --query accessToken --output tsv)" \
@@ -341,13 +387,12 @@ az postgres flexible-server show --resource-group rg-sunsum-solar-dev-centralus 
   --name db-sunsum-dev-centralus --query state --output tsv
 ```
 
-A `Stopped` server starts with `az postgres flexible-server start` using the
-same arguments, and reaches `Ready` in about a minute. The site recovers on its
-next request without redeployment. Azure also stops a flexible server on its
-own after seven idle days, so a demo environment left alone over a break comes
-back in this state. If the server is running, compare the site's current egress
-IPs with the approved exact-IP firewall rules. Any allowance changes require
-separate review; do not enable an Azure-wide bypass.
+If the server is `Stopped`, an explicitly authorized operator can start it with
+`az postgres flexible-server start` using the same target arguments. Wait for
+`Ready` and verify connectivity; this is a separate cloud write, not a routine
+infrastructure retry. If the server is running, compare the site's current
+egress IPs with the approved exact-IP firewall rules. Any allowance changes
+require separate review; do not enable an Azure-wide bypass.
 
 `Password returned by client is empty` is the opposite case: the connection
 reached PostgreSQL and the access token never arrived. That points at the token
@@ -355,7 +400,8 @@ path in `src/backend/db/client.ts` rather than at infrastructure.
 
 ### Environment notes
 
-The development plan is the free F1 tier. It cannot keep the site warm, so the
+The earlier smoke-app parameters request the free F1 tier; that is not a check
+of the live plan's current SKU. F1 cannot keep the site warm, so the
 first request after an idle period is slow, and it has a daily CPU quota that
 can stop the site altogether. A paid tier requires a separate budget and
 deployment decision; it is not a fallback for a failed deployment or cold start.
