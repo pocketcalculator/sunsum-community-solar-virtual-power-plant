@@ -23,8 +23,8 @@ info:
     > `src/backend/viability/index.ts` (merged in #34) POSTs to `/assessments` and
     > translates WS4's verdict vocabulary (`viable`, `potentially_viable`,
     > `not_viable`, `insufficient_information`) into the three `VIABILITY_STATUSES`
-    > this document lists, via a `satisfies`-checked map so a new upstream verdict
-    > fails the build rather than reaching the database. The wire is aligned; only
+> > this document lists. Unknown upstream recommendations are rejected at runtime
+> > before they can reach the database; the wire is aligned, and only this document
     > this document is behind.
     >
     > The body below is preserved as the original WS2 proposal, which is what §9.1's
