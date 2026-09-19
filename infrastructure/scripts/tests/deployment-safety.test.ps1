@@ -842,7 +842,16 @@ try {
             if ($LASTEXITCODE -ne 0) { throw "Cannot compile $templateName." }
             $compiled = ($compiledJson -join "`n") | ConvertFrom-Json -AsHashtable
             if ($templateName -ceq 'web') {
+                $planResource = @($compiled.resources | Where-Object { $_.type -ceq 'Microsoft.Web/serverfarms' })
                 $webResource = @($compiled.resources | Where-Object { $_.type -ceq 'Microsoft.Web/sites' })
+                $planReference = "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]"
+                if ($planResource.Count -ne 1 -or $planResource[0].sku.name -cne 'B1' -or
+                    $planResource[0].sku.tier -cne 'Basic' -or $planResource[0].sku.capacity -ne 1 -or
+                    $planResource[0].kind -cne 'linux' -or $planResource[0].properties.reserved -ne $true -or
+                    $webResource.Count -ne 1 -or $webResource[0].properties.serverFarmId -cne $planReference -or
+                    $planReference -cnotin $webResource[0].dependsOn -or $webResource[0].properties.siteConfig.alwaysOn -ne $false) {
+                    throw 'The web module must create one Linux B1/Basic plan and link the web app to it with Always On disabled.'
+                }
                 $settings = @($webResource[0].properties.siteConfig.appSettings)
                 $store = @($settings | Where-Object { $_.name -ceq 'SUNSUM_STORE' })
                 if ($store.Count -ne 1 -or $store[0].value -cne 'mock' -or
@@ -853,6 +862,29 @@ try {
                     if ($compiled.parameters.Contains($removed)) { throw 'Unused database inputs must not remain in the web module.' }
                 }
                 continue
+            }
+            $modules = @($compiled.resources | Where-Object { $_.type -ceq 'Microsoft.Resources/deployments' })
+            $postgresModule = @($modules | Where-Object { $_.properties.parameters.Contains('serverName') })
+            if ($modules.Count -ne 3 -or $postgresModule.Count -ne 1) { throw 'The root must deploy web, Storage and PostgreSQL modules.' }
+            $postgresInputs = $postgresModule[0].properties.parameters
+            foreach ($binding in @{ serverName='postgresServerName'; databaseName='databaseName'; tenantId='tenantId'; adminObjectId='postgresAdminObjectId'; adminPrincipalName='postgresAdminPrincipalName'; adminPrincipalType='postgresAdminPrincipalType' }.GetEnumerator()) {
+                if ($postgresInputs[$binding.Key].value -cne "[parameters('$($binding.Value)')]") { throw "PostgreSQL input is not bound to the root: $($binding.Key)" }
+            }
+            $postgresResources = $postgresModule[0].properties.template.resources
+            if ($postgresResources -is [System.Collections.IDictionary]) { $postgresResources = @($postgresResources.Values) }
+            $server = @($postgresResources | Where-Object { $_.type -ceq 'Microsoft.DBforPostgreSQL/flexibleServers' })
+            $database = @($postgresResources | Where-Object { $_.type -ceq 'Microsoft.DBforPostgreSQL/flexibleServers/databases' })
+            $administrator = @($postgresResources | Where-Object { $_.type -ceq 'Microsoft.DBforPostgreSQL/flexibleServers/administrators' })
+            if ($server.Count -ne 1 -or $server[0].properties.createMode -cne 'Default' -or
+                $server[0].properties.authConfig.activeDirectoryAuth -cne 'Enabled' -or
+                $server[0].properties.authConfig.passwordAuth -cne 'Disabled' -or
+                $database.Count -ne 1 -or $administrator.Count -ne 1 -or
+                @($postgresResources | Where-Object { $_.type -like '*/firewallRules' }).Count) {
+                throw 'The root must create a new Entra-only PostgreSQL server, administrator and database without firewall rules.'
+            }
+            if ($compiled.outputs.PGHOST.value -notlike '*outputs.fqdn.value]*' -or
+                $compiled.outputs.AZURE_POSTGRES_SERVER_NAME.value -notlike '*outputs.name.value]*') {
+                throw 'Database connection outputs must come from the new PostgreSQL module.'
             }
             $roleParameter = $compiled.parameters.runtimeRoleName
             if ($roleParameter.allowedValues.Count -ne 1 -or $roleParameter.allowedValues[0] -cne 'sunsum_runtime' -or
@@ -878,7 +910,7 @@ try {
                 }
             }
         }
-        Write-Output 'Template guards passed: fixture-only web settings and nine root runtime-role parameter cases.'
+        Write-Output 'Template guards passed: complete test stack creation, B1 plan, Entra-only PostgreSQL, fixture-only web settings and nine root runtime-role parameter cases.'
         $databaseTemplate = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\templates\modules\postgres.bicep'))
         $compiledJson = & $BicepPath build $databaseTemplate --no-restore --stdout
         if ($LASTEXITCODE -ne 0) { throw 'Cannot compile the PostgreSQL database-name guard.' }

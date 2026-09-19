@@ -54,7 +54,7 @@ try {
     $snapshots.Add($parameters)
     $compiled = Get-Content -LiteralPath $template.Path -Raw | ConvertFrom-Json -AsHashtable
     $inputs = Get-Content -LiteralPath $parameters.Path -Raw | ConvertFrom-Json -AsHashtable
-    Assert-InfrastructureTemplate -Compiled $compiled -Inputs $inputs
+    Assert-InfrastructureTemplate -Compiled $compiled -Inputs $inputs -RequireDeploymentIdentity:($Preview -or $Apply)
     Write-Output "Compiled artifacts: $runDirectory"
     if (-not $Preview -and -not $Apply) {
         Write-Output 'Bicep sources compiled and validated locally. No Azure calls.'

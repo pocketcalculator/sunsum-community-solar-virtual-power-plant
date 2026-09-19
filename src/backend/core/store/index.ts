@@ -96,6 +96,7 @@ export function demoFundingNeedId(
 }
 
 export const DEMO_DOCUMENT_ID = "d5500000-0000-4000-8000-000000000001";
+export const DEMO_ENGAGEMENT_ID = "e5500000-0000-4000-8000-000000000001";
 
 function demoState(seedDemoProjects: boolean): StoreState {
   const projects = seedDemoProjects
@@ -147,12 +148,50 @@ function demoState(seedDemoProjects: boolean): StoreState {
     createdAt: DEMO_CREATED_AT,
   }));
 
+  /**
+   * One seeded engagement, on the first investor-visible project.
+   *
+   * The charter's definition of success asks for "a portfolio view with at
+   * least one open deal room", and `getDealRoom` opens one only for an
+   * investor with an active engagement. Without this row the investor's first
+   * click in the demo is a 403 on the very screen the role exists to show.
+   *
+   * Deliberately *one*: the remaining visible projects stay unengaged so the
+   * express-interest path is still demonstrable live. Seeding every project
+   * would hide the transition this role's workflow is about.
+   *
+   * Selected by visibility rather than by position, because an engagement on an
+   * unpublished project would let the investor reach a project the operator
+   * never released. `src/backend/db/seed.sql` asserts the same invariant.
+   */
+  const engagedProject = projects.find((project) => project.visibleToInvestors);
+
+  const engagements: EngagementRecord[] =
+    engagedProject === undefined
+      ? []
+      : [
+          {
+            id: DEMO_ENGAGEMENT_ID,
+            investorId: DEMO_INVESTOR_ID,
+            investorUserId: DEMO_INVESTOR_USER_ID,
+            projectId: engagedProject.id,
+            fundingNeedId: null,
+            state: "interested",
+            stateChangedAt: DEMO_CREATED_AT,
+            committedAmount: null,
+            commitmentInstrument: null,
+            isBinding: false,
+            declineReason: null,
+            createdAt: DEMO_CREATED_AT,
+          },
+        ];
+
   return {
     sites,
     assessments,
     projects,
     activities: [],
-    engagements: [],
+    engagements,
     fundingNeeds: projects.flatMap((project, projectIndex) =>
       Array.from({ length: project.openFundingNeedsCount }, (_, needIndex) => ({
         id: demoFundingNeedId(projectIndex, needIndex),
@@ -303,17 +342,67 @@ class MemoryBackendStore implements BackendStore {
   }
 
   listProjects(): Promise<readonly ProjectRecord[]> {
-    return Promise.resolve(this.state.projects);
+    return Promise.resolve(
+      this.state.projects.map((project) => this.withLatestAssessment(project)),
+    );
   }
 
   getProject(id: string): Promise<ProjectRecord | null> {
-    return Promise.resolve(this.state.projects.find((item) => item.id === id) ?? null);
+    const project = this.state.projects.find((item) => item.id === id);
+    return Promise.resolve(
+      project === undefined ? null : this.withLatestAssessment(project),
+    );
   }
 
   getProjectBySite(siteId: string): Promise<ProjectRecord | null> {
+    const project = this.state.projects.find((item) => item.siteId === siteId);
     return Promise.resolve(
-      this.state.projects.find((item) => item.siteId === siteId) ?? null,
+      project === undefined ? null : this.withLatestAssessment(project),
     );
+  }
+
+  /**
+   * Project rows carry a copy of the screening result, and the copy is derived
+   * rather than stored — exactly as `DatabaseBackendStore` derives it, with a
+   * `selectDistinctOn` over the site's assessments ordered by `created_at DESC,
+   * id DESC`.
+   *
+   * Reading it straight off the stored record was correct only while
+   * assessments never changed after they were written. `overrideAssessment`
+   * appends a new one, so a stored copy goes stale the moment an operator
+   * overrides a result — and it goes stale *here only*, leaving PostgreSQL
+   * reporting the override while the in-memory store reported the screening it
+   * replaced. The two stores are required to answer identically, and the
+   * divergence would have shown up as an investor portfolio that disagreed with
+   * the operator's own decision.
+   */
+  private withLatestAssessment(project: ProjectRecord): ProjectRecord {
+    const latest = this.state.assessments
+      .filter((item) => item.siteId === project.siteId)
+      .sort((a, b) =>
+        a.createdAt === b.createdAt
+          ? b.id.localeCompare(a.id)
+          : b.createdAt.localeCompare(a.createdAt),
+      )
+      .at(0);
+
+    if (latest === undefined) return project;
+
+    return {
+      ...project,
+      preliminaryProjectType: latest.preliminaryProjectType,
+      /**
+       * A project with no assessment keeps whatever the record already held;
+       * the database answers `more_information_required` for that case in
+       * `toProjectRecord`, and it is reached there through a LEFT JOIN rather
+       * than through this branch.
+       */
+      viabilityStatus: latest.viabilityStatus,
+      estimatedSystemSizeKwLow: latest.estimatedSystemSizeKwLow,
+      estimatedSystemSizeKwHigh: latest.estimatedSystemSizeKwHigh,
+      estimatedAnnualGenerationKwhLow: latest.estimatedAnnualGenerationKwhLow,
+      estimatedAnnualGenerationKwhHigh: latest.estimatedAnnualGenerationKwhHigh,
+    };
   }
 
   addProject(project: ProjectRecord): Promise<void> {

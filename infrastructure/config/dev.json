@@ -1,7 +1,7 @@
 {
   "subscriptionId": "f941228c-d6df-4b2f-93e0-2221773d2ba1",
   "resourceGroupName": "rg-sunsum-solar-dev-centralus",
-  "deploymentName": "sunsum-dev-infrastructure",
+  "deploymentName": "sunsum-dev-test-infrastructure",
   "templatePath": "../templates/resources.bicep",
   "parametersPath": "../templates/resources.dev.bicepparam"
 }

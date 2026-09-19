@@ -4,8 +4,11 @@ import {
   getPipeline,
   decideSubmission,
   isProjectStage,
+  isViabilityStatus,
+  overrideAssessment,
   updateProject,
   updateProjectVisibility,
+  type AssessmentOverrideInput,
   type DecisionInput,
   type ProjectUpdateInput,
 } from "../../core/projects";
@@ -54,6 +57,62 @@ export async function postSubmissionDecisionRoute(
     viewer.value,
     (await context.params).id,
   );
+}
+
+export async function handlePostAssessmentOverride(
+  request: Request,
+  viewer: Viewer,
+  siteId: string,
+  store: BackendStore = demoBackendStore,
+): Promise<Response> {
+  const id = validatePathId(siteId, "invalid_body");
+  if (!id.ok) return failureResponse(id.failure);
+  const body = await readJsonObject(request);
+  if (!body.ok) return failureResponse(body.failure);
+  const input = parseAssessmentOverride(body.value);
+  if (!input.ok) return failureResponse(input.failure);
+  const result = await overrideAssessment(viewer, siteId, input.value, store);
+  /**
+   * 201, not 200: the override appends a new assessment rather than editing
+   * the one it replaces, so a resource really was created.
+   */
+  return result.ok
+    ? jsonResponse(result.value, 201)
+    : failureResponse(result.failure);
+}
+
+export async function postAssessmentOverrideRoute(
+  request: Request,
+  context: RouteContext,
+): Promise<Response> {
+  const viewer = await requireRole(request, "operator");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handlePostAssessmentOverride(
+    request,
+    viewer.value,
+    (await context.params).id,
+  );
+}
+
+export function parseAssessmentOverride(
+  body: JsonObject,
+): Result<AssessmentOverrideInput> {
+  const keys = rejectUnknownKeys(body, ["viability_status", "reason"]);
+  if (!keys.ok) return keys;
+  if (typeof body.viability_status !== "string") {
+    return failure("invalid_body", "Expected a string.", {
+      field: "viability_status",
+    });
+  }
+  if (!isViabilityStatus(body.viability_status)) {
+    return failure("invalid_body", "Unknown viability status.", {
+      field: "viability_status",
+    });
+  }
+  if (typeof body.reason !== "string") {
+    return failure("invalid_body", "Expected a string.", { field: "reason" });
+  }
+  return ok({ viabilityStatus: body.viability_status, reason: body.reason });
 }
 
 export async function handlePostProjectStage(
