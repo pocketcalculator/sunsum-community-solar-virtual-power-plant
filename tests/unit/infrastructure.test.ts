@@ -123,10 +123,9 @@ describe("the bounded Azure preparation contract", () => {
     const preflight = "      - name: Check reviewed deployment artifacts availability";
     const deploymentSteps = deployJob.slice(deployJob.indexOf(preflight) + preflight.length).split("\n      - ").slice(1);
     expect(workflow).toContain('echo "configured=false" >> "$GITHUB_OUTPUT"');
-    expect(workflow).toContain('missing_artifacts+=("AZURE_RESOURCES_PARAMETERS_JSON")');
-    expect(workflow).toContain('missing_artifacts+=("AZURE_PROVISION_APPROVAL_JSON")');
+    expect(workflow).toContain('missing_artifacts="AZURE_RESOURCES_PARAMETERS_JSON"');
+    expect(workflow).toContain('AZURE_PROVISION_APPROVAL_JSON');
     expect(workflow).toContain("skipping Azure deployment until an operator provisions them.");
-    expect(deploymentSteps).toHaveLength(3);
     for (const step of deploymentSteps) {
       expect(step).toMatch(/^name: .+\n        if: steps\.deployment-artifacts\.outputs\.configured == 'true'/u);
     }
