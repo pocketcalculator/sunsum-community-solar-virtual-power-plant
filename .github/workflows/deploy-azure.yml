@@ -134,8 +134,11 @@ jobs:
           APPROVAL_JSON: ${{ secrets.AZURE_PROVISION_APPROVAL_JSON }}
         run: |
           set -euo pipefail
-          if [ -z "$PARAMETERS_JSON" ] || [ -z "$APPROVAL_JSON" ]; then
-            echo "::notice::AZURE_RESOURCES_PARAMETERS_JSON and/or AZURE_PROVISION_APPROVAL_JSON are not configured yet; skipping Azure deployment until an operator provisions them."
+          missing_artifacts=()
+          [ -n "$PARAMETERS_JSON" ] || missing_artifacts+=("AZURE_RESOURCES_PARAMETERS_JSON")
+          [ -n "$APPROVAL_JSON" ] || missing_artifacts+=("AZURE_PROVISION_APPROVAL_JSON")
+          if [ "${#missing_artifacts[@]}" -gt 0 ]; then
+            echo "::notice::Missing reviewed deployment artifact secrets: ${missing_artifacts[*]}; skipping Azure deployment until an operator provisions them."
             echo "configured=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
