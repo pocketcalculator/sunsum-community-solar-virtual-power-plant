@@ -121,13 +121,16 @@ describe("the bounded Azure preparation contract", () => {
     const workflow = read(".github/workflows/deploy-azure.yml");
     const deployJob = workflow.slice(workflow.indexOf("  deploy:"));
     const preflight = "      - name: Check reviewed deployment artifacts availability";
-    const deploymentSteps = deployJob.slice(deployJob.indexOf(preflight) + preflight.length).split("\n      - ").slice(1);
+    const preflightIndex = deployJob.indexOf(preflight);
+    expect(preflightIndex).toBeGreaterThanOrEqual(0);
+    const deploymentSteps = deployJob.slice(preflightIndex + preflight.length).split("\n      - ").slice(1);
     expect(workflow).toContain('echo "configured=false" >> "$GITHUB_OUTPUT"');
     expect(workflow).toContain('missing_artifacts="AZURE_RESOURCES_PARAMETERS_JSON"');
     expect(workflow).toContain('AZURE_PROVISION_APPROVAL_JSON');
     expect(workflow).toContain("skipping Azure deployment until an operator provisions them.");
+    expect(deploymentSteps.length).toBeGreaterThan(0);
     for (const step of deploymentSteps) {
-      expect(step).toMatch(/^name: .+\n        if: steps\.deployment-artifacts\.outputs\.configured == 'true'/u);
+      expect(step).toContain("if: steps.deployment-artifacts.outputs.configured == 'true'");
     }
   });
 
