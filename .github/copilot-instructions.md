@@ -60,8 +60,10 @@ coverage without verifiable evidence.
   `SUNSUM_STORE=db`, otherwise the fixture store is the default. New clients for
   the separate Azure/operator tooling belong in `src/backend/infrastructure/database`.
   Inject stores at the composition boundary; core, handlers, and browser code
-  must not construct clients. `/join` still saves nothing and endpoint identities
-  remain fixed demo principals, not authenticated participants.
+  must not construct clients. `/join` posts to `POST /api/profiles`, which
+  appends a `participant_profiles` row; that row is a pre-account record and
+  grants nothing. Endpoint identities remain fixed demo principals, not
+  authenticated participants.
 - Application persistence uses `DATABASE_URL` and `SUNSUM_DB_AUTH`; the separate
   connection/migration tooling uses `PG*` and `SUNSUM_DATABASE_AUTH`. Supplying
   `PG*` alone does not activate or configure the application store. Do not merge
