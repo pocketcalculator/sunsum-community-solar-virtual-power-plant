@@ -103,7 +103,7 @@ try {
     if ([string]::IsNullOrWhiteSpace($deploymentId)) {
         throw 'Azure CLI did not return an async deployment id; cannot verify the submitted deployment status.'
     }
-    # Kudu deployment status enum: 3 = Failed, 4 = Success.
+    # Kudu deployment status enum: 0 = Pending, 1 = Building, 2 = Deploying, 3 = Failed, 4 = Success.
     $kuduDeploymentFailedStatus = '3'
     $kuduDeploymentSuccessStatus = '4'
     $deploymentSucceeded = $false
