@@ -411,8 +411,9 @@ paths:
         Serves the file with the content type held on the record.
 
         Restricted to the site owner and operators. Investors see tier-1
-        document *metadata* through the deal room; content delivery for them is
-        the §7.6 short-lived-SAS design and is not implemented.
+        document *metadata* through the deal room and download it through
+        `GET /projects/{id}/documents/{documentId}/content`, which applies the
+        deal room's own entitlement gate.
       parameters:
         - $ref: "#/components/parameters/ResourceId"
         - $ref: "#/components/parameters/DocumentId"
@@ -716,6 +717,133 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
+  /projects/{id}/documents:
+    post:
+      tags: [Projects]
+      operationId: addProjectDocument
+      summary: Record metadata for a document produced about a project
+      description: |
+        The project-scoped half of the document API. A site document is
+        evidence an owner supplies before acceptance; a project document is
+        what the platform produces after it — a screening report or an
+        AI-assisted underwriting summary — so it hangs off the project.
+
+        Operator-only, unlike the site route: a project exists only once an
+        operator has accepted the site, and only an operator may decide what is
+        disclosed to investors. Set `disclosure_class` to `investor_tier_1` to
+        publish the document into the deal room; it defaults to
+        `owner_private`, which is visible to the operator and the site owner
+        alone.
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocumentCreateRequest" }
+      responses:
+        "201":
+          description: Stored metadata; raw blob_path is never returned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
+  /projects/{id}/documents/{documentId}/content:
+    put:
+      tags: [Projects]
+      operationId: putProjectDocumentContent
+      summary: Upload the bytes for a project document that was already registered
+      description: |
+        Mirrors `PUT /sites/{id}/documents/{documentId}/content`: the blob
+        location comes from the stored record, the request's `Content-Type` is
+        ignored in favour of the type validated at registration, and the body
+        length must equal the registered `size_bytes`.
+
+        Operator-only. Reading is wider than writing here — an investor
+        consumes a deal room, it never supplies one.
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - $ref: "#/components/parameters/DocumentId"
+      requestBody:
+        required: true
+        description: The raw file bytes. Not base64, and not wrapped in JSON.
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Stored. Returns the unchanged metadata; raw blob_path is never returned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400":
+          description: |
+            Empty body, a body larger than the 10 MB cap, or a length that
+            disagrees with the registered `size_bytes`. A size mismatch carries
+            `expected_size_bytes` and `received_size_bytes` in `details`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
+    get:
+      tags: [Projects]
+      operationId: getProjectDocumentContent
+      summary: Download the bytes for a project document
+      description: |
+        A role may download exactly what its own view already lists. Operators
+        read anything on the project; the site owner reads anything belonging
+        to their own site and its project, which is what their dashboard lists;
+        an investor reads only `investor_tier_1` documents, and only with
+        completed onboarding, an investor-visible project, and a live tier-one
+        engagement — the same gate the deal room applies.
+
+        A document an investor is not entitled to returns `404`, not `403`, so
+        that a reader cannot learn it exists.
+
+        The lookup matches either parent, so a tier-1 document registered
+        against the site before acceptance is downloadable here too. This is
+        the route that makes the deal room's document list actionable.
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: |
+            The file. Always `Content-Disposition: attachment` with an RFC 5987
+            encoded filename and `X-Content-Type-Options: nosniff`, so an
+            uploaded file is never rendered in the origin.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: "`attachment; filename*=UTF-8''<encoded original filename>`"
+            X-Content-Type-Options:
+              schema: { type: string, enum: [nosniff] }
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: |
+            No such document, the record exists but nothing has been uploaded
+            against it yet, or the caller is an investor who is not entitled to
+            it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "503": { $ref: "#/components/responses/AuthUnavailable" }
   /projects/{id}/deal-room:
     get:
