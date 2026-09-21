@@ -1,0 +1,137 @@
+name: Deploy SunSum Test Infrastructure (No Approval Artifacts)
+
+# Manual test-deployment workflow. It deploys the same Bicep template as
+# deploy-azure.yml with explicit dev-test parameters instead of the reviewed
+# parameter/approval artifacts, so it must only be dispatched for the
+# disposable dev-test target. The final step creates billable Azure resources.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+# Queue runs of this test workflow so two dispatches cannot issue racing ARM
+# operations against the same resource group.
+concurrency:
+  group: deploy-azure2-${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  RESOURCE_GROUP_NAME: rg-sunsum-solar-dev-centralus
+  TEMPLATE_FILE: infrastructure/templates/resources.bicep
+  DEPLOYMENT_NAME: sunsum-test-${{ github.run_number }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: azure-infrastructure
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Azure Login
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build Bicep
+        shell: bash
+        run: |
+          set -euo pipefail
+          az bicep build --file "$TEMPLATE_FILE"
+
+      - name: Validate deployment
+        shell: bash
+        env:
+          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
+          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
+        run: |
+          set -euo pipefail
+          az deployment group validate \
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --template-file "$TEMPLATE_FILE" \
+            --parameters \
+              environmentName=dev-test \
+              location=centralus \
+              appServicePlanName=asp-sunsum-dev-test-centralus \
+              webAppName=app-sunsum-dev-test-centralus \
+              storageAccountName=stsunsumdevtestcentralus \
+              postgresServerName=db-sunsum-dev-test-centralus \
+              databaseName=sunsum_test \
+              runtimeRoleName=sunsum_runtime \
+              tenantId="$TENANT_ID" \
+              postgresAdminObjectId="$POSTGRES_ADMIN_OBJECT_ID" \
+              postgresAdminPrincipalName="$POSTGRES_ADMIN_PRINCIPAL_NAME" \
+              postgresAdminPrincipalType=User \
+              postgresTier=Burstable \
+              postgresSkuName=Standard_B1ms \
+              postgresStorageSizeGB=32 \
+              postgresVersion=17
+
+      - name: Show what-if
+        shell: bash
+        env:
+          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
+          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
+        run: |
+          set -euo pipefail
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --template-file "$TEMPLATE_FILE" \
+            --parameters \
+              environmentName=dev-test \
+              location=centralus \
+              appServicePlanName=asp-sunsum-dev-test-centralus \
+              webAppName=app-sunsum-dev-test-centralus \
+              storageAccountName=stsunsumdevtestcentralus \
+              postgresServerName=db-sunsum-dev-test-centralus \
+              databaseName=sunsum_test \
+              runtimeRoleName=sunsum_runtime \
+              tenantId="$TENANT_ID" \
+              postgresAdminObjectId="$POSTGRES_ADMIN_OBJECT_ID" \
+              postgresAdminPrincipalName="$POSTGRES_ADMIN_PRINCIPAL_NAME" \
+              postgresAdminPrincipalType=User \
+              postgresTier=Burstable \
+              postgresSkuName=Standard_B1ms \
+              postgresStorageSizeGB=32 \
+              postgresVersion=17
+
+      # This step creates billable Azure resources (App Service plan,
+      # PostgreSQL flexible server, Storage account) in the dev-test target.
+      - name: Deploy test infrastructure
+        shell: bash
+        env:
+          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
+          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
+        run: |
+          set -euo pipefail
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --name "$DEPLOYMENT_NAME" \
+            --mode Incremental \
+            --template-file "$TEMPLATE_FILE" \
+            --parameters \
+              environmentName=dev-test \
+              location=centralus \
+              appServicePlanName=asp-sunsum-dev-test-centralus \
+              webAppName=app-sunsum-dev-test-centralus \
+              storageAccountName=stsunsumdevtestcentralus \
+              postgresServerName=db-sunsum-dev-test-centralus \
+              databaseName=sunsum_test \
+              runtimeRoleName=sunsum_runtime \
+              tenantId="$TENANT_ID" \
+              postgresAdminObjectId="$POSTGRES_ADMIN_OBJECT_ID" \
+              postgresAdminPrincipalName="$POSTGRES_ADMIN_PRINCIPAL_NAME" \
+              postgresAdminPrincipalType=User \
+              postgresTier=Burstable \
+              postgresSkuName=Standard_B1ms \
+              postgresStorageSizeGB=32 \
+              postgresVersion=17
