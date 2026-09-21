@@ -832,6 +832,14 @@ try {
     if ($global:AzureCodeWrites -ne 1 -or $global:AzureCodeDeploymentStatusReads -ne 1 -or $message -notlike 'Remote App Service deployment failed*') {
         throw 'A failed asynchronous Kudu deployment status must fail before the homepage probe.'
     }
+    $global:AzureCodeDeployResponseId = ''
+    $global:AzureCodeDeploymentStatusReads = 0
+    $global:AzureCodeWrites = 0
+    $message = ''
+    try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+    if ($global:AzureCodeWrites -ne 1 -or $global:AzureCodeDeploymentStatusReads -ne 0 -or $message -notlike 'Azure CLI did not return an async deployment id*') {
+        throw 'An async deployment without an id must fail before status polling.'
+    }
     $global:AzureCodeDeployResponseId = 'new-deployment'
     $global:AzureCodeDeploymentRecords = @(
         @{ id = 'previous-deployment'; status = 4; received_time = [DateTimeOffset]::UtcNow.AddMinutes(-10).ToString('o') },

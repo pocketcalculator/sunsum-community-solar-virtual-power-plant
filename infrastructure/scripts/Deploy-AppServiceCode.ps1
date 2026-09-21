@@ -18,20 +18,9 @@ Import-Module (Join-Path $PSScriptRoot 'DeploymentSafety.psm1') -Force
 function Test-SubmittedDeploymentRecord {
     param(
         [Parameter(Mandatory)][System.Collections.IDictionary] $Deployment,
-        [AllowNull()][string] $DeploymentId,
-        [Parameter(Mandatory)][DateTimeOffset] $SubmittedAt
+        [Parameter(Mandatory)][string] $DeploymentId
     )
-    if (-not [string]::IsNullOrWhiteSpace($DeploymentId)) {
-        return $Deployment.Contains('id') -and $Deployment.id -is [string] -and $Deployment.id -ceq $DeploymentId
-    }
-    foreach ($field in @('received_time', 'start_time', 'end_time')) {
-        if (-not $Deployment.Contains($field) -or $Deployment[$field] -isnot [string]) { continue }
-        $timestamp = [DateTimeOffset]::MinValue
-        if ([DateTimeOffset]::TryParse($Deployment[$field], [ref]$timestamp) -and $timestamp -ge $SubmittedAt.AddSeconds(-5)) {
-            return $true
-        }
-    }
-    return $false
+    return $Deployment.Contains('id') -and $Deployment.id -is [string] -and $Deployment.id -ceq $DeploymentId
 }
 if ($SubscriptionId -eq [guid]::Empty -or [string]::IsNullOrWhiteSpace($ApprovalReference)) {
     throw 'An explicit subscription and code-deployment review reference are required.'
@@ -96,7 +85,6 @@ try {
     }
     Assert-DeploymentSnapshot $snapshot
     Assert-DeploymentSnapshot $approvalSnapshot
-    $deploymentSubmittedAt = [DateTimeOffset]::UtcNow
     $deployRaw = & az webapp deploy --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
         --src-path $artifact.Path --type zip --clean true --async true --track-status false `
         --only-show-errors --output json
@@ -112,6 +100,9 @@ try {
     } catch {
         $deploymentId = $null
     }
+    if ([string]::IsNullOrWhiteSpace($deploymentId)) {
+        throw 'Azure CLI did not return an async deployment id; cannot verify the submitted deployment status.'
+    }
     # Kudu deployment status enum: 3 = Failed, 4 = Success.
     $kuduDeploymentFailedStatus = '3'
     $kuduDeploymentSuccessStatus = '4'
@@ -122,7 +113,7 @@ try {
         if ($LASTEXITCODE -eq 0) {
             $deployment = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
             if ($deployment -is [System.Collections.IDictionary] -and $deployment.Contains('status') -and
-                (Test-SubmittedDeploymentRecord -Deployment $deployment -DeploymentId $deploymentId -SubmittedAt $deploymentSubmittedAt)) {
+                (Test-SubmittedDeploymentRecord -Deployment $deployment -DeploymentId $deploymentId)) {
                 $status = [string]$deployment.status
                 if ($status -ceq $kuduDeploymentSuccessStatus) {
                     $deploymentSucceeded = $true
