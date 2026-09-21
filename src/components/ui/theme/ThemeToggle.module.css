@@ -13,6 +13,29 @@
   border: 0;
 }
 
+.compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: var(--space-2);
+  color: var(--text-primary);
+  background: var(--surface-neutral-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background-color var(--motion-base) var(--easing-standard);
+}
+
+.compact:hover { background: var(--surface-neutral-hover); }
+.compact:disabled { color: var(--text-muted); cursor: not-allowed; }
+.compact:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
 /* Hidden, not absent: the icons carry the meaning on screen, and the group
    still has to introduce itself to anything reading the page aloud. */
 .legend,
@@ -140,7 +163,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .label {
+  .label,
+  .compact {
     transition: none;
   }
 }

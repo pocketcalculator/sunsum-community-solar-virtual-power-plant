@@ -7,6 +7,8 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   background: var(--surface-neutral-soft);
+  margin-block: var(--space-4);
+  min-width: 0;
 }
 
 .button {
@@ -50,6 +52,8 @@
   flex-direction: column;
   gap: 2px;
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .title {
@@ -68,6 +72,19 @@
   margin: 0;
   font-size: 0.8rem;
   color: var(--text-critical);
+}
+
+.status, .license {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.license { color: var(--text-muted); font-size: var(--text-xs); }
+
+@media (prefers-reduced-motion: reduce) {
+  .player * { transition: none; animation: none; }
 }
 
 .visuallyHidden {

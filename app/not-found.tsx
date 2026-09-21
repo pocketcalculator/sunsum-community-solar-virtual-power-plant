@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { ActionLink } from "@/components/ui/ActionLink";
 import { ArrowRightIcon } from "@/components/ui/icons";
-import { ENTRY_PATHS, entryPathHref } from "@/features/participation";
+import { ENTRY_PATHS, PublicShell, entryPathHref } from "@/features/participation";
 import styles from "./not-found.module.css";
 
 export default function NotFound() {
   return (
+    <PublicShell>
     <div className={styles.page}>
       <div className={styles.inner}>
         <p className={styles.code}>404</p>
@@ -32,5 +33,6 @@ export default function NotFound() {
         </ul>
       </div>
     </div>
+    </PublicShell>
   );
 }

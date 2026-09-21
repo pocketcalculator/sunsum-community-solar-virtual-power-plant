@@ -1,0 +1,29 @@
+THIRD-PARTY AUDIO - NOT COVERED BY THE MIT CODE LICENSE
+
+The MIT license applies to SunSum project code, not to the supplied audio
+recordings or compositions. Their rights remain with their respective owners.
+The user has attested clearance for these exact excerpts on the SunSum public
+website, in the repository and in release bundles. That attestation is not an
+independent legal certification, a transfer of copyright or a general license
+for other recordings or uses.
+
+Need
+File: audio/need.mp3
+Title: Tower of Power - There's Only So Much Oil (sample)
+Attribution: Tower of Power; supplied website sample.
+
+Opportunity
+File: audio/opportunity.mp3
+Title: Ready or Not - People Are The Power (sample)
+Attribution: Supplied credit: Ready or Not - People Are The Power.
+
+Impact
+File: audio/impact.mp3
+Title: Curtis Mayfield - Power To The People (sample)
+Attribution: Curtis Mayfield; supplied website sample.
+
+The canonical public topic mapping and attribution fields are in
+src/features/participation/content/pageAudioAssets.json. This human-readable
+notice repeats only those public credits, not private provenance or another
+media manifest. Replacement guidance is in docs/ws1/media-credits.md in the
+matching source revision and operator handoff.

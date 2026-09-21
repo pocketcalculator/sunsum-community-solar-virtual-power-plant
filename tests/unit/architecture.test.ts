@@ -24,7 +24,8 @@ async function lintBoundary(file: string, source: string) {
   if (!result) throw new Error("ESLint did not inspect the synthetic module.");
   expect(result.fatalErrorCount).toBe(0);
   return result.messages.filter(
-    (message) => message.ruleId === "no-restricted-imports",
+    (message) => message.ruleId === "no-restricted-imports" ||
+      message.ruleId === "feature-composition/public-entry-only",
   );
 }
 
@@ -49,6 +50,36 @@ describe("the actual module-boundary configuration", () => {
     ["src/components/ui/probe.tsx", "fs/promises"],
     ["src/components/ui/probe.tsx", "server-only"],
     ["src/components/ui/probe.tsx", "next/headers"],
+    ["src/components/workspace/probe.tsx", "@/features/design-lab"],
+    ["src/components/workspace/probe.tsx", "@/features/live-read"],
+    ["src/components/workspace/probe.tsx", "@/backend"],
+    ["src/components/workspace/probe.tsx", "next/headers"],
+    ["src/components/workspace/probe.tsx", "node:fs"],
+    ["src/features/live-workspace/probe.tsx", "@/features/live-read/client"],
+    ["src/features/live-workspace/probe.tsx", "@/features/community-context/content/stories"],
+    ["src/features/live-workspace/probe.tsx", "@/features/demo-auth"],
+    ["src/features/live-workspace/probe.tsx", "@/features/design-lab"],
+    ["src/features/live-workspace/probe.tsx", "../live-read"],
+    ["src/features/live-workspace/probe.tsx", "../demo-auth"],
+    ["src/features/live-workspace/probe.tsx", "../../features/live-read"],
+    ["src/features/live-workspace/nested/probe.tsx", "../../demo-auth"],
+    ["src/features/live-workspace/nested/probe.tsx", "../../live-read/client"],
+    ["src/features/live-workspace/probe.tsx", "@/backend"],
+    ["src/features/live-workspace/probe.tsx", "pg"],
+    ["src/features/live-workspace/probe.tsx", "node:fs"],
+    ["src/features/live-read/probe.ts", "@/features/live-workspace"],
+    ["src/features/design-lab/probe.tsx", "@/features/community-context"],
+    ["src/features/design-lab/DemoLearning.tsx", "@/features/community-context/content/stories"],
+    ["src/features/design-lab/ComparisonView.tsx", "@/features/site-owner-dashboard/model/mockDashboard"],
+    ["src/features/design-lab/ComparisonView.tsx", "@/features/live-read"],
+    ["src/features/design-lab/ComparisonView.tsx", "../site-owner-dashboard"],
+    ["src/features/design-lab/DemoLearning.tsx", "../community-context"],
+    ["src/features/participation/probe.tsx", "@/features/live-read"],
+    ["src/features/participation/probe.tsx", "@/features/community-context/content/stories"],
+    ["src/features/participation/components/probe.tsx", "../../community-context"],
+    ["src/features/onboarding/probe.tsx", "@/features/live-read"],
+    ["src/features/onboarding/components/probe.tsx", "../../demo-auth"],
+    ["src/features/onboarding/probe.tsx", "@/features/community-context/components/PublicLearning"],
     ["src/features/participation/probe.tsx", "../../app/page"],
     ["src/features/participation/probe.tsx", "@/features/onboarding"],
     [
@@ -194,10 +225,19 @@ describe("the actual module-boundary configuration", () => {
     ["app/probe.tsx", "@/features/participation"],
     ["app/probe.tsx", "@/features/onboarding"],
     ["app/probe.tsx", "@/domain/roles"],
+    ["src/features/live-workspace/probe.tsx", "@/features/live-read"],
+    ["src/features/live-workspace/probe.tsx", "@/features/community-context"],
+    ["src/features/live-workspace/probe.tsx", "./DetailView"],
+    ["src/features/live-workspace/nested/probe.tsx", "../DetailView"],
+    ["src/features/live-workspace/nested/probe.tsx", "../../../domain/connections"],
+    ["src/features/design-lab/DemoLearning.tsx", "@/features/community-context"],
+    ["src/features/design-lab/ComparisonView.tsx", "@/features/site-owner-dashboard"],
+    ["src/features/participation/probe.tsx", "@/features/community-context"],
+    ["src/features/onboarding/probe.tsx", "@/features/community-context"],
     ["src/features/participation/probe.tsx", "@/components/ui/icon"],
     ["src/features/participation/probe.tsx", "@/domain/journey"],
     ["src/features/onboarding/probe.tsx", "@/domain/userTypes"],
-    ["src/features/onboarding/probe.tsx", "../model/steps"],
+    ["src/features/onboarding/components/probe.tsx", "../model/steps"],
     ["src/domain/probe.ts", "./roles"],
     ["src/components/ui/probe.tsx", "react"],
     ["app/probe.tsx", "@/backend"],
@@ -276,6 +316,10 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/core/probe.ts", 'export * from "pg";'],
     ["src/backend/handlers/probe.ts", 'export * from "drizzle-orm";'],
     ["src/backend/db/probe.ts", 'export * from "../infrastructure/database";'],
+    ["src/features/live-workspace/probe.tsx", 'export * from "@/backend";'],
+    ["src/features/live-workspace/probe.tsx", 'export * from "@/features/live-read/client";'],
+    ["src/features/live-workspace/probe.tsx", 'export * from "../demo-auth";'],
+    ["src/features/live-workspace/probe.tsx", 'export const load = () => import("../live-read");'],
   ])("rejects prohibited re-exports from %s", async (file, source) => {
     expect(await lintBoundary(file, source)).not.toHaveLength(0);
   });

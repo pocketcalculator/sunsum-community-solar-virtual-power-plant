@@ -1,176 +1,185 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { getUserType } from "@/domain/userTypes";
+import { describe, expect, it, vi } from "vitest";
+import { getUserType, type UserTypeId } from "@/domain/userTypes";
 import { CreateProfileFlow } from "@/features/onboarding";
-
-/**
- * The flow's navigation rules live in the step model and are tested there. This
- * covers what only the assembled component can show: that the rules still hold
- * when someone leaves the flow and comes back into it.
- */
-
-const PASSWORD = "Correct-Horse-9!";
-const PARTICIPANT_TYPE = getUserType("property-owner");
 
 function continueFlow() {
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 }
 
-function fillAccountStep() {
-  fireEvent.click(
-    screen.getByRole("radio", { name: /email address and password/i }),
-  );
-  fireEvent.change(screen.getByRole("textbox", { name: /full name/i }), {
-    target: { value: "Ada Lovelace" },
+function fillDetails() {
+  fireEvent.change(screen.getByRole("textbox", { name: "Example name" }), {
+    target: { value: "Alex Example" },
   });
-  fireEvent.change(screen.getByRole("textbox", { name: /email address/i }), {
-    target: { value: "ada@example.org" },
-  });
-  fireEvent.change(screen.getByLabelText("Password"), {
-    target: { value: PASSWORD },
+  fireEvent.change(screen.getByRole("textbox", { name: "Example email address" }), {
+    target: { value: "alex@example.org" },
   });
 }
 
-/** Walks the whole flow and presses finish. */
-function finishProfile() {
+function finishProfile(userTypeId: UserTypeId = "property-owner") {
   continueFlow();
-  fillAccountStep();
+  fillDetails();
   continueFlow();
-
   fireEvent.click(screen.getByRole("radio", { name: /as myself/i }));
   continueFlow();
-
-  fireEvent.click(screen.getByRole("radio", { name: PARTICIPANT_TYPE.label }));
+  fireEvent.click(screen.getByRole("radio", { name: getUserType(userTypeId).label }));
   continueFlow();
-
   fireEvent.click(screen.getByRole("checkbox", { name: /I understand/i }));
-  fireEvent.click(
-    screen.getByRole("button", { name: /finish and review your answers/i }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: /finish and review your answers/i }));
 }
 
-describe("create profile flow", () => {
-  it("assembles a profile and shows it back without the password", () => {
+describe("public profile preview", () => {
+  it("assembles fictional answers without credentials, service requests or persistence", () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Public preview must not fetch"));
+    const readStorage = vi.spyOn(Storage.prototype, "getItem");
+    const writeStorage = vi.spyOn(Storage.prototype, "setItem");
     const { container } = render(<CreateProfileFlow />);
+    expect(container.querySelector('input[type="password"], input[autocomplete="one-time-code"]')).toBeNull();
+    expect(container.textContent).not.toMatch(/Continue with Microsoft|Continue with Google|Continue with Apple/);
+
     finishProfile();
 
-    expect(
-      screen.getByRole("heading", { name: /your profile is assembled/i }),
-    ).toBeVisible();
-    expect(screen.getByText("ada@example.org")).toBeVisible();
-    expect(container.outerHTML).not.toContain(PASSWORD);
+    expect(screen.getByRole("heading", { name: "Your fictional profile is assembled" })).toBeVisible();
+    expect(screen.getByText("alex@example.org")).toBeVisible();
+    expect(screen.getByText(/no workspace access has been granted/i)).toBeVisible();
+    expect(container.querySelector('input[type="password"], input[autocomplete="one-time-code"]')).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(readStorage).not.toHaveBeenCalled();
+    expect(writeStorage).not.toHaveBeenCalled();
   });
 
-  it("will not let a finished profile be finished again once the password is gone", () => {
+  it("can edit and finish again without inventing a discarded credential", () => {
     render(<CreateProfileFlow />);
     finishProfile();
-
     fireEvent.click(screen.getByRole("button", { name: /go back and edit/i }));
-
-    // Editing must land on the step that is actually blocking, not the review
-    // step, or the next press of finish would sail past a missing credential.
-    expect(
-      screen.getByRole("heading", { name: /create your sign-in/i }),
-    ).toBeVisible();
-
-    const summary = screen.getByRole("alert");
-    expect(within(summary).getByText(/password/i)).toBeVisible();
-
-    continueFlow();
-
-    expect(
-      screen.getByRole("heading", { name: /create your sign-in/i }),
-    ).toBeVisible();
-    expect(
-      screen.queryByRole("heading", { name: /your profile is assembled/i }),
-    ).toBeNull();
+    expect(screen.getByRole("heading", { name: "Review your fictional profile" })).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /finish and review your answers/i }));
+    expect(screen.getByRole("heading", { name: "Your fictional profile is assembled" })).toBeVisible();
   });
 
-  it("does not offer steps that an earlier answer has blocked", () => {
+  it("does not offer steps blocked by earlier non-password answers", () => {
     render(<CreateProfileFlow />);
-
-    const stepper = screen.getByRole("navigation", {
-      name: /create profile steps/i,
-    });
-
-    expect(
-      within(stepper).queryByRole("button", { name: /review/i }),
-    ).toBeNull();
-    expect(
-      within(stepper).getAllByText(/finish an earlier step first/i).length,
-    ).toBeGreaterThan(0);
+    const stepper = screen.getByRole("navigation", { name: "Profile preview steps" });
+    expect(within(stepper).queryByRole("button", { name: /\breview\b/i })).toBeNull();
+    expect(within(stepper).getAllByText(/finish an earlier step first/i).length).toBeGreaterThan(0);
+    continueFlow();
+    continueFlow();
+    expect(screen.getByRole("alert")).toHaveFocus();
+    expect(screen.getByRole("alert")).toHaveTextContent(/enter an email address/i);
+    expect(screen.getByRole("heading", { name: "Try fictional profile details" })).toBeVisible();
   });
 
-  it("does not leave an error summary pointing at a field that has gone", () => {
+  it("removes an organisation error when the conditional field goes away", () => {
     render(<CreateProfileFlow />);
     continueFlow();
-    fillAccountStep();
+    fillDetails();
     continueFlow();
-
-    // Ask for an organisation, leave its name blank, and try to continue.
     fireEvent.click(screen.getByRole("radio", { name: /on behalf of an/i }));
     continueFlow();
-
-    const summary = screen.getByRole("alert");
-    const link = within(summary).getByRole("link", { name: /organisation/i });
+    const link = within(screen.getByRole("alert")).getByRole("link", { name: /organisation/i });
     const href = link.getAttribute("href") ?? "";
     expect(document.querySelector(href)).not.toBeNull();
-
-    // Switching back removes the field, so its message must go with it rather
-    // than leaving a correction link with nowhere to land.
     fireEvent.click(screen.getByRole("radio", { name: /as myself/i }));
-
     expect(screen.queryByRole("alert")).toBeNull();
     expect(document.querySelector(href)).toBeNull();
   });
 
-  it("clears a password error as soon as the password is fixed", () => {
+  it("clears a profile validation error as soon as the field is corrected", () => {
     render(<CreateProfileFlow />);
     continueFlow();
-
-    fireEvent.click(
-      screen.getByRole("radio", { name: /email address and password/i }),
-    );
-    fireEvent.change(screen.getByRole("textbox", { name: /full name/i }), {
-      target: { value: "Ada Lovelace" },
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: /email address/i }), {
-      target: { value: "ada@example.org" },
-    });
-    fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "short" },
-    });
+    fillDetails();
+    const email = screen.getByRole("textbox", { name: "Example email address" });
+    fireEvent.change(email, { target: { value: "invalid" } });
     continueFlow();
-
-    expect(screen.getByRole("alert")).toHaveTextContent(/at least 12/i);
-    expect(screen.getByLabelText("Password")).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
-
-    // Every other field self-corrects while typing; the password must too,
-    // rather than keeping a resolved error on screen until the next submit.
-    fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: PASSWORD },
-    });
-
+    expect(email).toHaveAttribute("aria-invalid", "true");
+    fireEvent.change(email, { target: { value: "alex@example.org" } });
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getByLabelText("Password")).not.toHaveAttribute(
-      "aria-invalid",
-    );
+    expect(email).not.toHaveAttribute("aria-invalid");
   });
 
   it("keeps answers when moving backwards", () => {
     render(<CreateProfileFlow />);
     continueFlow();
-    fillAccountStep();
+    fillDetails();
     continueFlow();
-
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("textbox", { name: "Example name" })).toHaveValue("Alex Example");
+    expect(screen.getByRole("textbox", { name: "Example email address" })).toHaveValue("alex@example.org");
+  });
 
-    expect(screen.getByRole("textbox", { name: /full name/i })).toHaveValue(
-      "Ada Lovelace",
-    );
-    expect(screen.getByLabelText("Password")).toHaveValue(PASSWORD);
+  it("preserves an unfinished draft and its step through optional learning and return", () => {
+    render(<CreateProfileFlow initialIntentOptionIds={["i-have-roof"]} />);
+    const learning = screen.getByText("Learning and help (optional)");
+    expect(learning.closest("details")).not.toHaveAttribute("open");
+    continueFlow();
+    fireEvent.change(screen.getByRole("textbox", { name: "Example name" }), {
+      target: { value: "Unfinished example" },
+    });
+    fireEvent.click(learning);
+    expect(learning.closest("details")).toHaveAttribute("open");
+    expect(screen.getByRole("region", { name: "Virtual power plant learning" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Return to profile preview" }));
+    expect(learning.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("heading", { name: "Try fictional profile details" })).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "Example name" })).toHaveValue("Unfinished example");
+    expect(screen.getByRole("textbox", { name: "Example email address" })).toHaveValue("");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("checkbox", { name: /a rooftop to offer/i })).toBeChecked();
+    fireEvent.click(learning);
+    expect(learning.closest("details")).toHaveAttribute("open");
+  });
+
+  it("keeps a preselected intent editable without skipping a step or assigning a type", () => {
+    const { rerender } = render(<CreateProfileFlow initialIntentOptionIds={["i-have-roof"]} />);
+    const rooftop = screen.getByRole("checkbox", { name: /a rooftop to offer/i });
+    expect(rooftop).toBeChecked();
+    expect(screen.getByRole("heading", { name: "Tell us about you" })).toBeVisible();
+    fireEvent.click(rooftop);
+    rerender(<CreateProfileFlow initialIntentOptionIds={["i-have-roof"]} />);
+    expect(rooftop).not.toBeChecked();
+    continueFlow();
+    fillDetails();
+    continueFlow();
+    fireEvent.click(screen.getByRole("radio", { name: /as myself/i }));
+    continueFlow();
+    expect(screen.queryByRole("radio", { checked: true })).toBeNull();
+  });
+
+  it.each(["student-researcher", "workforce-participant", "learning-more", "legal-adviser"] as const)(
+    "leads %s to learning, not another workspace", (userTypeId) => {
+      render(<CreateProfileFlow />);
+      finishProfile(userTypeId);
+      const next = screen.getByRole("region", { name: "Where to explore next" });
+      expect(within(next).getByRole("heading", { name: "Keep exploring through learning" })).toBeVisible();
+      expect(within(next).queryByRole("link", { name: /workspace/i })).toBeNull();
+      expect(screen.getByText("Learning and help; no workspace is assigned.")).toBeVisible();
+      fireEvent.click(within(next).getByRole("button", { name: "Open learning and help" }));
+      const summary = screen.getByText("Learning and help (optional)");
+      expect(summary).toHaveFocus();
+      expect(summary.closest("details")).toHaveAttribute("open");
+      fireEvent.click(screen.getByRole("button", { name: "Return to profile preview" }));
+      expect(screen.getByRole("heading", { name: "Your fictional profile is assembled" })).toHaveFocus();
+      expect(screen.getByText("alex@example.org")).toBeVisible();
+    },
+  );
+
+  it("offers a mode-labeled workspace destination without a core identity grant", () => {
+    render(<CreateProfileFlow />);
+    finishProfile();
+    const next = screen.getByRole("region", { name: "Where to explore next" });
+    expect(within(next).getByRole("link", { name: "Explore workspace" })).toHaveAttribute("href", "/app");
+    expect(screen.getByText(/preview context only; no access is granted/i)).toBeVisible();
+  });
+
+  it("does not restore answers after the public flow is unmounted", () => {
+    const { unmount } = render(<CreateProfileFlow />);
+    continueFlow();
+    fillDetails();
+    unmount();
+    render(<CreateProfileFlow />);
+    continueFlow();
+    expect(screen.getByRole("textbox", { name: "Example name" })).toHaveValue("");
+    expect(screen.getByRole("textbox", { name: "Example email address" })).toHaveValue("");
   });
 });

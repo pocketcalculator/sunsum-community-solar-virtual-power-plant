@@ -23,6 +23,8 @@ export {
   type StoreName,
 } from "./composition";
 
+export { DEMO_IDENTITY_IDS } from "./demo-principals";
+
 export {
   demoSwitchRoute,
   getExportRoute,

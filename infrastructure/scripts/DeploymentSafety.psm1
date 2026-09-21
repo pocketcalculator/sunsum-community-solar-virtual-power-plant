@@ -149,13 +149,16 @@ function Test-AppServiceArchivePath {
     if ($Path -cin @(
         'package.json', 'package-lock.json', 'tsconfig.json', 'next.config.ts',
         'next.config.js', 'next.config.mjs', 'eslint.config.mjs',
-        'postcss.config.js', 'postcss.config.mjs', 'tailwind.config.ts'
+        'postcss.config.js', 'postcss.config.mjs', 'tailwind.config.ts', 'AUDIO-CREDITS.txt'
     )) { return $true }
     if ($Path -cnotmatch '^(app|src|public)/') { return $false }
     if ($Path -match '(^|/)(\.|node_modules/|tests/|__tests__/|coverage/|obj/|bin/|secrets?/|credentials?/)' -or
         $Path -match '(^|/)(secrets?|credentials?)\.(json|txt)$' -or
         $Path -match '(^|/)[^/]*\.(local|test|spec)\.' -or
         $Path -match '\.(pem|key|pfx|p12|crt|cer|der|jks)$') { return $false }
+    if ($Path -cin @('public/audio/need.mp3', 'public/audio/opportunity.mp3', 'public/audio/impact.mp3')) {
+        return $true
+    }
     return $Path -cmatch '\.(ts|tsx|js|jsx|mjs|cjs|json|css|svg|woff|woff2|ttf|otf|png|jpg|jpeg|webp|avif|ico|txt)$'
 }
 

@@ -3,11 +3,86 @@ title: SunSum Community Solar Virtual Power Plant
 description: Community-owned virtual power plant software for the Microsoft 2026 Global Hackathon
 ---
 
+## Upstream reconciliation hold
+
+The repository maintainer merged [PR62](https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/pull/62)
+at **2026-09-21 21:12:03 UTC**. The upstream head observed afterward is
+[`f77ee120d9101034696af990eecb0e59aeb0545c`](https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/commit/f77ee120d9101034696af990eecb0e59aeb0545c).
+The integration coordinator did not initiate that merge, push main or deploy Azure.
+This work is a follow-up to externally merged PR62, not an attempt to keep it
+open or reverse its merge. Backend pin changes await immutable contract review.
+
+Upstream now also includes PR66, PR67 profiles, PR69 operator sign-up-list reads,
+PR70 project-document APIs, Vite 8.3.0, `@types/node` 26.6.1 and `azure/login`
+3.1.0. The earlier infrastructure-only-delta assumption is superseded.
+**Publication is held pending reconciliation direction and re-frozen current-main
+contracts.** Preserve this integration worktree; the desired UI/audio/interest
+amendments remain, but no newer operation, dependency or workflow is adopted
+automatically. The documentation below describes the retained worktree, not
+confirmed parity with upstream or a deployed service.
+
+## Start here
+
+SunSum has **three explicit data experiences**, delivered as a Next application
+and a separate static demo. A failed or unconfigured service never becomes
+fictional success.
+
+| I want to... | Start with | Credentials |
+| --- | --- | --- |
+| See the interactive Sunroom demo | [Open the Sunroom workspace](https://nicolassalazar-pro.github.io/sunsum-ui-demo/#/concepts/sunroom) | None; use fictional inputs |
+| Run the static synthetic demo | [Static quick start](docs/ws1/connection-and-deployment-guide.md#static-synthetic-quick-start) | None; no service or session transport |
+| Exercise the existing APIs with fictional records | [Server-demo quick start](docs/ws1/connection-and-deployment-guide.md#server-demo-quick-start) | No service credentials; explicit mock store and local demo-session signing |
+| Use permitted existing project data | [Connected quick start](docs/ws1/connection-and-deployment-guide.md#connected-quick-start), then `/app` | Existing approved sign-in, participant mapping and current authorized identity |
+| Hand the app to its Azure owner | [Create the source package](docs/ws1/connection-and-deployment-guide.md#package-without-azure) | None to package |
+| Find an integration point | [Connection index](docs/ws1/connections.md) or search `SUNSUM-CONNECTION:` | No secrets are stored in the index |
+
+Use **Node 22.22.2 or newer in the Node 22 line, and npm 10**. Run commands
+from the repository root. The local static preview opens at
+`http://127.0.0.1:4183`; its output is `build/vibehub`, not the Next application.
+These commands assume a full repository checkout. If you received the release
+ZIPs, follow [the delivered-artifact instructions](docs/ws1/connection-and-deployment-guide.md#use-a-delivered-release-without-repackaging):
+the application ZIP builds Next, while the separate demo ZIP is already compiled.
+
+The dynamic workspace reuses current GETs and admits **one deliberate business
+command: `POST /api/projects/{id}/engagements` with `{}`**. It records nonbinding
+project interest; it neither commits nor transfers funds. Only explicit
+mock-backed `server-demo` also mounts the existing
+`POST /api/auth/demo-switch` adapter. No other frontend business/session writes
+are added. The static demo's submission, review, interest and notes remain
+browser-local simulations.
+
+`SUNSUM_PUBLIC_DATA_MODE=server-demo` requires `SUNSUM_STORE=mock`,
+`SUNSUM_DEMO_AUTH=enabled` (not `true`), configured signing and same-origin
+`/api`. Connected mode requires the database store, demo auth disabled and
+legitimate sign-in admission. Selecting a mode or role is not a grant.
+The current infrastructure-controlled dev target intentionally remains
+fixture-backed. Do not switch it to `SUNSUM_STORE=db` as a GIS/UI fix;
+the connected setup is for a separately approved database-backed environment.
+The `/app` source labels are **Connected workspace** (`connected`),
+**Developer/demo mode** (`server-demo`) and **Connection unavailable**
+(`unavailable`); the labels do not change the configuration values.
+An unavailable connection is **out of reach right now**, not evidence that its
+owner has not implemented it.
+
+Inspected contract lineage:
+[`db0c6a5`](https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/commit/db0c6a5d6e39fe7cf079dab27e9616189945cf6c).
+That is the original inspected application/API lineage, **not current main**
+or proof of a deployed service or successful participant session. New upstream
+contracts require reconciliation before publication. No main push/merge,
+cloud-workflow dispatch or Azure deployment is authorized by this handoff.
+
+The original Linux App Service source-ZIP deployment model is retained.
+Infrastructure configuration, repository permissions and a working homepage
+do not prove application-publishing authority or working participant identity.
+If connected access is out of reach, deliver the package: do not create a
+replacement resource, switch to demo sign-in or put credentials in frontend
+configuration.
+
 ## Overview
 
 SunSum is a Microsoft 2026 Global Hackathon project building software for a
-community-owned solar virtual power plant. By Friday, September 18, the project
-aims to deliver a deployed prototype demonstrating one complete solar-project
+community-owned solar virtual power plant. The original hackathon charter
+describes a deployed prototype demonstrating one complete solar-project
 origination journey across three roles:
 
 1. A site owner selects a rooftop or land parcel, submits a potential solar
@@ -20,6 +95,9 @@ origination journey across three roles:
 All three roles can track a project's development stage.
 
 ## Goals
+
+These are the wider project goals, not a claim that this scoped integration
+implements every workflow below.
 
 - Deliver one application URL with site-owner, platform-operator, and investor
   experiences
@@ -79,80 +157,78 @@ configuration.
 
 ## Project status
 
-This contribution introduces the **WS1 public frontend foundation** plus the
-**New User / Create Profile** workflow, built with Next.js and TypeScript. It is
-not the complete hackathon MVP.
+The public site, Sunroom demo and dynamic workspace share the original
+SunSum design language. Data, authority and workflow commands are separated.
+The selected WS2 reads and scoped interest use one browser-safe service client;
+actual connectivity still depends on the existing host, legitimate session,
+permitted records and service configuration.
+Session authentication (PR27) is implemented; operator override (PR41) is
+source-verified, not just merged. Neither proves configured production sign-in or real WS4/model
+results. See the [source/runtime distinction](docs/ws1/contracts.md#merged-service-code-and-runtime-evidence).
+New upstream [profile/document handoffs](docs/ws1/contracts.md#new-upstream-handoffs-awaiting-admission)
+do not automatically enable profile creation or uploads in this UI. Eligible
+tier-one project-document downloads are a service capability requiring separate
+frontend reconciliation, not proof of operational storage.
+Profile 201 is an intake receipt, not an account/session/grant, and a null
+derived role is valid. Project-original GET is implemented upstream but may
+return 404 without separately uploaded bytes; no upload write is added here.
 
 Available routes:
 
 | Route   | Purpose                                                          |
 | ------- | ---------------------------------------------------------------- |
-| `/`     | Value proposition, the three ways to take part, journey, and FAQ |
-| `/join` | The guided create-profile workflow                               |
-| `GET /api/portfolio` | Selected fixture or PostgreSQL store with a fixed demo investor |
-| `/dashboard/site-owner` | Interactive site-owner dashboard design prototype |
+| `/` | Public introduction, participation paths, About, journey and FAQ |
+| `/need`, `/opportunity`, `/impact` | Community-first stories with deliberate playback of the three approved clips |
+| `/join` | Fictional participation preview; no password or account creation |
+| `/app` | Explicit connected or mock-backed server-demo workspace; never a failed-live fallback |
+| `/concepts`, `/concepts/sunroom`, `/concepts/gridline` | Compatibility aliases to `/app`; no Gridline interface |
+| `/dashboard/site-owner` | Dynamic alias to `/app?view=sites`; the original illustration remains in the static demo |
+| `/dashboard/operator`, `/dashboard/investor` | Authorized-view aliases to `/app`, not role changes or sign-in |
+| Pages bare root and `#/` | Public landing |
+| Static `#/concepts/sunroom` (`#/app` alias) | Explicit fictional Sunroom workspace, reached through the landing's "Open Sunroom workspace" action |
+
+The role-specific interfaces are our shared `/app` workspace plus authorized
+dashboard aliases: owner sites/requests, operator submissions/pipeline, and
+investor portfolio/engagement/detail. Filters support those views; filters alone
+are not the role UI. Do not copy legacy dashboards or their sample-on-failure
+loaders into the integrated experience.
 
 `/join` accepts an optional `?start=` parameter so the landing page can open the
 flow with a guided answer already selected. Unrecognised values are ignored.
 
-`/dashboard/site-owner` implements the supplied location-selection, ROI
-comparison, and allocation-card mockup using the existing Sunsum design tokens.
-Its locations and financial figures are illustrative design data only. The
-simulation control aggregates explicit mock return values for the selected
-predefined locations; it is not a financial forecast or an accepted screening
-model. A user can filter and select the supplied map locations or enter an
-address as a local draft. Custom addresses remain marked as pending validation,
-are excluded from the mock calculation, and receive no fabricated map
-coordinate because no geocoder is connected.
+The demo keeps deliberate manual workflows, 50 fictional fresh-start records,
+map/list selection, scoped HTML/CSV exports and existing saved-scenario recovery.
+The original owner illustration has ten predefined mock locations and is not a
+forecast, geocoder or live project dashboard. No real utility, funding or
+device action occurs.
 
-The selector and comparison strip are generated from the same location
-collection. The prototype includes ten predefined sites; the selection list
-scrolls vertically and the comparison cards scroll horizontally as the
-collection grows. Newly entered draft addresses immediately receive a pending
-comparison card, keeping both views synchronized.
+Public participation choices describe intent, not account permissions. The live
+role comes from `GET /api/me` and the existing signed session. Connected mode
+has a service-confirmed role indicator, not seeded sign-in. Server-demo's
+explicit session switch retires old reads/actions and refreshes identity.
+Known seeded identities are not admitted as connected participants. Errors,
+unavailable data and expired sessions never become fictional success.
 
-The comparison strip is also the per-location breakdown of the latest ROI
-simulation. Cards included in that run are highlighted, their individual and
-community return values add exactly to the headline totals, and changed
-selections show a prompt to rerun before the comparison status changes.
+Theme preferences use the existing nonsensitive browser setting and semantic
+tokens. Assistance is deterministic, typed guidance: no live model generation,
+microphone, speech-to-text, TTS or hidden tool action. Optional learning is
+distinct from an authenticated workflow and from human project support.
 
-The shared header offers light, dark, and system theme modes. The selected mode
-is stored in the browser and all application surfaces consume the same semantic
-design tokens.
+The public `/join` flow saves nothing and creates no account. In contrast,
+the **synthetic Sunroom demo does save its fictional workflow in this browser**.
+Do not enter real personal information. Live read data is ephemeral and
+identity-scoped; it is never stored in the synthetic workflow.
 
-The secondary header navigation exposes the three role workspaces: Site Owner,
-Investor, and Platform Operator. Its labels, role IDs, and destinations are
-defined in `src/features/participation/components/PublicShell.tsx` in the
-`ROLE_NAV` collection. To connect a button to a new page, create the route under
-`app/` and update that item's `href` in `ROLE_NAV`.
+Document metadata, original bytes, generated demo drafts and summary exports
+are different artifacts. Metadata can exist without downloadable bytes.
+Investor access stays within the existing disclosure tier; reading a project
+does not express interest, unlock a deal room or commit funding. The deliberate
+interest command requires fresh investor/project/onboarding checks. An ambiguous
+post-dispatch outcome stays **unknown** and reconciles through authorized GETs,
+never automatic replay; an empty reconciliation is not proof of failure.
 
-All role buttons are intentionally visible while authentication and participant
-data are unavailable. When identity is connected, resolve the signed-in user's
-authorized `ParticipantRoleId` values at the server boundary in
-`app/layout.tsx`, then pass them to `PublicShell` through its `visibleRoleIds`
-prop. Do not infer access from a hidden button: each role page and API must also
-enforce the same authorization at its service boundary.
-
-The public header also includes an **AI assistant** preview. It opens a
-right-side guidance drawer with the same rooftop, land and funding entry paths,
-plus deterministic replies for basic greetings and questions. This preview does
-not call an AI model or any remote service. Speech-to-text uses the browser's
-speech-recognition capability when available. A person can choose a local file
-and remove it from the composer, but the application only displays its name: it
-does not read, upload or retain the file.
-
-**Nothing is saved.** The flow validates every answer and shows the assembled
-profile back to you, but no account is created, no request leaves the browser,
-and no value is persisted. The wire format is not settled yet, so the summary is
-a local review rather than a preview of a request. The three federated sign-in
-options are shown as unavailable because no identity provider is connected. A
-password is validated in the browser, is never written into the profile draft or
-the summary, and is discarded when the flow finishes; a browser password manager
-may still offer to remember it, as on any sign-up form.
-
-Site submission, screening, persistence, operator decisions, private documents,
-and investor authorization require the backend and domain handoffs described in
-[the contract register](docs/ws1/contracts.md).
+See the [connection index](docs/ws1/connections.md) for each connection family and
+[contract register](docs/ws1/contracts.md) for source/version evidence.
 
 **Azure Database for PostgreSQL Flexible Server with Drizzle ORM is the
 selected persistence stack**, with Drizzle Kit for schema and migrations.
@@ -180,25 +256,85 @@ selected services and remaining infrastructure prerequisites.
 | --- | --- |
 | `app/` | Routes, root layout and the shared `globals.css` |
 | `src/domain/` | Shared vocabulary: roles, journey stages, participant types, guided prompts |
-| `src/features/participation/` | Landing page, public shell and entry paths |
+| `src/features/participation/` | Landing page, public shell, approved audio/player and entry paths |
 | `src/features/assistant/` | Browser-only guidance drawer, local replies and future instruction placeholder |
 | `src/features/onboarding/` | The create-profile flow, its step model and validation |
+| `src/features/community-context/` | Authored public stories, optional learning and VPP relationship education |
+| `src/features/live-read/` | Bounded service client, GET projections and the narrow interest command |
+| `src/features/live-workspace/` | Identity/query/interest lifetimes, permitted presentation and navigation/download state |
+| `src/features/design-lab/` | Isolated fictional Sunroom workflows and their browser-local store |
+| `src/components/workspace/` | Controlled presentation shared without sharing data authority |
 | `src/components/ui/` | Domain-neutral controls and form primitives |
 | `src/styles/` | Design tokens and shared layout helpers |
 | `tests/` | Unit, component, boundary and browser tests |
 | `docs/ws1/` | Architecture boundaries and the contract register |
 | `infrastructure/` | Templates, diagrams, infrastructure decisions and provider prerequisites |
+| `scripts/New-UiRelease.ps1` | Clean-revision application/demo bundles and the separate operator handoff |
 
 Routes compose a feature's public entry point. Features never import each
 other's internals, and the domain layer depends on nothing above it. These
 boundaries are enforced by ESLint and asserted in `tests/unit/architecture.test.ts`.
+Sibling-feature composition is deny-by-default apart from the
+[named public-entry exceptions](docs/ws1/architecture.md#implemented-responsibility-boundaries).
+The synthetic `DemoLearning.tsx` and `ComparisonView.tsx` exceptions are
+file-specific, not permission for all `design-lab` siblings.
+
+### Where to edit
+
+| Change | Primary location |
+| --- | --- |
+| Authored Need/Opportunity/Impact copy | `src\features\community-context\content\stories.ts` |
+| Public routes/chrome/audio composition | `app\(public)\` and `src\features\participation\components\PublicShell.tsx`; root layout stays neutral |
+| Shared role visuals and interaction | `src\components\workspace\RoleControl.tsx` and its CSS module |
+| Explicit mock-session switching | `src\features\demo-auth\components\DemoRoleSwitcher.tsx`; compose through `app\app\WorkspaceEntry.tsx` |
+| Source-mode admission | `src\domain\live-configuration.ts`; server entry `app\app\configuration.ts` |
+| Accepted methods/roles/capabilities | **Only** `src\domain\connections.ts`; see its [human index](docs/ws1/connections.md) |
+| Typed workspace client / compatibility reader | Public `src\features\live-read\index.ts`: `createWorkspaceClient`; `createLiveReadClient` retains read-only compatibility and forces interest off |
+| Wire filters and interest lifetime | `src\domain\workspace-filters.ts`, `src\features\live-read\client.ts`, `src\features\live-workspace\useProjectInterest.ts` |
+| Service workspace presentation | `src\features\live-workspace\WorkspaceShell.tsx` and role/detail views |
+| Fictional workflow and separate routes | `src\features\design-lab\DesignLab.tsx`, its `routing.ts`, and `static\main.tsx` |
+| Dynamic route normalization | `src\domain\workspace-routes.ts` |
+| Backend GeoJSON map handoff (endpoint not yet admitted) | `SUNSUM-CONNECTION:MAPS-LOCATION` in the sole registry; current unavailable presentation is `src\features\live-workspace\MapLimit.tsx`, composed by `CollectionView.tsx` |
+| Clip metadata and exact bytes | `src\features\participation\content\pageAudioAssets.json` and `public\audio\{need,opportunity,impact}.mp3` |
+
+Future GIS integration needs repeated site-specific lookup/enrichment for newly
+submitted or changed sites feeding WS4 assessment, not just a fixed parcel
+overlay. Basemap/reference-layer caching, parcel display and site enrichment
+are separate concerns. PR71 is **OPEN** at `c6549bd`, proposing operator-only
+`GET /api/sites/candidate-parcels` with no query parameters and default demo
+GeoJSON. It is not merged/live/admitted; immutable contract review remains.
+Its freshness metadata does not identify fixture versus live source.
+Parcel credentials/tokens remain
+backend-only. A separate basemap-only, referrer-restricted browser key is an
+optional distinction, **not authorized key use or a provider call here**.
+Geometry/address are not complete viability inputs; the WS4 required field/layer
+list and actual tool conformance remain unconfirmed. Cadence is unspecified,
+and caching remains subject to provider terms, not a mirror right.
+See the [map handoff](docs/ws1/connection-and-deployment-guide.md#backend-geojson-map-boundary);
+private parcels are not public demo or release assets.
+
+### Public audio
+
+The three topic pages use the supplied, publication-approved clips. Play/Pause
+and Mute/Unmute are independent; navigation stops playback. There is no autoplay,
+loop/restart, microphone or remote music provider. A media failure leaves the
+story readable. Static URLs stay under the actual hosting prefix.
+
+The [public media manifest](src/features/participation/content/pageAudioAssets.json)
+contains measured byte counts, SHA-256 and audio properties, not mailbox or
+attachment evidence. Both ZIPs must match it exactly; packagers neither download
+nor replace missing media. Read [media credits and replacement steps](docs/ws1/media-credits.md)
+before changing a clip. **These third-party recordings are not MIT-licensed code.**
+The [portable notice](docs/ws1/audio-credits.txt), with the manifest's current
+public attributions, must travel byte-identically in both ZIPs as
+`AUDIO-CREDITS.txt`; the code-only static `LICENSE.txt` is not an audio license.
 
 The assistant feature is split so a later AI integration does not require a UI
 rewrite:
 
 | Path | Responsibility |
 | --- | --- |
-| `src/features/assistant/components/Assistant.tsx` | Launcher, drawer, conversation, local file picker and speech-to-text controls |
+| `src/features/assistant/components/Assistant.tsx` | Deterministic guidance launcher, drawer and typed replies |
 | `src/features/assistant/components/Assistant.module.css` | Responsive drawer and composer styles using shared design tokens |
 | `src/features/assistant/model/responses.ts` | Temporary deterministic replies for common conversation and participation topics |
 | `src/features/assistant/content/instructions.md` | Documented placeholder for future server-side model instructions |
@@ -207,8 +343,8 @@ rewrite:
 When an AI service is introduced, its route must load `instructions.md` on the
 server and keep model credentials, private prompts and participant information
 out of the browser bundle. The local response function is the intended
-replacement boundary. The current preview does not interpret selected files or
-send conversation content anywhere.
+replacement boundary. The current preview does not interpret files, capture audio or send
+conversation content anywhere.
 
 This replaces the earlier single-page template and its `app/api/submit` echo
 route; both were scaffolding for this interface rather than product behaviour.
@@ -233,8 +369,20 @@ npm run start
 The lockfile pins versions and integrity without embedding a contributor's
 registry/proxy URLs. npm resolves those locked versions through the configured
 registry. Do not add credentials or a private registry address to `.npmrc`.
+This retained worktree restores three transitive lock entries from predecessor
+`42e2551` for approved-feed reproducibility and keeps its pre-reconciliation
+direct-dependency manifest. It is not byte-for-byte current main; newer upstream
+dependency changes remain under review, with no blanket vulnerability-remediation
+claim. See the
+[reproducibility note](docs/ws1/connection-and-deployment-guide.md#dependency-reproducibility).
 
 ## Infrastructure deployment
+
+**This is background for the infrastructure workstream, not this integration's
+release procedure.** To hand off this interface use the
+[existing-host code-only guide](docs/ws1/connection-and-deployment-guide.md).
+Do not run infrastructure apply or create a paid test stack as a workaround
+for missing code-publishing access.
 
 Start with the [infrastructure deployment guide](infrastructure/docs/deployment.md#infrastructure-deployment).
 The current **Bicep and Azure CLI** entry creates or updates a separate dev-test
@@ -304,9 +452,9 @@ Browser screenshots and reports are generated under `test-results` and
 `playwright-report`, which are not source files. npm owns the generated lockfile
 format; authored JSON/YAML remains covered by Prettier.
 
-These checks exercise the public foundation. They do not establish a working
-three-role backend, complete accessibility conformance, hosted CI success, or
-production readiness.
+These checks exercise local source and interface behavior. Mocked contract
+responses do not establish a real participant session, live service access,
+complete accessibility conformance or production readiness.
 
 See [architecture and extension boundaries](docs/ws1/architecture.md) before
 adding a feature. Proposals should begin as a GitHub issue so assumptions,
@@ -321,4 +469,9 @@ Report security concerns privately according to [SECURITY.md](SECURITY.md).
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+Project code is licensed under the [MIT License](LICENSE). The three supplied
+third-party audio excerpts are excluded from that license; their rights remain
+with their owners. The user's publication-clearance attestation covers the
+selected website, repository and bundle copies, not a transfer of copyright or
+an independent legal certification. See [media credits](docs/ws1/media-credits.md).
+The distributable terms and attributions are in [audio-credits.txt](docs/ws1/audio-credits.txt).

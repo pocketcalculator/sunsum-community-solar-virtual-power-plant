@@ -1,0 +1,34 @@
+SUNSUM WEBSITE AUDIO - THIRD-PARTY MEDIA NOTICE
+
+The MIT software license does not cover these recordings.
+Third-party rights remain with their respective rights holders.
+
+These supplied samples are included for the SunSum public website, project
+repository and associated release bundles. Their inclusion does not transfer
+copyright or grant a blanket license for unrelated reuse. Uses outside that
+project scope require the applicable rights holder's permission.
+
+TRACK CREDITS
+
+audio/need.mp3
+Tower of Power - There's Only So Much Oil (sample)
+Tower of Power; supplied website sample.
+
+audio/opportunity.mp3
+Ready or Not - People Are The Power (sample)
+Supplied credit: Ready or Not - People Are The Power.
+
+audio/impact.mp3
+Curtis Mayfield - Power To The People (sample)
+Curtis Mayfield; supplied website sample.
+
+SOURCE OF TRUTH
+
+This is the human-readable companion to the canonical source manifest:
+src\features\participation\content\pageAudioAssets.json
+It is not a second asset or credit manifest. Keep these credits synchronized
+with that manifest when replacing an approved clip.
+
+Retain this notice with the recordings in both the application source bundle
+and the static website bundle. It describes the project's distribution scope;
+it is not an independent legal certification of ownership or licensing.

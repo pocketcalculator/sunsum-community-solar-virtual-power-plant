@@ -1,303 +1,186 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PageAudioPlayer, PageAudioProvider, pageAudio } from "@/features/participation";
+import { PublicStoryPage } from "@/features/community-context";
 
-import {
-  CONTEXT_PAGES,
-  ContextPage,
-  contextPage,
-  PageAudioPlayer,
-  PublicShell,
-} from "@/features/participation";
+const example = { src: "/audio/example.mp3", title: "Example clip", credit: "Example artist" };
 
-afterEach(cleanup);
+function mockMedia() {
+  const states = new WeakMap<HTMLMediaElement, boolean>();
+  const setPaused = (element: HTMLMediaElement, value: boolean) => states.set(element, value);
+  vi.spyOn(HTMLMediaElement.prototype, "paused", "get")
+    .mockImplementation(function (this: HTMLMediaElement) { return states.get(this) ?? true; });
+  const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+    .mockImplementation(function (this: HTMLMediaElement) {
+      setPaused(this, false);
+      this.dispatchEvent(new Event("playing"));
+      return Promise.resolve();
+    });
+  const pause = vi.spyOn(HTMLMediaElement.prototype, "pause")
+    .mockImplementation(function (this: HTMLMediaElement) {
+      const wasPaused = states.get(this) ?? true;
+      setPaused(this, true);
+      if (!wasPaused) this.dispatchEvent(new Event("pause"));
+    });
+  return { play, pause, setPaused };
+}
 
-describe("the context pages", () => {
-  it("publishes exactly the Need, Opportunity and Impact pages", () => {
-    expect(CONTEXT_PAGES.map((page) => page.id)).toEqual([
-      "need",
-      "opportunity",
-      "impact",
-    ]);
+let media: ReturnType<typeof mockMedia>;
+beforeEach(() => { media = mockMedia(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+function mount(audio = example) {
+  return render(<PageAudioProvider><PageAudioPlayer audio={audio} /></PageAudioProvider>);
+}
+
+describe("approved story audio composition", () => {
+  it.each(["need", "opportunity", "impact"] as const)("supplies actual %s audio without replacing the authored story", (topic) => {
+    const { container } = render(<PageAudioProvider>
+      <PublicStoryPage topic={topic} audio={<PageAudioPlayer audio={pageAudio(topic)} />} />
+    </PageAudioProvider>);
+    expect(container.querySelector("audio")).toHaveAttribute("src", `/audio/${topic}.mp3`);
+    expect(screen.getByRole("article")).toHaveTextContent("not a claim of current projects or guaranteed outcomes");
+    expect(screen.getByRole("link", { name: "Return to SunSum" })).toHaveAttribute("href", "/");
+    expect(media.play).not.toHaveBeenCalled();
   });
 
-  it("gives every page a route, a nav label and a summary", () => {
-    for (const page of CONTEXT_PAGES) {
-      expect(page.href).toBe(`/${page.id}`);
-      expect(page.navLabel.length).toBeGreaterThan(0);
-      expect(page.summary.length).toBeGreaterThan(0);
-      expect(page.sections.length).toBeGreaterThan(0);
+  it("resolves media against a directory, never a hash route or external origin", () => {
+    expect(pageAudio("need").src).toBe("/audio/need.mp3");
+    expect(pageAudio("need", "./").src).toBe("./audio/need.mp3");
+    expect(pageAudio("impact", "/app/sunsum-ui-demo/").src).toBe("/app/sunsum-ui-demo/audio/impact.mp3");
+    for (const base of ["https://outside.invalid/", "//outside.invalid/", "#/need", "../", "/audio/../"]) {
+      expect(() => pageAudio("need", base)).toThrow(/local directory/);
     }
-  });
-
-  /**
-   * `Section` renders every section's heading, and a page whose sections had
-   * no heading would produce empty or duplicated ones.
-   */
-  it("gives every section a heading", () => {
-    for (const page of CONTEXT_PAGES) {
-      for (const section of page.sections) {
-        expect(section.heading.length).toBeGreaterThan(0);
-        expect(section.paragraphs.length).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it("uses a section heading only once per page, so anchors stay distinct", () => {
-    for (const page of CONTEXT_PAGES) {
-      const headings = page.sections.map((section) => section.heading);
-      expect(new Set(headings).size).toBe(headings.length);
-    }
-  });
-
-  /**
-   * The landing page promises "no generation, savings or financial figures",
-   * and the project's rules forbid inventing tariff or market claims. The
-   * supplied copy is qualitative, and it has to stay that way: a currency
-   * amount or a modelled percentage here would be a figure nothing backs.
-   */
-  it("states no monetary or modelled figures", () => {
-    for (const page of CONTEXT_PAGES) {
-      const prose = [
-        page.summary,
-        ...page.sections.flatMap((section) => [
-          ...section.paragraphs,
-          ...section.points.flatMap((point) => [point.title, point.detail]),
-        ]),
-      ].join(" ");
-
-      expect(prose).not.toMatch(/[$£€]\s?\d/);
-      expect(prose).not.toMatch(/\bkWh?\b/);
-      /** "100% solar" is the stated goal, and the only percentage allowed. */
-      for (const match of prose.match(/\d+%/g) ?? []) {
-        expect(match).toBe("100%");
-      }
-    }
-  });
-
-  /**
-   * Each page is meant to carry a music clip, but the clips discussed are
-   * commercial recordings this repository has no licence for. Shipping a
-   * placeholder path would render a broken player.
-   */
-  it("ships no audio until a licensed file is configured", () => {
-    for (const page of CONTEXT_PAGES) {
-      expect(page.audio).toBeNull();
-    }
-  });
-
-  it("renders a page's heading, summary and prose", () => {
-    render(<ContextPage content={contextPage("need")} />);
-
-    expect(
-      screen.getByRole("heading", { level: 1, name: /data centres/i }),
-    ).toBeTruthy();
-    expect(screen.getByText(/Two hard realities/)).toBeTruthy();
-    expect(screen.getByText(/Getting off fossil fuels/)).toBeTruthy();
-  });
-
-  it("renders a section's points as a list", () => {
-    render(<ContextPage content={contextPage("opportunity")} />);
-
-    expect(screen.getByText("Feed three birds with one seed")).toBeTruthy();
-    expect(
-      screen.getByText(/Communities generate their own energy/),
-    ).toBeTruthy();
-  });
-
-  it("renders no audio player while no clip is configured", () => {
-    render(<ContextPage content={contextPage("impact")} />);
-    expect(screen.queryByRole("button", { name: /Play/ })).toBeNull();
   });
 });
 
-describe("the page audio control", () => {
-  const audio = {
-    src: "/audio/example.mp3",
-    title: "Example clip",
-    credit: "Example artist",
-  };
-
-  function stubMedia() {
-    const play = vi.fn().mockResolvedValue(undefined);
-    const pause = vi.fn();
-    vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(play);
-    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(pause);
-    return { play, pause };
-  }
-
-  afterEach(() => vi.restoreAllMocks());
-
-  it("does not start on its own", () => {
-    const { play } = stubMedia();
-    render(<PageAudioPlayer audio={audio} />);
-
-    expect(play).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /Play/ })).toBeTruthy();
-  });
-
-  it("plays and then pauses, labelling each state accurately", async () => {
-    const { play, pause } = stubMedia();
-    render(<PageAudioPlayer audio={audio} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /Play/ }));
-    await vi.waitFor(() => expect(play).toHaveBeenCalledTimes(1));
-
-    const pauseButton = await screen.findByRole("button", { name: /Pause/ });
-    fireEvent.click(pauseButton);
-    expect(pause).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: /Play/ })).toBeTruthy();
-  });
-
-  /**
-   * The whole point of the separate control: muting silences the clip without
-   * stopping it. A "Mute" button that paused would be lying about what it did.
-   */
-  it("mutes without stopping playback", async () => {
-    const { play, pause } = stubMedia();
-    const { container } = render(<PageAudioPlayer audio={audio} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
-    await screen.findByRole("button", { name: /Pause/ });
-
+describe("the existing page audio control", () => {
+  it("does not start, loop or restart on its own", () => {
+    const { container } = mount();
     const element = container.querySelector("audio");
-    expect(element?.muted).toBe(false);
+    expect(media.play).not.toHaveBeenCalled();
+    expect(element).toHaveAttribute("preload", "none");
+    expect(element).not.toHaveAttribute("autoplay");
+    expect(element).not.toHaveAttribute("loop");
+    expect(screen.getByRole("button", { name: "Play Example clip" })).toBeVisible();
+  });
 
+  it("plays and pauses with native state and accurate labels", async () => {
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+    await screen.findByRole("button", { name: /^Pause/ });
+    expect(screen.getByRole("button", { name: /^Pause/ })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: /^Pause/ }));
+    expect(media.play).toHaveBeenCalledTimes(1);
+    expect(media.pause).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: /^Play/ })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("mutes and unmutes without pausing playback", async () => {
+    const { container } = mount();
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+    await screen.findByRole("button", { name: /^Pause/ });
+    const element = container.querySelector("audio");
     fireEvent.click(screen.getByRole("button", { name: /^Mute/ }));
-
     expect(element?.muted).toBe(true);
-    expect(pause).not.toHaveBeenCalled();
-    expect(play).toHaveBeenCalledTimes(1);
-    /** Still playing, so the playback control still offers to pause. */
-    expect(screen.getByRole("button", { name: /Pause/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Unmute/ })).toBeTruthy();
+    expect(media.pause).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /^Unmute/ })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: /^Unmute/ }));
+    expect(element?.muted).toBe(false);
+    expect(screen.getByRole("button", { name: /^Pause/ })).toBeVisible();
   });
 
-  it("unmutes again", async () => {
-    stubMedia();
-    const { container } = render(<PageAudioPlayer audio={audio} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /^Mute/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Unmute/ }));
-
-    expect(container.querySelector("audio")?.muted).toBe(false);
-  });
-
-  it("carries a mute chosen before playback into the clip", async () => {
-    const { play } = stubMedia();
-    const { container } = render(<PageAudioPlayer audio={audio} />);
-
+  it("carries mute-before-play to the actual muted property", async () => {
+    const { container } = mount();
     fireEvent.click(screen.getByRole("button", { name: /^Mute/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
-    await vi.waitFor(() => expect(play).toHaveBeenCalledTimes(1));
-
+    await screen.findByRole("button", { name: /^Pause/ });
     expect(container.querySelector("audio")?.muted).toBe(true);
+    expect(media.play).toHaveBeenCalledTimes(1);
   });
 
-  /** A blocked or missing clip must not break the page it decorates. */
-  it("reports a clip it cannot play", async () => {
-    vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(
-      new Error("NotAllowedError"),
-    );
-    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(vi.fn());
-    render(<PageAudioPlayer audio={audio} />);
-
+  it.each(["rejection", "native error", "synchronous refusal"] as const)("reports %s and retains the story and retry control", async (failure) => {
+    if (failure === "rejection") media.play.mockRejectedValueOnce(new DOMException("Blocked", "NotAllowedError"));
+    if (failure === "synchronous refusal") media.play.mockImplementationOnce(() => { throw new DOMException("Unavailable", "NotSupportedError"); });
+    const { container } = mount();
     fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
-
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("could not be played");
-    expect(screen.getByRole("button", { name: /^Play/ })).toBeTruthy();
+    if (failure === "native error") fireEvent.error(container.querySelector("audio")!);
+    expect(await screen.findByRole("alert")).toHaveTextContent("could not be played");
+    expect(screen.getByRole("button", { name: /^Play/ })).toBeVisible();
   });
 
-  it("credits the clip", () => {
-    stubMedia();
-    const { container } = render(<PageAudioPlayer audio={audio} />);
-
-    /**
-     * The title also appears inside each button's visually-hidden label, so
-     * this asserts against the credit line specifically.
-     */
-    const credit = container.querySelector("p");
-    expect(credit?.textContent).toContain("Example clip");
-    expect(credit?.textContent).toContain("Example artist");
-  });
-});
-
-describe("the primary navigation", () => {
-  it("links to each context page", () => {
-    render(
-      <PublicShell>
-        <p>body</p>
-      </PublicShell>,
-    );
-
-    for (const page of CONTEXT_PAGES) {
-      expect(
-        screen.getByRole("link", { name: page.navLabel }).getAttribute("href"),
-      ).toBe(page.href);
-    }
+  it("ends without an automatic restart and permits a deliberate replay", async () => {
+    const { container } = mount();
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+    await screen.findByRole("button", { name: /^Pause/ });
+    fireEvent.ended(container.querySelector("audio")!);
+    expect(screen.getByRole("status")).toHaveTextContent("Finished");
+    expect(media.play).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+    expect(media.play).toHaveBeenCalledTimes(2);
   });
 
-  /**
-   * Review removed these: both pointed at sections the landing page already
-   * shows as cards, so they navigated to something already on screen.
-   */
-  it("no longer offers the anchors review asked to drop", () => {
-    render(
-      <PublicShell>
-        <p>body</p>
-      </PublicShell>,
-    );
-
-    expect(screen.queryByRole("link", { name: "Participation paths" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Delivery journey" })).toBeNull();
+  it("allows only one active clip under the public provider", async () => {
+    const second = { ...example, src: "/audio/second.mp3", title: "Second clip" };
+    const { container } = render(<PageAudioProvider>
+      <PageAudioPlayer audio={example} /><PageAudioPlayer audio={second} />
+    </PageAudioProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Play Example clip" }));
+    await screen.findByRole("button", { name: "Pause Example clip" });
+    fireEvent.click(screen.getByRole("button", { name: "Play Second clip" }));
+    await screen.findByRole("button", { name: "Pause Second clip" });
+    expect(screen.getByRole("button", { name: "Play Example clip" })).toBeVisible();
+    const elements = container.querySelectorAll("audio");
+    expect(elements[0]?.paused).toBe(true);
+    expect(elements[1]?.paused).toBe(false);
   });
 
-  it("keeps the FAQ anchor", () => {
-    render(
-      <PublicShell>
-        <p>body</p>
-      </PublicShell>,
-    );
-
-    expect(
-      screen.getByRole("link", { name: "FAQ" }).getAttribute("href"),
-    ).toBe("/#faq");
+  it("cancels a pending play and cannot be restarted by its stale fulfillment", async () => {
+    let complete!: () => void;
+    media.play.mockImplementationOnce(() => new Promise<void>((resolve) => { complete = resolve; }));
+    const { container } = mount();
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+    expect(screen.getByRole("status")).toHaveTextContent("Loading");
+    fireEvent.click(screen.getByRole("button", { name: /^Pause/ }));
+    await act(async () => { complete(); });
+    expect(container.querySelector("audio")?.paused).toBe(true);
+    expect(screen.getByRole("button", { name: /^Play/ })).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  /** Each role's link must reach that role's workspace, not the sign-up form. */
-  it("points every role link at its workspace", () => {
-    render(
-      <PublicShell>
-        <p>body</p>
-      </PublicShell>,
-    );
-
-    expect(
-      screen.getByRole("link", { name: "Site Owner" }).getAttribute("href"),
-    ).toBe("/dashboard/site-owner");
-    expect(
-      screen.getByRole("link", { name: "Investor" }).getAttribute("href"),
-    ).toBe("/dashboard/investor");
-    expect(
-      screen.getByRole("link", { name: "Platform Operator" }).getAttribute("href"),
-    ).toBe("/dashboard/operator");
+  it("an older rejection cannot stop a newer successful attempt", async () => {
+    let reject!: (error: Error) => void;
+    media.play.mockImplementationOnce(() => new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise; }));
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Pause/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+    await screen.findByRole("button", { name: /^Pause/ });
+    await act(async () => { reject(new Error("Old request")); });
+    expect(screen.getByRole("button", { name: /^Pause/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("renders the demo control it is given, and nothing when there is none", () => {
-    const { unmount } = render(
-      <PublicShell demoControl={<p>demo pill</p>}>
-        <p>body</p>
-      </PublicShell>,
-    );
-    expect(screen.getByText("demo pill")).toBeTruthy();
+  it("stops the previous source on route replacement and on unmount", async () => {
+    const { container, rerender, unmount } = mount();
+    const oldElement = container.querySelector("audio")!;
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+    await screen.findByRole("button", { name: /^Pause/ });
+    rerender(<PageAudioProvider><PageAudioPlayer audio={{ ...example, src: "/audio/other.mp3", title: "Other clip" }} /></PageAudioProvider>);
+    expect(oldElement.paused).toBe(true);
+    const nextElement = container.querySelector("audio")!;
+    expect(nextElement).not.toBe(oldElement);
+    expect(nextElement.paused).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+    await screen.findByRole("button", { name: /^Pause/ });
     unmount();
+    expect(nextElement.paused).toBe(true);
+  });
 
-    render(
-      <PublicShell>
-        <p>body</p>
-      </PublicShell>,
-    );
-    expect(screen.queryByText("demo pill")).toBeNull();
+  it("credits the recording separately from the software license", () => {
+    const { container } = mount();
+    expect(container.querySelector("p")?.textContent).toContain("Example artist");
+    expect(screen.getByText(/Third-party music.*MIT license/)).toBeVisible();
   });
 });

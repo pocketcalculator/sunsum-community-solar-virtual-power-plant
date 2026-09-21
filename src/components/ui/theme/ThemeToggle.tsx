@@ -40,6 +40,7 @@ const OPTIONS = {
 
 interface ThemeToggleProps {
   className?: string | undefined;
+  compact?: boolean;
 }
 
 /**
@@ -64,9 +65,29 @@ interface ThemeToggleProps {
  * report a theme the document never adopted — permanently for someone browsing
  * without JavaScript, and briefly for everyone else before hydration.
  */
-export function ThemeToggle({ className }: ThemeToggleProps) {
-  const { preference, ready, setPreference } = useTheme();
+export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
+  const { preference, ready, resolvedTheme, setPreference } = useTheme();
   const groupId = useId();
+
+  if (compact) {
+    const dark = resolvedTheme === DARK_THEME;
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-label="Dark appearance"
+        aria-checked={dark}
+        disabled={!ready}
+        title={dark ? "Switch to light appearance" : "Switch to dark appearance"}
+        className={cx(styles.compact, className)}
+        onClick={() => setPreference(dark ? LIGHT_THEME : DARK_THEME)}
+      >
+        <span aria-hidden="true" className={styles.icon}>
+          {dark ? <MoonIcon /> : <SunIcon />}
+        </span>
+      </button>
+    );
+  }
 
   return (
     <fieldset className={cx(styles.group, className)} disabled={!ready}>

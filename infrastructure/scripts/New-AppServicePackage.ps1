@@ -42,8 +42,38 @@ foreach ($entry in Get-ChildItem -LiteralPath $root -Force) {
         $files.Add(@{ Path = $entry.FullName; Entry = $entry.Name })
     }
 }
-foreach ($required in @('package.json', 'package-lock.json', 'tsconfig.json', 'app/layout.tsx')) {
+$creditsPath = $root
+foreach ($segment in @('docs', 'ws1', 'audio-credits.txt')) {
+    $creditsPath = Join-Path $creditsPath $segment
+    $creditsItem = Get-Item -LiteralPath $creditsPath -Force
+    if ($creditsItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+        throw 'Public audio credits must not be a symbolic link or pass through a junction.'
+    }
+}
+if ($creditsItem.PSIsContainer -or $creditsItem.Length -eq 0 -or $creditsItem.Length -gt 32MB) {
+    throw 'The public audio credits must be a nonempty file within the entry limit.'
+}
+$existingCredits = @($files | Where-Object { $_.Entry -ceq 'AUDIO-CREDITS.txt' })
+if ($existingCredits.Count -eq 0) {
+    $files.Add(@{ Path = $creditsPath; Entry = 'AUDIO-CREDITS.txt' })
+} elseif ((Get-Item -LiteralPath $existingCredits[0].Path).Length -ne $creditsItem.Length -or
+    (Get-FileHash -LiteralPath $existingCredits[0].Path -Algorithm SHA256).Hash -ine
+    (Get-FileHash -LiteralPath $creditsPath -Algorithm SHA256).Hash) {
+    throw 'Root AUDIO-CREDITS.txt conflicts with the canonical docs/ws1/audio-credits.txt notice.'
+}
+foreach ($required in @(
+    'package.json', 'package-lock.json', 'tsconfig.json', 'app/layout.tsx', 'AUDIO-CREDITS.txt',
+    'src/features/participation/content/pageAudioAssets.json',
+    'public/audio/need.mp3', 'public/audio/opportunity.mp3', 'public/audio/impact.mp3'
+)) {
     if ($required -cnotin $files.Entry) { throw "Required application file is missing: $required" }
+}
+if ($files.Count -gt 10000) { throw 'Too many source archive entries.' }
+[long] $total = 0
+foreach ($file in $files) {
+    $size = (Get-Item -LiteralPath $file.Path).Length
+    $total += $size
+    if ($size -gt 32MB -or $total -gt 64MB) { throw 'Uncompressed source exceeds the safety limit.' }
 }
 $package = Get-Content -LiteralPath (Join-Path $root 'package.json') -Raw | ConvertFrom-Json
 $lock = Get-Content -LiteralPath (Join-Path $root 'package-lock.json') -Raw | ConvertFrom-Json -AsHashtable
@@ -51,14 +81,20 @@ if ($lock.lockfileVersion -lt 2 -or $package.name -cne $lock.name) { throw 'Expe
 if ($package.scripts.start -cne 'next start') { throw 'Review the startup contract before packaging a different start script.' }
 
 $null = New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force
-$archive = [System.IO.Compression.ZipFile]::Open($destination, [System.IO.Compression.ZipArchiveMode]::Create)
+$temporary = Join-Path (Split-Path -Parent $destination) ".sunsum-source-$([guid]::NewGuid().ToString('N')).tmp"
 try {
-    foreach ($file in $files | Sort-Object Entry) {
-        $null = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-            $archive, $file.Path, $file.Entry, [System.IO.Compression.CompressionLevel]::Optimal
-        )
-    }
+    $archive = [System.IO.Compression.ZipFile]::Open($temporary, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in $files | Sort-Object Entry) {
+            $null = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $archive, $file.Path, $file.Entry, [System.IO.Compression.CompressionLevel]::Optimal
+            )
+        }
+    } finally { $archive.Dispose() }
+    $result = & (Join-Path $PSScriptRoot 'Test-AppServicePackage.ps1') -Path $temporary
+    [System.IO.File]::Move($temporary, $destination)
+    $result.Path = $destination
+    $result
 } finally {
-    $archive.Dispose()
+    if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
 }
-& (Join-Path $PSScriptRoot 'Test-AppServicePackage.ps1') -Path $destination

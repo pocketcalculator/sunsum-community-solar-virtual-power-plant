@@ -24,11 +24,18 @@ describe("landing page", () => {
     }
   });
 
-  it("sends the primary call to action into the create-profile flow", () => {
+  it("sends the primary call to action into the fictional participation preview", () => {
     render(<LandingPage />);
     expect(
-      screen.getByRole("link", { name: /create your profile/i }),
+      screen.getByRole("link", { name: "Explore participation" }),
     ).toHaveAttribute("href", "/join");
+  });
+
+  it("offers an explicit workspace entrance without replacing the public arrival", () => {
+    render(<LandingPage />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Community solar, with communities at the center.");
+    expect(screen.getByRole("link", { name: "Open Sunroom workspace", exact: true })).toHaveAttribute("href", "/app");
+    expect(screen.getByRole("link", { name: "Why local needs come first" })).toHaveAttribute("href", "/need");
   });
 
   it("explains the delivery journey as an ordered list of stages", () => {
@@ -49,9 +56,9 @@ describe("landing page", () => {
     }
   });
 
-  it("keeps the build-scope counts tied to the data they describe", () => {
+  it("keeps the introduction counts tied to the explanations they describe", () => {
     render(<LandingPage />);
-    const scope = screen.getByRole("list", { name: "Build scope" });
+    const scope = screen.getByRole("list", { name: "Introduction guide" });
 
     expect(
       within(scope).getByText("ways to start taking part").closest("li"),
@@ -65,9 +72,29 @@ describe("landing page", () => {
     );
   });
 
-  it("does not claim any project data is connected", () => {
+  it("distinguishes public no-save pages from scoped authorized workspace actions", () => {
     const { container } = render(<LandingPage />);
     expect(container.querySelector("form")).toBeNull();
-    expect(screen.getByText(/no project records/i)).toBeVisible();
+    expect(screen.getByText("No project records are requested by these public pages")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open workspace" })).toHaveAttribute("href", "/app");
+    expect(container.textContent).not.toMatch(/workspaces themselves are not built|nowhere to store/);
+    expect(screen.getByRole("heading", { name: "Scoped service actions" })).toBeVisible();
+    expect(container.textContent).toContain("nonbinding-interest action requires service permission");
+  });
+
+  it("links the illustration to the actual story routes and supplies About and FAQ anchors", () => {
+    render(<LandingPage />);
+    const illustration = screen.getByRole("img").closest("figure");
+    if (!illustration) throw new Error("The community illustration is missing.");
+    for (const [label, href] of [
+      ["Why local needs come first", "/need"],
+      ["How separate sites work together", "/opportunity"],
+      ["What shared impact could mean", "/impact"],
+    ] as const) {
+      expect(within(illustration).getByRole("link", { name: label })).toHaveAttribute("href", href);
+    }
+    expect(document.getElementById("about")).toBeVisible();
+    expect(document.getElementById("faq")).toBeVisible();
+    expect(screen.getByText("Learning and help (optional)").closest("details")).not.toHaveAttribute("open");
   });
 });
