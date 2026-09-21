@@ -9,9 +9,13 @@ param postgresServerName = 'db-sunsum-dev-test-centralus'
 param databaseName = 'sunsum_test'
 param runtimeRoleName = 'sunsum_runtime'
 param tenantId = '00000000-0000-0000-0000-000000000000'
-param postgresAdminObjectId = '00000000-0000-0000-0000-000000000000'
-param postgresAdminPrincipalName = '<postgres-admin-principal-name>'
-param postgresAdminPrincipalType = 'User'
+param postgresAdministrators = [
+	{
+		objectId: '00000000-0000-0000-0000-000000000000'
+		principalName: '<postgres-admin-principal-name>'
+		principalType: 'User'
+	}
+]
 param postgresTier = 'Burstable'
 param postgresSkuName = 'Standard_B1ms'
 param postgresStorageSizeGB = 32

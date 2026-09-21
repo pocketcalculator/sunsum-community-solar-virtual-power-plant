@@ -1,5 +1,7 @@
 targetScope = 'resourceGroup'
 
+import { EntraAdministrator } from './modules/postgres.bicep'
+
 @minLength(1)
 @maxLength(32)
 param environmentName string
@@ -24,14 +26,23 @@ param runtimeRoleName string = 'sunsum_runtime'
 param tenantId string
 @minLength(36)
 @maxLength(36)
-param postgresAdminObjectId string
-param postgresAdminPrincipalName string
+param postgresAdminObjectId string = '00000000-0000-0000-0000-000000000000'
+param postgresAdminPrincipalName string = '<postgres-admin-principal-name>'
 @allowed([
   'User'
   'Group'
   'ServicePrincipal'
 ])
 param postgresAdminPrincipalType string = 'Group'
+@description('One or more approved Entra administrators in tenantId. Prefer this list; omit it only when using the legacy single-admin fields.')
+@minLength(1)
+param postgresAdministrators EntraAdministrator[] = [
+  {
+    objectId: postgresAdminObjectId
+    principalName: postgresAdminPrincipalName
+    principalType: postgresAdminPrincipalType
+  }
+]
 @allowed([
   'Burstable'
   'GeneralPurpose'
@@ -98,9 +109,7 @@ module postgres './modules/postgres.bicep' = {
     serverName: postgresServerName
     databaseName: databaseName
     tenantId: tenantId
-    adminObjectId: postgresAdminObjectId
-    adminPrincipalName: postgresAdminPrincipalName
-    adminPrincipalType: postgresAdminPrincipalType
+    administrators: postgresAdministrators
     tier: postgresTier
     skuName: postgresSkuName
     storageSizeGB: postgresStorageSizeGB

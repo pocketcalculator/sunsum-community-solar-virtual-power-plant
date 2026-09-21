@@ -26,6 +26,13 @@ this directory. Keep environment-specific values outside committed templates.
   PostgreSQL 17/Burstable B1ms/32 GiB. Tenant and administrator identity values are
   redacted in public parameters; supply approved values locally before preview/apply.
   Placeholders compile locally but cannot pass deployment preflight.
+  `postgresAdministrators` accepts the exported sealed `EntraAdministrator[]` type;
+  the current dev input contains one entry. Each entry has `objectId`,
+  `principalName` and `principalType`, in the shared `tenantId`. The root passes the
+  list to the module's `administrators` input. Legacy scalar inputs remain a
+  one-entry fallback only when the array is omitted. See
+  [local identity setup](../docs/deployment.md#local-identity-setup) for migration
+  and multi-admin examples; private inputs are not changed automatically.
 - `modules/web.bicep` creates the explicitly requested, billable B1 plan and links
   the web app through `plan.id`.
   Dev uses `asp-sunsum-dev-test-centralus` and `app-sunsum-dev-test-centralus`:
@@ -124,7 +131,10 @@ Compiler-backed tests evaluate boundary inputs and verify that the database
 resource uses the validated expression. This is not a SQL permission check.
 
 PostgreSQL child writes are serialized after server creation: secure transport,
-minimum TLS, Entra administrator, then database. This avoids competing provider
+minimum TLS, each Entra administrator (`@batchSize(1)`), then database. The list
+must be nonempty and have unique, valid object IDs. Omitting an administrator from
+the list does not revoke it in Incremental mode; removal needs separate approval.
+This avoids competing provider
 updates within the module; it is not a cross-deployment lock or a guarantee of
 data-plane readiness. Inspect partial failures before an authorized rerun.
 

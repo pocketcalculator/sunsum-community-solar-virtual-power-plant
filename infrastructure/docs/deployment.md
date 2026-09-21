@@ -90,10 +90,11 @@ It has a public endpoint with no firewall allowances. Storage is network-closed
 with private containers and disabled shared keys. B1 hosting, PostgreSQL and
 Storage are separately billable; this is not a data restore of the existing server.
 
-The public native parameter file redacts `tenantId`, `postgresAdminObjectId`
-and `postgresAdminPrincipalName`. The two IDs use the all-zero UUID and the name
-uses `<postgres-admin-principal-name>`. These are compilation placeholders, not
-deployable identities. Preview/apply rejects them locally before any Azure call.
+The public native parameter file redacts `tenantId` and the single entry in
+`postgresAdministrators`. The tenant/object IDs use the all-zero UUID and the
+principal name uses `<postgres-admin-principal-name>`. These are compilation
+placeholders, not deployable identities. Preview/apply rejects them locally
+before any Azure call.
 
 Use the [local identity setup](#local-identity-setup) below before preview/apply.
 No passwords, tokens or environment variables are required in these parameter
@@ -166,7 +167,7 @@ local compilation command. No compiled artifacts or approval files are inputs.
    and `parametersPath` to `resources.local.bicepparam`.
 3. In the local parameters, set the first line to
    `using '../../infrastructure/templates/resources.bicep'`. Supply the approved
-   values for the fields below and verify that `postgresAdminPrincipalType`
+  values for the fields below and verify that each entry's `principalType`
   matches the selected identity (`User`, `Group` or `ServicePrincipal`). Keep the
   native `webAppName` equal to the shared config's `webAppName`.
 4. Keep both local copies ignored by Git. Do not force-add them, paste real values
@@ -175,11 +176,52 @@ local compilation command. No compiled artifacts or approval files are inputs.
 | Local parameter | Value to supply |
 | --- | --- |
 | `tenantId` | The approved Entra tenant ID, a nonempty UUID. |
-| `postgresAdminObjectId` | The selected administrator's object ID in that tenant, not an app/client ID. |
-| `postgresAdminPrincipalName` | The approved principal name matching that object and principal type. |
+| `postgresAdministrators[].objectId` | Each approved administrator's object ID in `tenantId`, not an app/client ID. |
+| `postgresAdministrators[].principalName` | The approved principal name matching that object. |
+| `postgresAdministrators[].principalType` | `User`, `Group` or `ServicePrincipal`; managed identities use `ServicePrincipal`. |
+
+`postgresAdministrators` is a nonempty array of the exported, sealed Bicep type
+`EntraAdministrator` from `modules/postgres.bicep`. The module accepts the same
+type through `administrators`. The current public input contains **one** redacted
+entry, and existing private inputs still select their one existing administrator.
+To add more later, append approved entries to the local array:
+
+```bicep
+param postgresAdministrators = [
+  {
+    objectId: '<approved-object-id>'
+    principalName: '<approved-principal-name>'
+    principalType: 'User'
+  }
+]
+```
+
+Replace the placeholders locally before preview/apply. Entries have exactly
+those three fields; all share the server's `tenantId`. UUIDs must be nonzero and
+unique, including case-insensitive duplicates. Principal names cannot be blank
+or placeholders for deployment. The template checks the list and serializes
+administrator writes after TLS configuration; database creation waits for all
+administrators. Compilation does not verify directory existence, matching names,
+membership or authorization to administer the server.
+
+For compatibility, omitting the array uses the existing `postgresAdminObjectId`,
+`postgresAdminPrincipalName` and `postgresAdminPrincipalType` inputs as a one-entry
+list. The module retains equivalent `admin*` fallback inputs. The normal deployment
+command rejects explicitly supplying both formats; direct Bicep consumers should
+also use only one format (an explicit list takes precedence over fallback fields).
+To migrate an existing local file, move its current values into one array entry
+and remove the three old declarations. No private file is rewritten automatically.
+
+These are server-level Entra administrators, not `sunsum_migrator` or runtime SQL
+roles. Keep those non-admin identities separate and review admin-group membership.
+**Removing an entry does not revoke it in Incremental mode.** Renaming/replacing an
+object ID can leave the previous administrator authorized; removal requires a
+separately approved operation and verification. Do not use Complete mode as cleanup.
+This array support applies to `Deploy-Infrastructure.ps1`; the legacy
+`Provision-Infrastructure.ps1` and its workflow remain unmigrated.
 
 If `.azure/dev/identity-values.json` already exists on your machine, it is only a
-local reference for these three values. The script does not create or load it,
+local reference for the existing tenant and administrator values. The script does not create or load it,
 and the repository does not provide the real values. Obtain them through your
 approved identity process if you do not have that local reference. Do not change
 the Azure CLI deployment identity or grant roles as part of filling these fields.
