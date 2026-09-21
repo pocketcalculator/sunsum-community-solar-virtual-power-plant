@@ -1089,12 +1089,10 @@ in the same configuration read before the ZIP is uploaded. An enabled
 settings stop the source ZIP upload and require a separately reviewed correction,
 including when the foundation uses Existing web mode.
 It then uses `az webapp deploy --type zip --clean true --async true
---track-status false --timeout 600000`. The CLI timeout is in milliseconds, so
-this requests a 10-minute deployment timeout, not 600,000 seconds. It never
-changes resource definitions, roles or app settings. It follows deployment with
-bounded remote deployment-status checks, then at most 12 public-preview checks
-(10-second request timeout, 10-second retry delay), rather than relying on
-unbounded startup tracking.
+--track-status false`. It never changes resource definitions, roles or app
+settings. It follows deployment with bounded remote deployment-status checks,
+then at most 12 public-preview checks (10-second request timeout, 10-second
+retry delay), rather than relying on unbounded startup tracking.
 Before sign-in activation use the default `-ExpectedAccessMode Preview` (HTTP
 200). After activation explicitly use `-ExpectedAccessMode ApprovedSignIn`:
 the bounded check expects the Microsoft/local Easy Auth redirect, not a public

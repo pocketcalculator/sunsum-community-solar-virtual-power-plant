@@ -79,11 +79,13 @@ try {
     Assert-DeploymentSnapshot $snapshot
     Assert-DeploymentSnapshot $approvalSnapshot
     & az webapp deploy --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
-        --src-path $artifact.Path --type zip --clean true --async true --track-status false --timeout 600000 `
+        --src-path $artifact.Path --type zip --clean true --async true --track-status false `
         --only-show-errors --output none
     if ($LASTEXITCODE -ne 0) {
         throw 'Deployment did not report success. It may still finish remotely: inspect deployment logs before retrying; do not change the web tier.'
     }
+    $kuduDeploymentFailedStatus = '3'
+    $kuduDeploymentSuccessStatus = '4'
     $deploymentSucceeded = $false
     for ($attempt = 0; $attempt -lt 40; $attempt++) {
         $raw = & az webapp log deployment show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
@@ -92,11 +94,11 @@ try {
             $deployment = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
             if ($deployment -is [System.Collections.IDictionary] -and $deployment.Contains('status')) {
                 $status = [string]$deployment.status
-                if ($status -ceq '4') {
+                if ($status -ceq $kuduDeploymentSuccessStatus) {
                     $deploymentSucceeded = $true
                     break
                 }
-                if ($status -ceq '3') {
+                if ($status -ceq $kuduDeploymentFailedStatus) {
                     throw 'Remote App Service deployment failed; inspect deployment logs before retrying.'
                 }
             }
