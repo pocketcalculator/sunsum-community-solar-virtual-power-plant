@@ -144,3 +144,41 @@ export function DisplayIcon(props: IconProps) {
     </svg>
   );
 }
+
+/**
+ * The three participant roles, for the demo role switcher's pill.
+ *
+ * A house for the site owner, a hard hat for the platform operator and a
+ * stack of notes for the financier — the pairings asked for in review. Each is
+ * decorative: the pill always renders the role's name alongside, so the icon
+ * never has to carry the meaning on its own.
+ */
+export function HouseIcon(props: IconProps) {
+  return (
+    <svg {...strokeIconProps(props)}>
+      <path d="M2.5 7 8 2.5 13.5 7" />
+      <path d="M3.75 8.25v5h8.5v-5" />
+      <path d="M6.75 13.25v-3h2.5v3" />
+    </svg>
+  );
+}
+
+export function HardHatIcon(props: IconProps) {
+  return (
+    <svg {...strokeIconProps(props)}>
+      <path d="M2.25 11.5a5.75 5.75 0 0 1 11.5 0" />
+      <path d="M1.5 11.5h13" />
+      <path d="M6.5 6.1V3.25h3V6.1" />
+    </svg>
+  );
+}
+
+export function BanknotesIcon(props: IconProps) {
+  return (
+    <svg {...strokeIconProps(props)}>
+      <rect x="1.75" y="4.25" width="12.5" height="7.5" rx="1.25" />
+      <circle cx="8" cy="8" r="1.75" />
+      <path d="M4.25 8h.01M11.75 8h.01" />
+    </svg>
+  );
+}

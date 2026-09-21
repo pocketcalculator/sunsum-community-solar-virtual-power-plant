@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 
-import { getMeRoute, getOwnerSitesRoute, isDemoAuthEnabled } from "@/backend";
-import { DemoRoleSwitcher } from "@/features/demo-auth";
+import { getOwnerSitesRoute } from "@/backend";
 import {
   DASHBOARD_LOCATIONS,
   SiteOwnerDashboard,
@@ -76,46 +75,12 @@ async function readOwnerSites(cookieHeader: string): Promise<OwnerSitesRead> {
 }
 
 /**
- * Which role the browser is signed in as, for the demo switcher to mark.
- *
- * Read separately from the sites because the two answer different questions:
- * an operator is signed in perfectly validly and still gets no owner sites, and
- * the switcher should show them as signed in rather than as nobody.
+ * Which role the browser is signed in as is no longer read here: the demo
+ * sign-in moved into the shared header as a pill, and that control resolves
+ * its own role. This page reads only what it renders.
  */
-async function readActiveRole(cookieHeader: string): Promise<string | null> {
-  if (cookieHeader.length === 0) return null;
-
-  try {
-    const response = await getMeRoute(
-      new Request("http://internal/api/me", {
-        headers: { cookie: cookieHeader },
-      }),
-    );
-    if (!response.ok) return null;
-
-    const identity: unknown = await response.json();
-    const role =
-      typeof identity === "object" && identity !== null
-        ? (identity as { role?: unknown }).role
-        : null;
-    return typeof role === "string" ? role : null;
-  } catch {
-    return null;
-  }
-}
-
 export default async function SiteOwnerDashboardPage() {
   const cookieHeader = (await cookies()).toString();
-  const [{ locations, dataSource }, activeRole] = await Promise.all([
-    readOwnerSites(cookieHeader),
-    readActiveRole(cookieHeader),
-  ]);
-  return (
-    <>
-      {isDemoAuthEnabled() ? (
-        <DemoRoleSwitcher activeRole={activeRole} />
-      ) : null}
-      <SiteOwnerDashboard locations={locations} dataSource={dataSource} />
-    </>
-  );
+  const { locations, dataSource } = await readOwnerSites(cookieHeader);
+  return <SiteOwnerDashboard locations={locations} dataSource={dataSource} />;
 }

@@ -237,6 +237,18 @@ export default defineConfig([
               group: ["**/app/**"],
               message: "Features must not depend on application routes.",
             },
+            /**
+             * Features are siblings, not a layer: one must never reach into
+             * another. The pairwise rules below predate there being more than
+             * two features, so this states the invariant once for all of them.
+             * Shared code belongs in `@/components/ui` or `@/domain`, and a
+             * page is the place to compose two features together.
+             */
+            {
+              group: ["@/features/*", "@/features/*/**"],
+              message:
+                "Features must not import each other. Put shared code in @/domain or @/components, and compose features in a route.",
+            },
           ],
         },
       ],
