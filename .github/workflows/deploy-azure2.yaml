@@ -52,33 +52,7 @@ jobs:
           set -euo pipefail
           az bicep build --file "$TEMPLATE_FILE"
 
-      # Fail loudly with a clear message instead of letting the Azure CLI
-      # steps below fail with an opaque ARM template validation error when
-      # these repository secrets have not been provisioned.
-      - name: Check required secrets
-        shell: bash
-        env:
-          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
-          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
-        run: |
-          set -euo pipefail
-          missing_secrets=""
-          if [ -z "${TENANT_ID:-}" ]; then
-            missing_secrets="AZURE_TENANT_ID"
-          fi
-          if [ -z "${POSTGRES_ADMIN_OBJECT_ID:-}" ]; then
-            missing_secrets="${missing_secrets}${missing_secrets:+, }POSTGRES_ADMIN_OBJECT_ID"
-          fi
-          if [ -z "${POSTGRES_ADMIN_PRINCIPAL_NAME:-}" ]; then
-            missing_secrets="${missing_secrets}${missing_secrets:+, }POSTGRES_ADMIN_PRINCIPAL_NAME"
-          fi
-          if [ -n "$missing_secrets" ]; then
-            echo "::error::Missing required repository secrets: $missing_secrets. Provision these secrets before dispatching this workflow."
-            exit 1
-          fi
-
-      - name: Compose deployment parameters
+      - name: Prepare deployment validation
         shell: bash
         env:
           TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -88,26 +62,7 @@ jobs:
           set -euo pipefail
           PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"
           echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"
-          infrastructure/scripts/Compose-Azure2DeploymentParameters.sh "$PARAMETERS_FILE"
-
-      # Resource providers the added observability and private-network
-      # resources need. An unregistered provider otherwise surfaces as an
-      # opaque deployment failure minutes into the run.
-      - name: Check required resource providers
-        shell: bash
-        run: |
-          set -euo pipefail
-          unregistered=""
-          for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do
-            state="$(az provider show --namespace "$namespace" --query registrationState --output tsv)"
-            if [ "$state" != "Registered" ]; then
-              unregistered="${unregistered}${unregistered:+, }${namespace} ($state)"
-            fi
-          done
-          if [ -n "$unregistered" ]; then
-            echo "::error::Required resource providers are not registered: $unregistered. Register them in the subscription before dispatching this workflow."
-            exit 1
-          fi
+          infrastructure/scripts/Prepare-Azure2Deployment.sh "$PARAMETERS_FILE"
 
       - name: Validate deployment
         shell: bash
@@ -132,11 +87,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -f "${PARAMETERS_FILE:-}"
+          if [ -n "${PARAMETERS_FILE:-}" ]; then
+            rm -f "$PARAMETERS_FILE"
+          fi
 
   deploy:
     needs: validate
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: azure-infrastructure
@@ -152,30 +109,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Check required secrets
-        shell: bash
-        env:
-          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
-          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
-        run: |
-          set -euo pipefail
-          missing_secrets=""
-          if [ -z "${TENANT_ID:-}" ]; then
-            missing_secrets="AZURE_TENANT_ID"
-          fi
-          if [ -z "${POSTGRES_ADMIN_OBJECT_ID:-}" ]; then
-            missing_secrets="${missing_secrets}${missing_secrets:+, }POSTGRES_ADMIN_OBJECT_ID"
-          fi
-          if [ -z "${POSTGRES_ADMIN_PRINCIPAL_NAME:-}" ]; then
-            missing_secrets="${missing_secrets}${missing_secrets:+, }POSTGRES_ADMIN_PRINCIPAL_NAME"
-          fi
-          if [ -n "$missing_secrets" ]; then
-            echo "::error::Missing required repository secrets: $missing_secrets. Provision these secrets before dispatching this workflow."
-            exit 1
-          fi
-
-      - name: Compose deployment parameters
+      - name: Prepare deployment
         shell: bash
         env:
           TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -185,23 +119,7 @@ jobs:
           set -euo pipefail
           PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"
           echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"
-          infrastructure/scripts/Compose-Azure2DeploymentParameters.sh "$PARAMETERS_FILE"
-
-      - name: Check required resource providers
-        shell: bash
-        run: |
-          set -euo pipefail
-          unregistered=""
-          for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do
-            state="$(az provider show --namespace "$namespace" --query registrationState --output tsv)"
-            if [ "$state" != "Registered" ]; then
-              unregistered="${unregistered}${unregistered:+, }${namespace} ($state)"
-            fi
-          done
-          if [ -n "$unregistered" ]; then
-            echo "::error::Required resource providers are not registered: $unregistered. Register them in the subscription before dispatching this workflow."
-            exit 1
-          fi
+          infrastructure/scripts/Prepare-Azure2Deployment.sh "$PARAMETERS_FILE"
 
       - name: Deploy test infrastructure
         shell: bash
@@ -257,4 +175,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -f "${PARAMETERS_FILE:-}"
+          if [ -n "${PARAMETERS_FILE:-}" ]; then
+            rm -f "$PARAMETERS_FILE"
+          fi

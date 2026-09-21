@@ -180,6 +180,7 @@ describe("the bounded Azure preparation contract", () => {
   it("validates infrastructure changes before manually creating resources", () => {
     const workflow = read(".github/workflows/deploy-azure2.yaml");
     const parametersScript = read("infrastructure/scripts/Compose-Azure2DeploymentParameters.sh");
+    const prepareScript = read("infrastructure/scripts/Prepare-Azure2Deployment.sh");
     const validateJob = workflow.slice(workflow.indexOf("  validate:"), workflow.indexOf("\n  deploy:"));
     const deployJob = workflow.slice(workflow.indexOf("  deploy:"));
     expect(workflow).toContain("push:");
@@ -192,7 +193,7 @@ describe("the bounded Azure preparation contract", () => {
     expect(validateJob).toContain("az deployment group what-if");
     expect(validateJob).not.toContain("az deployment group create");
     expect(deployJob).toContain("needs: validate");
-    expect(deployJob).toContain("if: github.event_name == 'workflow_dispatch'");
+    expect(deployJob).toContain("if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'");
     expect(deployJob).toContain("az deployment group create");
     expect(deployJob).not.toContain("az deployment group validate");
     expect(deployJob).not.toContain("az deployment group what-if");
@@ -200,7 +201,7 @@ describe("the bounded Azure preparation contract", () => {
     expect(workflow).not.toMatch(/\n\s+environmentName=dev-test/u);
     expect(workflow).toContain('PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"');
     expect(workflow).toContain('echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"');
-    expect(workflow.match(/Compose-Azure2DeploymentParameters\.sh "\$PARAMETERS_FILE"/gu)).toHaveLength(2);
+    expect(workflow.match(/Prepare-Azure2Deployment\.sh "\$PARAMETERS_FILE"/gu)).toHaveLength(2);
     for (const entry of [
       'enableObservability: { value: true }',
       'logAnalyticsWorkspaceName: { value: "log-sunsum-dev-test-centralus" }',
@@ -213,13 +214,14 @@ describe("the bounded Azure preparation contract", () => {
     ]) {
       expect(parametersScript).toContain(entry);
     }
-    expect(workflow).toContain("for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do");
-    expect(workflow).toContain("Required resource providers are not registered");
+    expect(prepareScript).toContain("for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do");
+    expect(prepareScript).toContain("Required resource providers are not registered");
     expect(deployJob).toContain("AZURE_BLOB_PRIVATE_ENDPOINT_NAME");
     expect(workflow).toContain("--mode Incremental");
 
     expect(parametersScript).toContain("umask 077");
-    expect(workflow.match(/rm -f "\$\{PARAMETERS_FILE:-\}"/gu)).toHaveLength(2);
+    expect(parametersScript).toContain('chmod 600 "$parameters_file"');
+    expect(workflow.match(/if \[ -n "\$\{PARAMETERS_FILE:-\}" \]; then/gu)).toHaveLength(2);
 
     const parameters = read("infrastructure/templates/resources.dev.bicepparam");
     // The workflow cannot consume the bicepparam file, which carries redacted

@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Creates a mode-0600 file from the identity values supplied by the workflow.
+# Its nonsecret values mirror resources.dev.bicepparam; the infrastructure unit
+# test keeps those values synchronized.
 parameters_file="${1:?A deployment parameters path is required.}"
 umask 077
+rm -f "$parameters_file"
+touch "$parameters_file"
+chmod 600 "$parameters_file"
 
 jq -n \
   --arg tenantId "$TENANT_ID" \
