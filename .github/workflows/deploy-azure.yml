@@ -164,16 +164,20 @@ jobs:
             local actual_sha256
             if [[ ! "$supplied_sha256" =~ $sha256_pattern ]]; then
               echo "::error::$input_name must be the 64-character hexadecimal SHA-256 digest of $secret_name, not an approval reference or label."
-              exit 1
+              return 1
             fi
             actual_sha256="$(printf '%s' "$secret_value" | sha256sum | awk '{print $1}')"
             if [ "${supplied_sha256,,}" != "$actual_sha256" ]; then
-              echo "::error::$input_name does not match $secret_name. Recompute by hashing the exact secret value, including any trailing newline stored in the secret and with no extra added newline (printf '%s' \"\$$secret_name\" | sha256sum)."
-              exit 1
+              echo "::error::$input_name does not match $secret_name. Recompute by hashing the exact stored secret value, including any trailing newline and with no extra added newline (printf '%s' \"<value of $secret_name>\" | sha256sum)."
+              return 1
             fi
           }
-          validate_reviewed_digest parameters_sha256 AZURE_RESOURCES_PARAMETERS_JSON "$PARAMETERS_JSON" "${PARAMETERS_SHA256:-}"
-          validate_reviewed_digest approval_sha256 AZURE_PROVISION_APPROVAL_JSON "$APPROVAL_JSON" "${APPROVAL_SHA256:-}"
+          validation_failed=false
+          validate_reviewed_digest parameters_sha256 AZURE_RESOURCES_PARAMETERS_JSON "$PARAMETERS_JSON" "${PARAMETERS_SHA256:-}" || validation_failed=true
+          validate_reviewed_digest approval_sha256 AZURE_PROVISION_APPROVAL_JSON "$APPROVAL_JSON" "${APPROVAL_SHA256:-}" || validation_failed=true
+          if [ "$validation_failed" = true ]; then
+            exit 1
+          fi
           # These guards are redundant while this preflight hard-fails, but keep
           # every Azure-writing step fail-closed if failure handling changes later.
           echo "configured=true" >> "$GITHUB_OUTPUT"
