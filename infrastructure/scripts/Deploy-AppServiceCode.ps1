@@ -84,6 +84,28 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw 'Deployment did not report success. It may still finish remotely: inspect deployment logs before retrying; do not change the web tier.'
     }
+    $deploymentSucceeded = $false
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        $raw = & az webapp log deployment show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
+            --output json --only-show-errors
+        if ($LASTEXITCODE -eq 0) {
+            $deployment = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
+            if ($deployment -is [System.Collections.IDictionary] -and $deployment.Contains('status')) {
+                $status = [string]$deployment.status
+                if ($status -ceq '4') {
+                    $deploymentSucceeded = $true
+                    break
+                }
+                if ($status -ceq '3') {
+                    throw 'Remote App Service deployment failed; inspect deployment logs before retrying.'
+                }
+            }
+        } else {
+            Write-Warning "Deployment status check $($attempt + 1) could not read the remote deployment status; retrying within the bounded window."
+        }
+        if ($attempt -lt 39) { Start-Sleep -Seconds 15 }
+    }
+    if (-not $deploymentSucceeded) { throw 'Remote App Service deployment did not report success within the bounded status checks. Inspect deployment logs before retrying.' }
     $online = $false
     for ($attempt = 0; $attempt -lt 12; $attempt++) {
         try {

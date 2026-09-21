@@ -700,6 +700,9 @@ try {
     $global:AzureCodeBuildSettings = @()
     $global:AzureCodeKind = 'app,linux'
     $global:AzureCodeHelp = '--track-status --clean'
+    $global:AzureCodeDeployExitCode = 1
+    $global:AzureCodeDeploymentStatus = 4
+    $global:AzureCodeDeploymentStatusReads = 0
     $global:AzureCodeChange = $false
     $global:AzureCodeChanged = $false
     $global:AzureCodePlanId = $global:AzurePlanId
@@ -742,6 +745,10 @@ try {
             if ($args[2] -ceq 'show') { return ($global:AzureCodeRuntime | ConvertTo-Json) }
             return (ConvertTo-Json -InputObject $global:AzureCodeBuildSettings -Depth 5)
         }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'log' -and $args[2] -ceq 'deployment' -and $args[3] -ceq 'show') {
+            $global:AzureCodeDeploymentStatusReads++
+            return (@{ status = $global:AzureCodeDeploymentStatus } | ConvertTo-Json)
+        }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'deploy') {
             if ($args -notcontains '--clean' -or $args[[array]::IndexOf($args, '--clean') + 1] -cne 'true') {
                 throw 'Source ZIP upload must explicitly request target cleanup.'
@@ -760,7 +767,7 @@ try {
                 }
             }
             $global:AzureCodeWrites++
-            $global:LASTEXITCODE = 1
+            $global:LASTEXITCODE = $global:AzureCodeDeployExitCode
             return
         }
         throw 'Unexpected code deployment command.'
@@ -803,6 +810,23 @@ try {
             throw "Unsafe source-build scenario $scenario reached deployment."
         }
     }
+    $global:AzureCodeKind = 'app,linux'
+    $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = '1.2'; scmMinTlsVersion = '1.2'; ftpsState = 'Disabled' }
+    $global:AzureCodeBuildSettings = @(
+        @{ name = 'SCM_DO_BUILD_DURING_DEPLOYMENT'; value = 'true' },
+        @{ name = 'CUSTOM_BUILD_COMMAND'; value = 'npm ci --include=dev && npm run build' }
+    )
+    $global:AzureCodeDeployExitCode = 0
+    $global:AzureCodeDeploymentStatus = 3
+    $global:AzureCodeDeploymentStatusReads = 0
+    $global:AzureCodeWrites = 0
+    $message = ''
+    try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+    if ($global:AzureCodeWrites -ne 1 -or $global:AzureCodeDeploymentStatusReads -ne 1 -or $message -notlike 'Remote App Service deployment failed*') {
+        throw 'A failed asynchronous Kudu deployment status must fail before the homepage probe.'
+    }
+    $global:AzureCodeDeployExitCode = 1
+    $global:AzureCodeDeploymentStatus = 4
     foreach ($property in @('minTlsVersion', 'scmMinTlsVersion')) {
         foreach ($value in @('1.0', '1.1', $null, '', 'TLS1_2', 'unknown', 1.2, 'missing')) {
             $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = '1.2'; scmMinTlsVersion = '1.2'; ftpsState = 'Disabled' }
