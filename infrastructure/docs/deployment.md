@@ -132,6 +132,15 @@ The deploy job may continue to use the same repository secrets after environment
 approval. Do not upload the generated parameter file: both jobs independently
 create it with owner-only permissions on their own runner and remove it on exit.
 
+This intentionally permits an unapproved `main` infrastructure change to
+authenticate and read live deployment state for validate/what-if. Protect `main`
+with required pull-request reviews. The configured OIDC application is also used
+by the protected deploy job, so its Azure permissions must be reviewed as
+deployment-capable; GitHub environment protection gates its use for create, not
+Azure RBAC itself. If validation needs independently minimized Azure permissions,
+use a separate validation application and credential in a reviewed follow-up
+change rather than weakening this deployment identity.
+
 The protected `azure-infrastructure` deployment job uses GitHub Actions OIDC,
 not a client secret. GitHub emits this repository's immutable, ID-qualified
 environment subject:
