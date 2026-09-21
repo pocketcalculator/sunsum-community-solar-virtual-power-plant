@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   CONTEXT_PAGES,
   ContextPage,
   contextPage,
+  PageAudioPlayer,
   PublicShell,
 } from "@/features/participation";
 
@@ -107,6 +108,118 @@ describe("the context pages", () => {
   it("renders no audio player while no clip is configured", () => {
     render(<ContextPage content={contextPage("impact")} />);
     expect(screen.queryByRole("button", { name: /Play/ })).toBeNull();
+  });
+});
+
+describe("the page audio control", () => {
+  const audio = {
+    src: "/audio/example.mp3",
+    title: "Example clip",
+    credit: "Example artist",
+  };
+
+  function stubMedia() {
+    const play = vi.fn().mockResolvedValue(undefined);
+    const pause = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(play);
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(pause);
+    return { play, pause };
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("does not start on its own", () => {
+    const { play } = stubMedia();
+    render(<PageAudioPlayer audio={audio} />);
+
+    expect(play).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Play/ })).toBeTruthy();
+  });
+
+  it("plays and then pauses, labelling each state accurately", async () => {
+    const { play, pause } = stubMedia();
+    render(<PageAudioPlayer audio={audio} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Play/ }));
+    await vi.waitFor(() => expect(play).toHaveBeenCalledTimes(1));
+
+    const pauseButton = await screen.findByRole("button", { name: /Pause/ });
+    fireEvent.click(pauseButton);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: /Play/ })).toBeTruthy();
+  });
+
+  /**
+   * The whole point of the separate control: muting silences the clip without
+   * stopping it. A "Mute" button that paused would be lying about what it did.
+   */
+  it("mutes without stopping playback", async () => {
+    const { play, pause } = stubMedia();
+    const { container } = render(<PageAudioPlayer audio={audio} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+    await screen.findByRole("button", { name: /Pause/ });
+
+    const element = container.querySelector("audio");
+    expect(element?.muted).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Mute/ }));
+
+    expect(element?.muted).toBe(true);
+    expect(pause).not.toHaveBeenCalled();
+    expect(play).toHaveBeenCalledTimes(1);
+    /** Still playing, so the playback control still offers to pause. */
+    expect(screen.getByRole("button", { name: /Pause/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Unmute/ })).toBeTruthy();
+  });
+
+  it("unmutes again", async () => {
+    stubMedia();
+    const { container } = render(<PageAudioPlayer audio={audio} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Mute/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Unmute/ }));
+
+    expect(container.querySelector("audio")?.muted).toBe(false);
+  });
+
+  it("carries a mute chosen before playback into the clip", async () => {
+    const { play } = stubMedia();
+    const { container } = render(<PageAudioPlayer audio={audio} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Mute/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+    await vi.waitFor(() => expect(play).toHaveBeenCalledTimes(1));
+
+    expect(container.querySelector("audio")?.muted).toBe(true);
+  });
+
+  /** A blocked or missing clip must not break the page it decorates. */
+  it("reports a clip it cannot play", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(
+      new Error("NotAllowedError"),
+    );
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(vi.fn());
+    render(<PageAudioPlayer audio={audio} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Play/ }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("could not be played");
+    expect(screen.getByRole("button", { name: /^Play/ })).toBeTruthy();
+  });
+
+  it("credits the clip", () => {
+    stubMedia();
+    const { container } = render(<PageAudioPlayer audio={audio} />);
+
+    /**
+     * The title also appears inside each button's visually-hidden label, so
+     * this asserts against the credit line specifically.
+     */
+    const credit = container.querySelector("p");
+    expect(credit?.textContent).toContain("Example clip");
+    expect(credit?.textContent).toContain("Example artist");
   });
 });
 

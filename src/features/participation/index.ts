@@ -7,6 +7,8 @@
  */
 
 export { ContextPage } from "./components/ContextPage";
+export { PageAudioPlayer } from "./components/PageAudio";
+export type { PageAudioPlayerProps } from "./components/PageAudio";
 export { LandingPage } from "./components/LandingPage";
 export { PublicShell } from "./components/PublicShell";
 export {

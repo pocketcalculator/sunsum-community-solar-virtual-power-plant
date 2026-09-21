@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Callout } from "@/components/ui/Callout";
@@ -49,10 +49,25 @@ export function OperatorPipeline({
 
   const isLive = dataSource === "live";
 
+  /**
+   * Which read is current.
+   *
+   * Filter changes each start a request, and responses can arrive out of
+   * order — a slow read for an abandoned filter set resolving after a fast one
+   * for the current set would replace the rows while the newer filters stay
+   * selected. Each response is tagged with the request that asked for it and
+   * dropped if it is no longer the latest.
+   */
+  const latestRequest = useRef(0);
+
   const reload = useCallback(
     async (next: PipelineFilters) => {
       /** The sample is not backed by the API; it is filtered in the browser. */
       if (!isLive) return;
+
+      const requestId = latestRequest.current + 1;
+      latestRequest.current = requestId;
+      const isCurrent = () => latestRequest.current === requestId;
 
       setLoading(true);
       setLoadError(null);
@@ -62,8 +77,11 @@ export function OperatorPipeline({
           query === "" ? "/api/pipeline" : `/api/pipeline?${query}`,
           { headers: { accept: "application/json" } },
         );
+        if (!isCurrent()) return;
+
         if (!response.ok) {
           const failure: unknown = await response.json().catch(() => null);
+          if (!isCurrent()) return;
           setLoadError(
             typeof failure === "object" &&
               failure !== null &&
@@ -75,15 +93,19 @@ export function OperatorPipeline({
         }
 
         const parsed = toPipelineView(await response.json());
+        if (!isCurrent()) return;
+
         if (parsed === null) {
           setLoadError("The pipeline response was not in the expected shape.");
           return;
         }
         setView(parsed);
       } catch {
+        if (!isCurrent()) return;
         setLoadError("Could not reach the server. Check your connection.");
       } finally {
-        setLoading(false);
+        /** Only the newest request may clear the spinner. */
+        if (isCurrent()) setLoading(false);
       }
     },
     [isLive],

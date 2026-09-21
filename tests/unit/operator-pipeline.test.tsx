@@ -287,4 +287,38 @@ describe("the operator pipeline view", () => {
 
     expect(screen.getByText(/No submissions match these filters/)).toBeTruthy();
   });
+
+  /** A superseded read must not replace the rows for the current filters. */
+  it("ignores a stale response that resolves after a newer one", async () => {
+    const resolvers: ((value: unknown) => void)[] = [];
+    const fetchMock = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<OperatorPipeline dataSource="live" initialView={view} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Screening" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Accepted" }));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const body = (name: string) => ({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          columns: [column("submitted", [item({ id: name, display_name: name })])],
+        }),
+    });
+
+    resolvers[1]?.(body("Current site"));
+    await screen.findByText("Current site");
+    resolvers[0]?.(body("Stale site"));
+
+    await vi.waitFor(() => expect(screen.getByText("Current site")).toBeTruthy());
+    expect(screen.queryByText("Stale site")).toBeNull();
+  });
 });

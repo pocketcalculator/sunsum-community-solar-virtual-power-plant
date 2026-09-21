@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Callout } from "@/components/ui/Callout";
@@ -68,6 +68,18 @@ export function InvestorPortfolio({
 
   const isLive = dataSource === "live";
 
+  /**
+   * Which read is current.
+   *
+   * Every filter change starts a request, and responses can arrive out of
+   * order — a slow read for an abandoned filter set resolving after a fast one
+   * for the current set. Committing unconditionally would leave the cards and
+   * the mandate summary describing a query the investor has already moved on
+   * from. Each response is therefore tagged with the request that asked for it
+   * and dropped if it is no longer the latest.
+   */
+  const latestRequest = useRef(0);
+
   const reload = useCallback(
     async (next: PortfolioFilters) => {
       /**
@@ -77,6 +89,10 @@ export function InvestorPortfolio({
        */
       if (!isLive) return;
 
+      const requestId = latestRequest.current + 1;
+      latestRequest.current = requestId;
+      const isCurrent = () => latestRequest.current === requestId;
+
       setLoading(true);
       setLoadError(null);
       try {
@@ -84,8 +100,11 @@ export function InvestorPortfolio({
           `/api/portfolio?${portfolioQueryString(next)}`,
           { headers: { accept: "application/json" } },
         );
+        if (!isCurrent()) return;
+
         if (!response.ok) {
           const failure: unknown = await response.json().catch(() => null);
+          if (!isCurrent()) return;
           setLoadError(
             typeof failure === "object" &&
               failure !== null &&
@@ -97,6 +116,8 @@ export function InvestorPortfolio({
         }
 
         const parsed = toPortfolioView(await response.json());
+        if (!isCurrent()) return;
+
         if (parsed === null) {
           setLoadError("The portfolio response was not in the expected shape.");
           return;
@@ -107,9 +128,15 @@ export function InvestorPortfolio({
           mergeProjectTypes(known, distinctProjectTypes(parsed.projects)),
         );
       } catch {
+        if (!isCurrent()) return;
         setLoadError("Could not reach the server. Check your connection.");
       } finally {
-        setLoading(false);
+        /**
+         * Only the newest request may clear the spinner. A superseded one
+         * finishing would otherwise report "done" while a live read is still
+         * in flight.
+         */
+        if (isCurrent()) setLoading(false);
       }
     },
     [isLive],
@@ -271,10 +298,19 @@ export function InvestorPortfolio({
           view is already narrowed to what they could fund. Saying so and
           offering to widen is the difference between a short list and a list
           that looks broken.
+
+          It is disabled on the sample, and that is not a limitation to work
+          around. A mandate match is the server comparing an investor's profile
+          against open funding needs; the sample has neither, so the only way to
+          make this control "work" there would be to invent which fabricated
+          projects match a mandate nobody holds. A disabled control that says
+          why is honest; an enabled one that changes its own label while every
+          card stays put is not.
         */}
         <label className={styles.mandateToggle}>
           <input
             checked={filters.mandateMatch}
+            disabled={!isLive}
             onChange={(event) =>
               applyFilters({ ...filters, mandateMatch: event.target.checked })
             }
@@ -283,9 +319,11 @@ export function InvestorPortfolio({
           <span>
             Only projects matching my mandate
             <span className={styles.mandateHint}>
-              {filters.mandateMatch
-                ? " — clear this to see every released project"
-                : " — showing every released project"}
+              {!isLive
+                ? " — sign in as a financier to match against your mandate"
+                : filters.mandateMatch
+                  ? " — clear this to see every released project"
+                  : " — showing every released project"}
             </span>
           </span>
         </label>

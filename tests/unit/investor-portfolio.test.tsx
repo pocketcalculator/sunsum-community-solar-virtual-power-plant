@@ -350,4 +350,74 @@ describe("the investor portfolio", () => {
 
     expect(screen.getByText(/No projects match these filters/)).toBeTruthy();
   });
+
+  /**
+   * Filter changes race. A slow read for an abandoned filter set must not
+   * replace the rows for the set the investor is actually looking at.
+   */
+  it("ignores a stale response that resolves after a newer one", async () => {
+    const resolvers: ((value: unknown) => void)[] = [];
+    const fetchMock = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<InvestorPortfolio dataSource="live" initialView={view([project()])} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Development" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Construction" }));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const body = (name: string) => ({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          items: [{ project_id: name, name, stage: "development" }],
+          project_count: 1,
+          total_estimated_capacity_kw: 0,
+          mandate_match: true,
+        }),
+    });
+
+    // Newest resolves first, then the superseded one arrives late.
+    resolvers[1]?.(body("Current"));
+    await screen.findByText("Current");
+    resolvers[0]?.(body("Stale"));
+
+    await vi.waitFor(() => expect(screen.getByText("Current")).toBeTruthy());
+    expect(screen.queryByText("Stale")).toBeNull();
+  });
+
+  /**
+   * A mandate match is the server comparing an investor profile against open
+   * funding needs. The sample has neither, so the control must not claim to
+   * narrow anything there.
+   */
+  it("disables the mandate filter on the sample rather than faking it", () => {
+    render(<InvestorPortfolio dataSource="sample" initialView={view([project()])} />);
+
+    const toggle = screen.getByRole("checkbox", {
+      name: /Only projects matching my mandate/,
+    });
+    expect((toggle as HTMLInputElement).disabled).toBe(true);
+    expect(
+      screen.getByText(/sign in as a financier to match against your mandate/),
+    ).toBeTruthy();
+  });
+
+  it("leaves the mandate filter usable on live data", () => {
+    render(<InvestorPortfolio dataSource="live" initialView={view([project()])} />);
+
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: /Only projects matching my mandate/,
+        }) as HTMLInputElement
+      ).disabled,
+    ).toBe(false);
+  });
 });

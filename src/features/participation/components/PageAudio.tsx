@@ -12,21 +12,23 @@ export interface PageAudioPlayerProps {
 /**
  * The looping clip that accompanies a context page.
  *
- * Deliberately starts muted and requires a click to play. Browsers block
- * autoplay with sound, so an unmuted autoplay would fail silently on most of
- * them and behave inconsistently on the rest — and a page that starts making
- * noise on its own is hostile to anyone reading with others nearby or using a
- * screen reader.
+ * Playback and muting are separate controls because they are separate things,
+ * and one button cannot honestly be both: pausing is not muting, and a control
+ * labelled "Mute" that stops playback lies about what it did.
  *
- * `loop` is on because the clip is short and meant to sit under the reading,
- * and a mute control is always present, which is what was asked for.
+ * Nothing starts on its own. Browsers block autoplay with sound, so an unmuted
+ * autoplay would fail on most of them and behave inconsistently on the rest —
+ * and a page that begins making noise unprompted is hostile to anyone reading
+ * with others nearby. `loop` is on because the clip is short and is meant to
+ * sit under the reading.
  */
 export function PageAudioPlayer({ audio }: PageAudioPlayerProps) {
   const elementRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  function toggle() {
+  function togglePlayback() {
     const element = elementRef.current;
     if (element === null) return;
 
@@ -36,7 +38,12 @@ export function PageAudioPlayer({ audio }: PageAudioPlayerProps) {
       return;
     }
 
-    element.muted = false;
+    /**
+     * Applied imperatively rather than as a JSX prop: React does not reliably
+     * reflect `muted` onto the element, so the attribute and the property can
+     * disagree.
+     */
+    element.muted = muted;
     void element
       .play()
       .then(() => {
@@ -51,15 +58,32 @@ export function PageAudioPlayer({ audio }: PageAudioPlayerProps) {
       });
   }
 
+  function toggleMuted() {
+    const next = !muted;
+    setMuted(next);
+    const element = elementRef.current;
+    if (element !== null) element.muted = next;
+  }
+
   return (
     <div className={styles.player}>
       <button
-        className={styles.button}
-        onClick={toggle}
-        type="button"
         aria-pressed={playing}
+        className={styles.button}
+        onClick={togglePlayback}
+        type="button"
       >
-        {playing ? "Mute" : "Play"}
+        {playing ? "Pause" : "Play"}
+        <span className={styles.visuallyHidden}> {audio.title}</span>
+      </button>
+
+      <button
+        aria-pressed={muted}
+        className={styles.secondaryButton}
+        onClick={toggleMuted}
+        type="button"
+      >
+        {muted ? "Unmute" : "Mute"}
         <span className={styles.visuallyHidden}> {audio.title}</span>
       </button>
 
@@ -80,7 +104,6 @@ export function PageAudioPlayer({ audio }: PageAudioPlayerProps) {
       */}
       <audio
         loop
-        muted
         onEnded={() => setPlaying(false)}
         onPause={() => setPlaying(false)}
         preload="none"
