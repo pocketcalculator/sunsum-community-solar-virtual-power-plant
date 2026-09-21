@@ -133,12 +133,17 @@ jobs:
         id: deployment-artifacts
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           PARAMETERS_JSON: ${{ secrets.AZURE_RESOURCES_PARAMETERS_JSON }}
           APPROVAL_JSON: ${{ secrets.AZURE_PROVISION_APPROVAL_JSON }}
           PARAMETERS_SHA256: ${{ inputs.parameters_sha256 }}
           APPROVAL_SHA256: ${{ inputs.approval_sha256 }}
         run: |
           set -euo pipefail
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "::error::Deploy job requires workflow_dispatch so reviewed SHA-256 inputs are present."
+            exit 1
+          fi
           missing_artifacts=""
           if [ -z "${PARAMETERS_JSON:-}" ]; then
             missing_artifacts="AZURE_RESOURCES_PARAMETERS_JSON"
@@ -162,11 +167,11 @@ jobs:
           actual_parameters_sha256="$(printf '%s' "$PARAMETERS_JSON" | sha256sum | awk '{print $1}')"
           actual_approval_sha256="$(printf '%s' "$APPROVAL_JSON" | sha256sum | awk '{print $1}')"
           if [ "${PARAMETERS_SHA256,,}" != "$actual_parameters_sha256" ]; then
-            echo "::error::parameters_sha256 does not match AZURE_RESOURCES_PARAMETERS_JSON."
+            echo "::error::parameters_sha256 does not match AZURE_RESOURCES_PARAMETERS_JSON. Recompute by hashing the exact secret value with no added newline (printf '%s' \"\$AZURE_RESOURCES_PARAMETERS_JSON\" | sha256sum)."
             exit 1
           fi
           if [ "${APPROVAL_SHA256,,}" != "$actual_approval_sha256" ]; then
-            echo "::error::approval_sha256 does not match AZURE_PROVISION_APPROVAL_JSON."
+            echo "::error::approval_sha256 does not match AZURE_PROVISION_APPROVAL_JSON. Recompute by hashing the exact secret value with no added newline (printf '%s' \"\$AZURE_PROVISION_APPROVAL_JSON\" | sha256sum)."
             exit 1
           fi
           # These guards are redundant while this preflight hard-fails, but keep
