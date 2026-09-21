@@ -29,11 +29,14 @@ describe("the bounded Azure preparation contract", () => {
     expect(core).toContain("module storage './modules/storage.bicep' = {");
     expect(core).toContain("module postgres './modules/postgres.bicep' = {");
     expect(core).toContain("serverName: postgresServerName");
-    expect(core).toContain("adminObjectId: postgresAdminObjectId");
+    expect(core).toContain("administrators: postgresAdministrators");
     expect(core).toContain("output AZURE_POSTGRES_SERVER_NAME string = postgres.outputs.name");
     expect(core).toContain("output PGHOST string = postgres.outputs.fqdn");
     expect(core).not.toContain("web-sign-in.bicep");
-    expect(core).not.toContain("storage-role-grants.bicep");
+    expect(core).toContain("module blobRoles './storage-role-grants.bicep' = if (deployRbac)");
+    expect(core).toContain("param deployRbac bool = false");
+    expect(core).toContain("approvedWebPrincipalId: approvedWebPrincipalId");
+    expect(core).toContain("blobDataAccess: 'Contributor'");
   });
 
   it("provides private LRS containers and an explicit policy-approved public-network choice", () => {
@@ -220,9 +223,15 @@ describe("the bounded Azure preparation contract", () => {
         return [key, value] as const;
       }),
     );
-    const redacted = new Set(["tenantId", "postgresAdminObjectId", "postgresAdminPrincipalName"]);
+    const redacted = new Set(["tenantId", "postgresAdminObjectId", "postgresAdminPrincipalName", "postgresAdminPrincipalType", "postgresAdministrators"]);
     expect(workflowValues.size).toBe(26);
-    expect([...parameterValues.keys()].sort()).toEqual([...workflowValues.keys()].sort());
+    expect([...parameterValues.keys()].filter((key) => !redacted.has(key)).sort())
+      .toEqual([...workflowValues.keys()].filter((key) => !redacted.has(key)).sort());
+    expect(workflowValues.get("postgresAdminObjectId")).toBe("$postgresAdminObjectId");
+    expect(workflowValues.get("postgresAdminPrincipalName")).toBe("$postgresAdminPrincipalName");
+    expect(workflowValues.get("postgresAdminPrincipalType")).toBe('"User"');
+    expect(parameters).toContain("param postgresAdministrators = [");
+    expect(parameters).toContain("principalType: 'User'");
     for (const [key, value] of parameterValues) {
       if (redacted.has(key)) continue;
       expect(`${key}=${workflowValues.get(key)?.replace(/"/gu, "'")}`).toBe(`${key}=${value}`);
@@ -238,6 +247,11 @@ describe("the bounded Azure preparation contract", () => {
   it("fails manual deployment until reviewed artifacts are configured", () => {
     const workflow = read(".github/workflows/deploy-azure.yml");
     const deployJob = workflow.slice(workflow.indexOf("  deploy:"));
+    const legacyGate = deployJob.indexOf("- name: Block incompatible legacy provisioning");
+    expect(legacyGate).toBeGreaterThanOrEqual(0);
+    expect(legacyGate).toBeLessThan(deployJob.indexOf("- uses: actions/checkout@"));
+    expect(deployJob.slice(legacyGate, deployJob.indexOf("- uses: actions/checkout@"))).toContain("exit 1");
+    expect(deployJob).toContain("first-time/F1 parameter contract is incompatible");
     const preflight = "      - name: Check reviewed deployment artifacts availability";
     const preflightIndex = deployJob.indexOf(preflight);
     expect(preflightIndex).toBeGreaterThanOrEqual(0);
@@ -371,9 +385,11 @@ describe("the bounded Azure preparation contract", () => {
     expect(parameters).toContain("param postgresServerName = 'db-sunsum-dev-test-centralus'");
     expect(parameters).toContain("param databaseName = 'sunsum_test'");
     expect(parameters).toContain("param tenantId = '00000000-0000-0000-0000-000000000000'");
-    expect(parameters).toContain("param postgresAdminObjectId = '00000000-0000-0000-0000-000000000000'");
-    expect(parameters).toContain("param postgresAdminPrincipalName = '<postgres-admin-principal-name>'");
-    expect(parameters).toContain("param postgresAdminPrincipalType = 'User'");
+    expect(parameters).toContain("param postgresAdministrators = [");
+    expect(parameters).toContain("objectId: '00000000-0000-0000-0000-000000000000'");
+    expect(parameters).toContain("principalName: '<postgres-admin-principal-name>'");
+    expect(parameters).toContain("principalType: 'User'");
+    expect(parameters.match(/objectId:/gu)).toHaveLength(1);
     expect(parameters).toContain("param postgresVersion = '17'");
     expect(parameters).toContain("param postgresSkuName = 'Standard_B1ms'");
     expect(parameters).not.toMatch(/readEnvironmentVariable|stsunsumdev928e5e28|db-sunsum-dev-centralus/u);
