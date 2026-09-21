@@ -117,17 +117,19 @@ describe("the bounded Azure preparation contract", () => {
     expect(provision).toContain("Assert-AppServiceFreePlan");
   });
 
-  it("skips every deployment step safely until reviewed artifacts are configured", () => {
+  it("fails manual deployment until reviewed artifacts are configured", () => {
     const workflow = read(".github/workflows/deploy-azure.yml");
     const deployJob = workflow.slice(workflow.indexOf("  deploy:"));
     const preflight = "      - name: Check reviewed deployment artifacts availability";
     const preflightIndex = deployJob.indexOf(preflight);
     expect(preflightIndex).toBeGreaterThanOrEqual(0);
     const deploymentSteps = deployJob.slice(preflightIndex + preflight.length).split("\n      - ").slice(1);
-    expect(workflow).toContain('echo "configured=false" >> "$GITHUB_OUTPUT"');
     expect(workflow).toContain('missing_artifacts="AZURE_RESOURCES_PARAMETERS_JSON"');
     expect(workflow).toContain('AZURE_PROVISION_APPROVAL_JSON');
-    expect(workflow).toContain("skipping Azure deployment until an operator provisions them.");
+    expect(workflow).toContain(
+      "Missing reviewed deployment artifact secrets: $missing_artifacts. Provision these secrets before dispatching an Azure deployment.",
+    );
+    expect(workflow).toContain("exit 1");
     expect(deploymentSteps.length).toBeGreaterThan(0);
     for (const step of deploymentSteps) {
       expect(step).toContain("if: steps.deployment-artifacts.outputs.configured == 'true'");
