@@ -31,6 +31,7 @@ export {
   getPipelineRoute,
   getMyEngagementsRoute,
   getOwnerOutstandingRoute,
+  getParticipantProfilesRoute,
   getProjectFundingNeedsRoute,
   getSiteDocumentContentRoute,
   getSubmissionDetailRoute,
