@@ -1,0 +1,71 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--accent-solar-line);
+  border-radius: var(--radius-md);
+  background: var(--accent-solar);
+  color: var(--text-on-accent);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter var(--motion-fast) var(--easing-standard);
+}
+
+.button:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.engaged {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: var(--target-min);
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-accent);
+}
+
+.error {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-critical);
+}
+
+.errorLink {
+  color: inherit;
+  font-weight: 600;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

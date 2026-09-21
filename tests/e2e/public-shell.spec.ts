@@ -8,8 +8,8 @@ const entryPaths = [
 
 const roleLinks = [
   { label: "Site Owner", href: "/dashboard/site-owner" },
-  { label: "Investor", href: "/join?start=i-would-fund" },
-  { label: "Platform Operator", href: "/join" },
+  { label: "Investor", href: "/dashboard/investor" },
+  { label: "Platform Operator", href: "/dashboard/operator" },
 ];
 
 async function hasOverflow(page: Page) {
