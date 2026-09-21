@@ -1664,7 +1664,15 @@ components:
         `additionalProperties: false` is enforced, not decorative: an unknown
         property is a `400`. That is what keeps `password` and `role_id` out —
         the first must never reach the server, the second is derived.
-      required: [full_name, email, account_method, representation, user_type_id, consent_accepted]
+      required:
+        [
+          full_name,
+          email,
+          account_method,
+          representation,
+          user_type_id,
+          consent_accepted,
+        ]
       properties:
         full_name: { type: string, minLength: 1, maxLength: 120 }
         email: { type: string, format: email, maxLength: 254 }
