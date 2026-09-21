@@ -105,6 +105,39 @@ files; Azure CLI authentication is still required for cloud operations.
   Deployment also requires permission to configure the new PostgreSQL Entra
   administrator; selecting an identity is not proof of those permissions.
 
+### GitHub Actions OIDC credential
+
+The `azure-infrastructure` environment uses GitHub Actions OIDC, not a client
+secret. GitHub now emits this repository's immutable, ID-qualified subject:
+
+```text
+repo:pocketcalculator@34637263/sunsum-community-solar-virtual-power-plant@1370296682:environment:azure-infrastructure
+```
+
+Entra must have a federated identity credential with that exact issuer, subject
+and audience for the application identified by `AZURE_CLIENT_ID`. The legacy
+name-only subject does not match and causes `AADSTS700213` before any Azure
+deployment command runs.
+
+An authorized identity administrator can add the versioned credential while
+signed in to the intended tenant. This is a cloud write and must not be run as
+part of ordinary deployment:
+
+```powershell
+$applicationObjectId = az ad app show `
+  --id '<AZURE_CLIENT_ID>' `
+  --query id `
+  --output tsv
+
+az ad app federated-credential create `
+  --id $applicationObjectId `
+  --parameters '@infrastructure/config/github-actions-azure-infrastructure.federated-credential.json'
+```
+
+Keep the previous credential until a main-branch workflow dispatch signs in
+successfully, then separately review its removal. Repository changes alone
+cannot update an Entra application registration.
+
 ### Local identity setup
 
 The recommended deployment setup keeps private values out of tracked files.

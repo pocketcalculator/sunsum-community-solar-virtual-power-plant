@@ -136,6 +136,21 @@ describe("the bounded Azure preparation contract", () => {
     }
   });
 
+  it("binds the approval-free workflow to main and its immutable OIDC subject", () => {
+    const workflow = read(".github/workflows/deploy-azure2.yaml");
+    const credential = JSON.parse(
+      read("infrastructure/config/github-actions-azure-infrastructure.federated-credential.json"),
+    );
+    expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
+    expect(workflow).toContain("environment: azure-infrastructure");
+    expect(credential).toMatchObject({
+      issuer: "https://token.actions.githubusercontent.com",
+      subject:
+        "repo:pocketcalculator@34637263/sunsum-community-solar-virtual-power-plant@1370296682:environment:azure-infrastructure",
+      audiences: ["api://AzureADTokenExchange"],
+    });
+  });
+
   it("declares a fixture-only web host with database configuration kept in operator outputs", () => {
     const web = read("infrastructure/templates/modules/web.bicep");
     expect(web).toContain("httpsOnly: true");
