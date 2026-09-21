@@ -189,7 +189,7 @@ describe("local-only release assembly", () => {
     const manifest = JSON.parse(readFileSync(join(release, "release-manifest.json"), "utf8").replace(/^\uFEFF/, ""));
     expect(manifest.schemaVersion).toBe(2);
     expect(manifest.sourceRevision).toBe(git("rev-parse", "HEAD"));
-    expect(manifest.backendContractRevision).toBe("db0c6a5d6e39fe7cf079dab27e9616189945cf6c");
+    expect(manifest.backendContractRevision).toBe("449f6b0660609af3c80946f618c5e73828a36768");
     expect(manifest.deployedRevision).toBeNull();
     expect(manifest.AzureCalls).toBe(0);
     expect(manifest.application.mode).toBe("DYNAMIC_WORKSPACE");

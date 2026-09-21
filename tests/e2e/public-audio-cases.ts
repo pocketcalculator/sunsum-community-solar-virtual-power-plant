@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { expect, type Page } from "@playwright/test";
 import assets from "../../src/features/participation/content/pageAudioAssets.json";
 
@@ -10,7 +11,7 @@ function nativeState(element: HTMLElement | SVGElement) {
     duration: element.duration, src: element.currentSrc || element.src, ended: element.ended };
 }
 
-export async function exercisePublicAudio(page: Page, topic: Topic, assetBase = "/") {
+export async function exercisePublicAudio(page: Page, topic: Topic, assetBase = "/", creditsPath?: string) {
   const track = assets.tracks[topic];
   const expectedUrl = new URL(`${assetBase}${track.path}`, page.url());
   const response = await page.request.get(expectedUrl.href);
@@ -20,11 +21,14 @@ export async function exercisePublicAudio(page: Page, topic: Topic, assetBase = 
   expect(bytes.length).toBe(track.bytes);
   expect(createHash("sha256").update(bytes).digest("hex")).toBe(track.sha256);
 
-  const noticeResponse = await page.request.get(new URL(`${assetBase}audio/NOTICE.txt`, page.url()).href);
-  expect(noticeResponse.status()).toBe(200);
-  const notice = (await noticeResponse.text()).replace(/\r\n/g, "\n");
-  expect(notice).toContain("The MIT software license does not cover these recordings.");
-  expect(notice).toContain(`${track.path}\n${track.title}\n${track.attribution}`);
+  await expect(page.getByRole("region", { name: `Music: ${track.title}`, exact: true }))
+    .toContainText(track.attribution);
+  if (creditsPath) {
+    const noticeResponse = await page.request.get(new URL(creditsPath, page.url()).href);
+    expect(noticeResponse.status()).toBe(200);
+    const canonicalNotice = readFileSync(new URL("../../docs/ws1/audio-credits.txt", import.meta.url));
+    expect(await noticeResponse.body()).toEqual(canonicalNotice);
+  }
 
   const audio = page.locator("audio");
   await expect(audio).toHaveCount(1);

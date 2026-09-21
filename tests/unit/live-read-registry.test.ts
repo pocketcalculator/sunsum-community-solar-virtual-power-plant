@@ -21,7 +21,7 @@ describe("neutral canonical connection metadata", () => {
       "SUNSUM-CONNECTION:FINANCE-GIS-EXTERNAL-DATA",
     ]);
     expect(liveRegistry).toBe(CONNECTION_REGISTRY);
-    expect(WS2_CONTRACT_REVISION).toBe("db0c6a5d6e39fe7cf079dab27e9616189945cf6c");
+    expect(WS2_CONTRACT_REVISION).toBe("449f6b0660609af3c80946f618c5e73828a36768");
     expect(Object.isFrozen(CONNECTION_REGISTRY)).toBe(true);
     for (const entry of CONNECTION_REGISTRY) {
       expect(Object.isFrozen(entry)).toBe(true);
@@ -60,12 +60,13 @@ describe("neutral canonical connection metadata", () => {
     expect(map?.disclosure).toContain("GeoJSON FeatureCollection (EPSG:4326)");
     expect(map?.disclosure).toContain("browser never receives parcel credentials or ESRI provider/account tokens");
     expect(map?.disclosure).toContain("short-lived or referer-bound tokens");
-    expect(map?.nextHandoff).toContain("operator-only GET /api/sites/candidate-parcels");
+    expect(map?.nextHandoff).toContain("GET /api/sites/candidate-parcels for site owners and operators");
     expect(map?.nextHandoff).toContain("not admitted by this frontend");
     expect(map?.nextHandoff).toContain("authentication");
     expect(map?.nextHandoff).toContain("project-join contract");
     expect(map?.nextHandoff).toContain("approved property projection");
-    expect(map?.nextHandoff).toContain("Refresh cadence is unknown");
+    expect(map?.nextHandoff).toContain("reports freshness, not source provenance");
+    expect(map?.nextHandoff).toContain("not an agreed refresh schedule");
     expect(map?.nextHandoff).toContain("no polling by default");
   });
 

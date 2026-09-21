@@ -1,5 +1,5 @@
 export const WS2_CONTRACT_REVISION =
-  "db0c6a5d6e39fe7cf079dab27e9616189945cf6c" as const;
+  "449f6b0660609af3c80946f618c5e73828a36768" as const;
 
 export type ConnectionRole = "site-owner" | "operator" | "investor";
 
@@ -169,8 +169,8 @@ export const CONNECTION_REGISTRY: readonly ConnectionDefinition[] = Object.freez
     "SUNSUM-CONNECTION:MAPS-LOCATION",
     "Backend GeoJSON map seam",
     "Existing backend and location integration owners",
-    "Stored authorized location fields remain available. Proposed map input is backend GeoJSON FeatureCollection (EPSG:4326). The browser never receives parcel credentials or ESRI provider/account tokens, including short-lived or referer-bound tokens. A separate basemap key or entitlement has not been provisioned.",
-    "PR71 proposes operator-only GET /api/sites/candidate-parcels; it is not admitted by this frontend. Reconcile the proposed URL/handler, authentication, project-join contract, approved property projection, role/record disclosure, bounds and trusted fixture/live provenance before adding a typed GET. Refresh cadence is unknown: no polling by default; reviewed snapshots may suffice. Backend/operators own provider credentials. Edit this registry and the live-read transport/projection only after that handoff.",
+    "Stored authorized location fields remain available. The merged backend offers GeoJSON FeatureCollection (EPSG:4326). The browser never receives parcel credentials or ESRI provider/account tokens, including short-lived or referer-bound tokens. A separate basemap key or entitlement has not been provisioned.",
+    "Merged PR71 implements GET /api/sites/candidate-parcels for site owners and operators; it is not admitted by this frontend. Reconcile authentication, the project-join contract, approved property projection, role/record disclosure, bounds and trusted fixture/live provenance before adding a typed GET. The backend defaults to three synthetic parcels and reports freshness, not source provenance. Its read-through cache is not an agreed refresh schedule: no polling by default. Backend/operators own provider credentials. Edit this registry and the live-read transport/projection only after that handoff.",
   ),
   seam(
     "SUNSUM-CONNECTION:AI-IMAGE-EVIDENCE",

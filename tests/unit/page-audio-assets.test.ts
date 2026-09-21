@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import assets from "../../src/features/participation/content/pageAudioAssets.json";
 
@@ -12,13 +12,14 @@ describe("approved public audio manifest", () => {
   });
 
   it("ships a standalone third-party notice whose credits match the canonical manifest", () => {
-    const notice = readFileSync(new URL("../../public/audio/NOTICE.txt", import.meta.url), "utf8")
+    const notice = readFileSync(new URL("../../docs/ws1/audio-credits.txt", import.meta.url), "utf8")
       .replace(/\r\n/g, "\n");
-    expect(notice).toContain("The MIT software license does not cover these recordings.");
-    expect(notice).toContain("public website, project\nrepository and associated release bundles");
+    expect(notice).toContain("THIRD-PARTY AUDIO - NOT COVERED BY THE MIT CODE LICENSE");
+    expect(notice).toContain("website, in the repository and in release bundles");
     for (const track of Object.values(assets.tracks)) {
-      expect(notice).toContain(`${track.path}\n${track.title}\n${track.attribution}`);
+      expect(notice).toContain(`File: ${track.path}\nTitle: ${track.title}\nAttribution: ${track.attribution}`);
     }
+    expect(existsSync(new URL("../../public/audio/NOTICE.txt", import.meta.url))).toBe(false);
     expect(notice).not.toMatch(/AAMk|attachment_id|message_id|privateSource|audio-handoff|approval.packet|C:\\Users/);
   });
 

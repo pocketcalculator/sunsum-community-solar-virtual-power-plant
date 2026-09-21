@@ -59,11 +59,12 @@ describe("live-read presentation states", () => {
     const map = screen.getByRole("region", { name: "A permitted map source is out of reach right now" });
     expect(map).toHaveTextContent("GeoJSON FeatureCollection");
     expect(map).toHaveTextContent("EPSG:4326");
-    expect(map).toHaveTextContent("this is not a live feed");
-    expect(map).toHaveTextContent("operator-only candidate-parcel feed has been proposed");
+    expect(map).toHaveTextContent("This is not a live feed");
+    expect(map).toHaveTextContent("authenticated site owners and operators");
     expect(map).toHaveTextContent("project-join contract still need configured admission");
     expect(map).toHaveTextContent("short-lived or referer-bound tokens");
-    expect(map).toHaveTextContent("no automatic map polling");
+    expect(map).toHaveTextContent("No automatic map polling");
+    expect(map).toHaveTextContent("freshness metadata alone does not prove live GIS");
     expect(map).toHaveTextContent("SUNSUM-CONNECTION:MAPS-LOCATION");
     expect(map.querySelector("input, button")).toBeNull();
   });

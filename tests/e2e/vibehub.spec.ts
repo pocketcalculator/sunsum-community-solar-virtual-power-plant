@@ -203,7 +203,7 @@ for (const topic of ["need", "opportunity", "impact"] as const) {
     });
     await page.goto(`${root}#/${topic}`);
     await page.reload();
-    await exercisePublicAudio(page, topic, root);
+    await exercisePublicAudio(page, topic, root, `${root}AUDIO-CREDITS.txt`);
     expect(requests).toEqual([]);
   });
 }
