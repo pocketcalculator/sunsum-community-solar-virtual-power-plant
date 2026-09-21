@@ -13,23 +13,26 @@ interface PublicShellProps {
 }
 
 const PRIMARY_NAV = [
-  { href: "/#participate", label: "Participation paths" },
-  { href: "/#journey", label: "Delivery journey" },
+  { href: "/need", label: "Need" },
+  { href: "/opportunity", label: "Opportunity" },
+  { href: "/impact", label: "Impact" },
+  { href: "/#about", label: "About" },
   { href: "/#faq", label: "FAQ" },
+  { href: "/app", label: "Workspace" },
 ] as const;
 
 const ROLE_NAV = [
   {
     id: "site-owner",
     href: "/dashboard/site-owner",
-    label: "Site Owner",
+    label: "Site owner view",
   },
   {
     id: "financier",
     href: "/join?start=i-would-fund",
-    label: "Investor",
+    label: "Investor profile preview",
   },
-  { id: "operator", href: "/join", label: "Platform Operator" },
+  { id: "operator", href: "/join", label: "Operator profile preview" },
 ] as const satisfies readonly {
   id: ParticipantRoleId;
   href: string;
@@ -65,7 +68,7 @@ export function PublicShell({
               <BrandMark className={styles.brandMark} />
               <span className={styles.brandName}>Sunsum</span>
             </Link>
-            <Badge tone="neutral">Design foundation</Badge>
+            <Badge tone="neutral">Public introduction</Badge>
           </div>
 
           <nav className={styles.nav} aria-label="Primary">
@@ -87,7 +90,7 @@ export function PublicShell({
         </div>
 
         {visibleRoleLinks.length > 0 ? (
-          <nav className={styles.roleNav} aria-label="Role workspaces">
+          <nav className={styles.roleNav} aria-label="Participation contexts">
             <div className={styles.roleNavInner}>
               <ul className={styles.roleNavList}>
                 {visibleRoleLinks.map((item) => (
@@ -118,8 +121,9 @@ export function PublicShell({
             Open software for community-owned solar virtual power plants.
           </p>
           <p className={styles.footerNote}>
-            Public interface foundation. Diagrams and examples illustrate the
-            design only, and nothing here is connected to real project records.
+            Stories and diagrams explain a proposal. The public profile preview
+            is fictional and unsaved; separate workspace reads depend on an
+            authorized connection and permitted access.
           </p>
         </div>
       </footer>

@@ -150,6 +150,49 @@
   --easing-standard: cubic-bezier(0.2, 0.6, 0.3, 1);
 }
 
+/* Sunroom shares the public themes. */
+[data-concept="sunroom"] {
+  --lab-bg: var(--surface-page);
+  --lab-surface: var(--surface-raised);
+  --lab-surface-alt: var(--surface-raised-strong);
+  --lab-text: var(--text-primary);
+  --lab-muted: var(--text-secondary);
+  --lab-line: var(--border-subtle);
+  --lab-accent: var(--accent-solar);
+  --lab-on-accent: var(--text-on-accent);
+  --lab-accent-ink: var(--text-accent);
+  --lab-positive: var(--text-positive);
+  --lab-positive-bg: var(--surface-positive-soft);
+  --lab-warning: var(--text-accent);
+  --lab-warning-bg: var(--surface-accent-soft);
+  --lab-danger: var(--text-critical);
+  --lab-danger-bg: var(--surface-critical-soft);
+  --lab-hero: var(--surface-raised-strong);
+  --lab-hero-ink: var(--text-primary);
+  --lab-deep: var(--surface-sunken);
+  --lab-deep-text: var(--text-primary);
+  --lab-overlay: var(--surface-dialog-backdrop);
+  --lab-shadow: var(--surface-dialog-backdrop);
+  --lab-focus: var(--focus-ring-color);
+  --lab-panel: var(--surface-sunken);
+  --lab-panel-line: var(--illustration-panel-stroke);
+  --lab-art-sun: var(--accent-solar);
+  --lab-art-ground: var(--surface-positive-soft);
+  --lab-art-roof: var(--brand-roof-secondary);
+  --lab-art-wall: var(--illustration-wall);
+  --lab-art-window: var(--illustration-line);
+  --lab-art-tree: var(--accent-community);
+  --lab-map-base: var(--surface-sunken);
+  --lab-map-block: var(--surface-raised-strong);
+  --lab-map-park: var(--surface-positive-soft);
+  --lab-map-road: var(--surface-raised);
+  --lab-map-connection: var(--accent-community);
+  --lab-map-label: var(--text-secondary);
+  --lab-chart-secondary: var(--accent-community);
+  --lab-font-display: var(--font-sans);
+  --lab-radius: var(--radius-lg);
+}
+
 /*
  * Added for the form layer (fields, choices and validation messages).
  * Additive only: nothing declared above is redefined here.

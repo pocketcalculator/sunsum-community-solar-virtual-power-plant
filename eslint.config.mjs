@@ -192,7 +192,7 @@ export default defineConfig([
     },
   },
   {
-    files: ["src/components/ui/**/*.{ts,tsx}"],
+    files: ["src/components/{ui,workspace}/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",

@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
+import { ActionLink } from "@/components/ui/ActionLink";
 import { Callout } from "@/components/ui/Callout";
+import { PublicLearning } from "@/features/community-context";
 import { FAQ_ITEMS } from "../faq";
 import { EntryPathGrid } from "./EntryPathGrid";
 import { FaqList } from "./FaqList";
@@ -10,29 +12,19 @@ import styles from "./LandingPage.module.css";
 
 const PREREQUISITES = [
   {
-    title: "A shared project record",
+    title: "An approved connection",
     detail:
-      "One agreed structure for sites, stages and decisions that every workspace reads from.",
+      "The connected workspace can read only admitted services. When a connection is unavailable, it says so rather than filling the gap with fictional records.",
   },
   {
-    title: "An accepted service contract",
+    title: "Legitimate access",
     detail:
-      "A stable API, so the interface can show real information instead of describing it.",
+      "An established session and service permissions determine access. Choosing a public participation path does not sign you in or grant a role.",
   },
   {
-    title: "Sign-in and permissions",
+    title: "Read-only boundaries",
     detail:
-      "Identity, plus access rules enforced by the service rather than hidden in the interface.",
-  },
-  {
-    title: "A hosted environment",
-    detail:
-      "Somewhere to run the application, with history for anything that changes a project.",
-  },
-  {
-    title: "Screening rules and data",
-    detail:
-      "Agreed checks and trusted sources before any site can be assessed.",
+      "Available information is shown with its context and limitations. This release does not save workflow changes, submit projects or control equipment.",
   },
 ] as const;
 
@@ -46,10 +38,30 @@ export function LandingPage() {
       <Hero />
 
       <Section
+        id="about"
+        eyebrow="About SunSum"
+        title="Community needs come first"
+        description="SunSum explores a community-first solar approach: local needs before surplus, shared participation and coordinated project information."
+      >
+        <p className={styles.about}>
+          The proposal connects three questions: why more community solar is
+          needed, how a cooperative approach could work, and what it could mean
+          for people, the economy and the environment. These are aims to explore,
+          not promises of ownership, savings or operating results.
+        </p>
+        <div className={styles.storyLinks}>
+          <ActionLink href="/need" variant="secondary">Read the need</ActionLink>
+          <ActionLink href="/opportunity" variant="secondary">Read the opportunity</ActionLink>
+          <ActionLink href="/impact" variant="secondary">Read the impact</ActionLink>
+        </div>
+        <PublicLearning />
+      </Section>
+
+      <Section
         id="participate"
         eyebrow="Participation"
         title="Three ways to take part"
-        description="Community solar only works when everyone involved can see the same project from their own point of view. Pick the one that matches what you have."
+        description="Try a fictional profile from one of these starting points. Your initial choice stays editable and never grants access."
       >
         <EntryPathGrid />
       </Section>
@@ -57,8 +69,8 @@ export function LandingPage() {
       <Section
         id="journey"
         eyebrow="Delivery journey"
-        title="A shared journey, from an offered site to steady operations"
-        description="Every project moves through the same sequence, so a site owner, an operator and a financier can all describe progress the same way."
+        title="From an offered site to ongoing operations"
+        description="Shared stage names help site owners, operators and investors discuss a project's progress without confusing an assessment with approval."
         tone="sunken"
         footnote="These stage names are the shared vocabulary this software is designed around. No project is moving through them on this site."
       >
@@ -67,9 +79,9 @@ export function LandingPage() {
 
       <Section
         id="prerequisites"
-        eyebrow="What comes next"
-        title="What has to land before previews become workspaces"
-        description="The interface is deliberately ahead of the platform. These are the pieces it is waiting on."
+        eyebrow="Beyond this introduction"
+        title="An authorized workspace is a separate step"
+        description="Connected workspace reads require authorized access. A separately labeled synthetic demo uses fictional scenarios, not proof of a live connection."
       >
         <ul className={styles.prerequisites} role="list" style={columns}>
           {PREREQUISITES.map((item) => (
@@ -80,20 +92,23 @@ export function LandingPage() {
           ))}
         </ul>
 
-        <Callout tone="caution" title="What this build does not do">
+        <Callout tone="caution" title="This public preview has clear limits">
           <ul className={styles.plainList} role="list">
-            <li>No accounts, sign-in or stored submissions</li>
-            <li>No project records, documents or device connections</li>
-            <li>No generation, savings or financial figures</li>
+            <li>No accounts, verification codes or stored submissions</li>
+            <li>No project records are requested by these public pages</li>
+            <li>No device control, guaranteed savings or financial commitments</li>
           </ul>
         </Callout>
+        <div className={styles.storyLinks}>
+          <ActionLink href="/app" variant="secondary">Open workspace</ActionLink>
+        </div>
       </Section>
 
       <Section
         id="faq"
         eyebrow="Questions"
         title="Common questions"
-        description="Short answers about what this site is today, and what it is not."
+        description="What you can explore here, what remains conditional, and where this preview stops."
         tone="sunken"
       >
         <FaqList items={FAQ_ITEMS} />

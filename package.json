@@ -11,6 +11,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:demo": "vite build --config vite.vibehub.config.ts",
+    "preview:demo": "vite preview --config vite.vibehub.config.ts --host 127.0.0.1 --port 4183 --strictPort",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "next typegen && tsc --noEmit",

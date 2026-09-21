@@ -49,6 +49,11 @@ describe("the actual module-boundary configuration", () => {
     ["src/components/ui/probe.tsx", "fs/promises"],
     ["src/components/ui/probe.tsx", "server-only"],
     ["src/components/ui/probe.tsx", "next/headers"],
+    ["src/components/workspace/probe.tsx", "@/features/design-lab"],
+    ["src/components/workspace/probe.tsx", "@/features/live-read"],
+    ["src/components/workspace/probe.tsx", "@/backend"],
+    ["src/components/workspace/probe.tsx", "next/headers"],
+    ["src/components/workspace/probe.tsx", "node:fs"],
     ["src/features/participation/probe.tsx", "../../app/page"],
     ["src/features/participation/probe.tsx", "@/features/onboarding"],
     [

@@ -4,10 +4,8 @@ import {
   type ProfileDraft,
 } from "@/features/onboarding/model/profile";
 import {
-  PASSWORD_MIN,
-  assessPassword,
   buildProfileSummary,
-  validateAccountStep,
+  validateProfileDetailsStep,
   validateEmail,
   validateFullName,
   validateOrganisationName,
@@ -19,7 +17,6 @@ import {
 const completeDraft: ProfileDraft = {
   ...EMPTY_PROFILE_DRAFT,
   intentOptionIds: ["i-have-roof"],
-  accountMethodId: "email",
   fullName: "  Ada Lovelace  ",
   email: " ada@example.org ",
   representation: "organisation",
@@ -73,122 +70,6 @@ describe("email validation", () => {
   });
 });
 
-describe("password assessment", () => {
-  const context = { fullName: "Ada Lovelace", email: "ada@example.org" };
-
-  it("requires a password", () => {
-    expect(assessPassword("", context).issue?.message).toMatch(
-      /Create a password/,
-    );
-  });
-
-  it(`requires at least ${PASSWORD_MIN} characters`, () => {
-    expect(assessPassword("Ab1!short", context).issue?.message).toMatch(
-      new RegExp(`${PASSWORD_MIN} characters`),
-    );
-  });
-
-  it("rejects a password beyond the maximum length", () => {
-    expect(
-      assessPassword(`Ab1!${"x".repeat(130)}`, context).issue?.message,
-    ).toMatch(/128 characters or fewer/);
-  });
-
-  it("rejects surrounding whitespace", () => {
-    expect(
-      assessPassword(" Str0ng!Passphrase ", context).issue?.message,
-    ).toMatch(/space at the start or end/);
-  });
-
-  it("requires a mix of character types", () => {
-    expect(assessPassword("abcdefghijklmnop", context).issue?.message).toMatch(
-      /at least three kinds of character/,
-    );
-  });
-
-  it("is satisfiable in a script without capitals", () => {
-    // Japanese has no upper case. Counting only ASCII letter classes would push
-    // every such password into "symbols" and make the variety rule impossible.
-    const result = assessPassword("さくら発電所プロジェクト-2026!", {
-      fullName: "Ada Lovelace",
-      email: "ada@example.org",
-    });
-
-    expect(result.issue).toBeNull();
-    expect(result.variety).toBeGreaterThanOrEqual(3);
-  });
-
-  it("counts Cyrillic case as case, not as symbols", () => {
-    const result = assessPassword("Солнце-Ток-77", {
-      fullName: "Ada Lovelace",
-      email: "ada@example.org",
-    });
-
-    expect(result.issue).toBeNull();
-    expect(result.variety).toBeGreaterThanOrEqual(3);
-  });
-
-  it("rejects a password containing the person's name", () => {
-    expect(assessPassword("Ada Lovelace1!x", context).issue?.message).toMatch(
-      /not include your name/,
-    );
-  });
-
-  it("catches the name however the person spaced or punctuated it", () => {
-    // Reported on the pull request: the spaced spelling was caught but the
-    // run-together one was not, so the rule read stricter than it behaved.
-    for (const candidate of [
-      "AdaLovelace1!x",
-      "Ada.Lovelace1!x",
-      "ada-lovelace1!X",
-      "A d a L o v e l a c e 1 ! x",
-    ]) {
-      expect(assessPassword(candidate, context).issue?.message).toMatch(
-        /not include your name/,
-      );
-    }
-  });
-
-  it("does not accuse someone whose email local part is an ordinary word", () => {
-    // "sun@" would otherwise reject a password on a solar platform.
-    const result = assessPassword("MySunPower!23", {
-      fullName: "Mary Chen",
-      email: "sun@example.org",
-    });
-
-    expect(result.issue).toBeNull();
-  });
-
-  it("still rejects a distinctive email local part", () => {
-    expect(
-      assessPassword("lovelace-9!xy", {
-        fullName: "Mary Chen",
-        email: "lovelace@example.org",
-      }).issue?.message,
-    ).toMatch(/not include your email/);
-  });
-
-  it("ignores a short email local part on purpose", () => {
-    // "ada@" is three characters. Matching local parts this short produces more
-    // false accusations than real warnings, so the rule starts at five.
-    expect(assessPassword("XadaX1!superlong", context).issue).toBeNull();
-  });
-
-  it("accepts a strong passphrase and reports its variety", () => {
-    const result = assessPassword("Correct-Horse-9!", context);
-    expect(result.issue).toBeNull();
-    expect(result.variety).toBe(4);
-  });
-
-  it("does not treat a very short name as a substring rule", () => {
-    const result = assessPassword("Qx7!zzzzzzzzzz", {
-      fullName: "Al",
-      email: "al@example.org",
-    });
-    expect(result.issue).toBeNull();
-  });
-});
-
 describe("organisation validation", () => {
   it("is not required for an individual", () => {
     expect(validateOrganisationName("", "individual")).toBeNull();
@@ -218,10 +99,9 @@ describe("organisation validation", () => {
 });
 
 describe("step validation", () => {
-  it("reports every missing account field at once", () => {
-    const issues = validateAccountStep(EMPTY_PROFILE_DRAFT);
+  it("reports the missing fictional details without an account or credential gate", () => {
+    const issues = validateProfileDetailsStep(EMPTY_PROFILE_DRAFT);
     expect(issues.map((issue) => issue.field)).toEqual([
-      "accountMethodId",
       "fullName",
       "email",
     ]);
@@ -246,7 +126,7 @@ describe("step validation", () => {
   });
 
   it("passes a complete draft", () => {
-    expect(validateAccountStep(completeDraft)).toEqual([]);
+    expect(validateProfileDetailsStep(completeDraft)).toEqual([]);
     expect(validateRepresentationStep(completeDraft)).toEqual([]);
     expect(validateUserTypeStep(completeDraft)).toEqual([]);
     expect(validateReviewStep(completeDraft)).toEqual([]);
@@ -264,12 +144,11 @@ describe("profile summary", () => {
     ).toBeNull();
   });
 
-  it("trims input and resolves the mapped workspace", () => {
+  it("trims input and resolves a preview context, not a workspace grant", () => {
     const summary = buildProfileSummary(completeDraft);
     expect(summary).toEqual({
       fullName: "Ada Lovelace",
       email: "ada@example.org",
-      accountMethodId: "email",
       representation: "organisation",
       organisationName: "Sweet Auburn Works",
       userTypeId: "property-owner",
@@ -287,18 +166,21 @@ describe("profile summary", () => {
     expect(summary?.organisationName).toBeNull();
   });
 
-  it("reports no workspace for an interest-only participant type", () => {
+  it.each(["student-researcher", "workforce-participant", "learning-more", "legal-adviser"] as const)(
+    "keeps %s in learning without a workspace assignment", (userTypeId) => {
     const summary = buildProfileSummary({
       ...completeDraft,
-      userTypeId: "learning-more",
+      userTypeId,
     });
     expect(summary?.role).toBeNull();
-  });
+    },
+  );
 
   it("never carries a credential", () => {
     const summary = buildProfileSummary(completeDraft);
     const serialised = JSON.stringify(summary);
     expect(Object.keys(summary ?? {})).not.toContain("password");
     expect(serialised).not.toMatch(/password/i);
+    expect(Object.keys(summary ?? {})).not.toContain("accountMethodId");
   });
 });

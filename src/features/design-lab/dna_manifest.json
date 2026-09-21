@@ -1,0 +1,41 @@
+{
+  "name": "SunSum design lab",
+  "sourceCommit": "ae8d4809bc183316ff5fd758ca6315110c521195",
+  "dataMode": "explicit-fictional-browser-only",
+  "sharedChrome": ["semantic tokens", "named navigation", "demo role switch", "focus-managed dialogs", "command palette"],
+  "motion": {
+    "entranceMs": 220,
+    "feedbackMs": 180,
+    "easing": "cubic-bezier(.2,.8,.2,1)",
+    "reducedMotion": "all travel and decorative transitions disabled",
+    "effects": ["card lift", "map-pin emphasis", "interactive chart crosshair", "reciprocal drawer movement", "staged entrances"]
+  },
+  "directions": {
+    "sunroom": {
+      "layout": "editorial community workspace",
+      "hero": "dashboard_zoom",
+      "accent": "original solar gold with community green, theme-aware navy/paper",
+      "form": "rounded-soft",
+      "displayType": "original system sans",
+      "composition": ["single role and project context", "synthetic capacity halo", "full-width map above list and assistance", "editable source-linked drafts"]
+    }
+  },
+  "routes": {
+    "overview": { "role": "orientation", "layout": "role-specific Sunroom workspace" },
+    "intake": { "role": "process", "layout": "progressive step flow" },
+    "compare": { "role": "comparison", "layout": "selector and chart" },
+    "pipeline": { "role": "operations", "layout": "action-first queue and explicit stage handoffs" },
+    "portfolio": { "role": "discovery", "layout": "full-width map and filterable paginated list" },
+    "deal-room": { "role": "evaluation", "layout": "progressive-disclosure detail" },
+    "documents": { "role": "collection", "layout": "project tasks, metadata and draft entry" },
+    "reports": { "role": "review", "layout": "correctable prefills, editable draft and scoped export" },
+    "profile": { "role": "setup", "layout": "revisitable profile with conditional intent fields" },
+    "welcome": { "role": "onboarding", "layout": "three participation paths" }
+  },
+  "transformations": [
+    "Mobbin investment holding patterns translated to non-financial solar project capacity",
+    "Property-listing progress translated to consent-gated preliminary site intake",
+    "Energy graphics depict estimated potential, not live device telemetry",
+    "No source-brand assets, logos, private information or exact screen compositions copied"
+  ]
+}

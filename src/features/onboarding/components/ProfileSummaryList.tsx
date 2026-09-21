@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { INTENT_PROMPT_LIST, type IntentOptionId } from "@/domain/intents";
 import { getParticipantRole } from "@/domain/roles";
 import { getUserType } from "@/domain/userTypes";
-import { getAccountMethod, type ProfileSummary } from "../model/profile";
+import type { ProfileSummary } from "../model/profile";
 import styles from "./ProfileSummaryList.module.css";
 
 interface ProfileSummaryListProps {
@@ -19,17 +19,13 @@ const INTENT_LABELS = new Map<IntentOptionId, string>(
 );
 
 /**
- * Everything a completed draft would send, and nothing else. Shared by the
+ * The fictional answers shown locally, never sent. Shared by the
  * review step and the completion panel so both describe the same thing.
  */
 export function ProfileSummaryList({ summary }: ProfileSummaryListProps) {
   const rows: readonly { term: string; detail: ReactNode }[] = [
-    { term: "Name", detail: summary.fullName },
-    { term: "Email address", detail: summary.email },
-    {
-      term: "Sign-in method",
-      detail: getAccountMethod(summary.accountMethodId).label,
-    },
+    { term: "Example name", detail: summary.fullName },
+    { term: "Example email address", detail: summary.email },
     {
       term: "Taking part",
       detail:
@@ -39,11 +35,11 @@ export function ProfileSummaryList({ summary }: ProfileSummaryListProps) {
     },
     { term: "Participant type", detail: getUserType(summary.userTypeId).label },
     {
-      term: "Workspace",
+      term: "Exploration context",
       detail:
         summary.role === null
-          ? "None planned for this participant type yet."
-          : getParticipantRole(summary.role).label,
+          ? "Learning and help; no workspace is assigned."
+          : `${getParticipantRole(summary.role).label} preview context only; no access is granted.`,
     },
     {
       term: "Answers from the guided start",
