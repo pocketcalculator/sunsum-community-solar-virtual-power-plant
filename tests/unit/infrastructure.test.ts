@@ -177,12 +177,34 @@ describe("the bounded Azure preparation contract", () => {
     expect(web).toContain("var telemetrySettings = empty(telemetryComponentName)");
   });
 
-  it("supplies one complete dev-test parameter set to validate, what-if and create", () => {
+  it("validates infrastructure changes before manually creating resources", () => {
     const workflow = read(".github/workflows/deploy-azure2.yaml");
+    const parametersScript = read("infrastructure/scripts/Compose-Azure2DeploymentParameters.sh");
+    const prepareScript = read("infrastructure/scripts/Prepare-Azure2Deployment.sh");
+    const prepareAction = read(".github/actions/prepare-azure2-deployment/action.yaml");
+    const validateJob = workflow.slice(workflow.indexOf("  validate:"), workflow.indexOf("\n  deploy:"));
+    const deployJob = workflow.slice(workflow.indexOf("  deploy:"));
+    expect(workflow).toContain("push:");
+    expect(workflow).toContain('      - "infrastructure/templates/**"');
+    expect(workflow).toContain('      - "infrastructure/config/**"');
+    expect(workflow).toContain('      - "infrastructure/scripts/**"');
+    expect(workflow).toContain('      - ".github/actions/prepare-azure2-deployment/**"');
+    expect(workflow).toContain('      - ".github/workflows/deploy-azure2.yaml"');
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(validateJob).toContain("az deployment group validate");
+    expect(validateJob).toContain("az deployment group what-if");
+    expect(validateJob).not.toContain("az deployment group create");
+    expect(deployJob).toContain("needs: validate");
+    expect(deployJob).toContain("if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'");
+    expect(deployJob).toContain("az deployment group create");
+    expect(deployJob).not.toContain("az deployment group validate");
+    expect(deployJob).not.toContain("az deployment group what-if");
     expect(workflow.match(/--parameters "@\$PARAMETERS_FILE"/gu)).toHaveLength(3);
     expect(workflow).not.toMatch(/\n\s+environmentName=dev-test/u);
-    expect(workflow).toContain('PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"');
-    expect(workflow).toContain('echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"');
+    expect(prepareAction).toContain('PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"');
+    expect(prepareAction).toContain('echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"');
+    expect(workflow.match(/uses: \.\/\.github\/actions\/prepare-azure2-deployment/gu)).toHaveLength(2);
+    expect(prepareAction).toContain('bash "$GITHUB_WORKSPACE/infrastructure/scripts/Prepare-Azure2Deployment.sh" "$PARAMETERS_FILE"');
     for (const entry of [
       'enableObservability: { value: true }',
       'logAnalyticsWorkspaceName: { value: "log-sunsum-dev-test-centralus" }',
@@ -193,21 +215,22 @@ describe("the bounded Azure preparation contract", () => {
       'appSubnetPrefix: { value: "10.30.1.0/26" }',
       'privateEndpointSubnetPrefix: { value: "10.30.2.0/28" }',
     ]) {
-      expect(workflow).toContain(entry);
+      expect(parametersScript).toContain(entry);
     }
-    expect(workflow).toContain("for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do");
-    expect(workflow).toContain("Required resource providers are not registered");
-    expect(workflow).toContain("AZURE_BLOB_PRIVATE_ENDPOINT_NAME");
+    expect(prepareScript).toContain("for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do");
+    expect(prepareScript).toContain("Required resource providers are not registered");
+    expect(deployJob).toContain("AZURE_BLOB_PRIVATE_ENDPOINT_NAME");
     expect(workflow).toContain("--mode Incremental");
 
-    expect(workflow).toContain("umask 077");
-    expect(workflow).toContain('rm -f "${PARAMETERS_FILE:-}"');
+    expect(parametersScript).toContain("umask 077");
+    expect(parametersScript).toContain('chmod 600 "$parameters_file"');
+    expect(workflow.match(/if \[ -n "\$\{PARAMETERS_FILE:-\}" \]; then/gu)).toHaveLength(2);
 
     const parameters = read("infrastructure/templates/resources.dev.bicepparam");
     // The workflow cannot consume the bicepparam file, which carries redacted
     // identity placeholders, so the shared nonsecret values are compared here.
     const workflowValues = new Map(
-      [...workflow.matchAll(/^\s+(\w+): \{ value: (.+) \},?$/gmu)].map((match) => {
+      [...parametersScript.matchAll(/^\s+(\w+): \{ value: (.+) \},?$/gmu)].map((match) => {
         const [, key, value] = match;
         if (key === undefined || value === undefined) throw new Error("Failed to parse workflow parameter value.");
         return [key, value] as const;
@@ -256,11 +279,12 @@ describe("the bounded Azure preparation contract", () => {
 
   it("binds the approval-free workflow to main and its immutable OIDC subject", () => {
     const workflow = read(".github/workflows/deploy-azure2.yaml");
+    const deployJob = workflow.slice(workflow.indexOf("  deploy:"));
     const credential = JSON.parse(
       read("infrastructure/config/github-actions-azure-infrastructure.federated-credential.json"),
     );
     expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
-    expect(workflow).toContain("environment: azure-infrastructure");
+    expect(deployJob).toContain("environment: azure-infrastructure");
     expect(credential).toMatchObject({
       issuer: "https://token.actions.githubusercontent.com",
       subject:

@@ -316,11 +316,24 @@ under the runner temporary directory and removed when the job ends.
 
 The workflow deploys application code only: it applies no Bicep template,
 creates no resources and neither sets nor changes `SUNSUM_STORE`,
-`SUNSUM_BLOB`, `SUNSUM_VIABILITY` or any other app setting. Infrastructure
-remains the separate, manually dispatched
-[`deploy-azure2.yaml`](../../.github/workflows/deploy-azure2.yaml) run, and the
-web app must already exist with the reviewed runtime and Oryx build settings
-before a code deployment can succeed.
+`SUNSUM_BLOB`, `SUNSUM_VIABILITY` or any other app setting. The web app must
+already exist with the reviewed runtime and Oryx build settings before a code
+deployment can succeed.
+
+### Infrastructure validation and deployment
+
+Pushes to `main` that change `infrastructure/templates/`,
+`infrastructure/config/`, `infrastructure/scripts/`, or
+`.github/actions/prepare-azure2-deployment/`, or
+`.github/workflows/deploy-azure2.yaml` automatically run the **validate** job in
+[`deploy-azure2.yaml`](../../.github/workflows/deploy-azure2.yaml). It builds
+the Bicep template and runs Azure deployment validation and `what-if`; it never
+creates Azure resources.
+
+To create or update infrastructure, manually dispatch that workflow. Its
+**deploy** job runs only after validation succeeds and uses the
+`azure-infrastructure` environment, so any required reviewers configured for
+that environment continue to gate billable Azure writes.
 
 ### Manual deployment
 
