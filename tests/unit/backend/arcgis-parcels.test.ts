@@ -605,6 +605,33 @@ describe("when ArcGIS is unavailable", () => {
 
     await expect(test.reader.read()).rejects.toBeInstanceOf(ParcelAuthorizationError);
   });
+
+  /**
+   * Esri's token codes normally arrive in the body of a `200 OK`, which is the
+   * case covered above. A gateway between us and ArcGIS can surface them as
+   * the HTTP status instead, and that delivery must fail closed too: serving a
+   * cached copy over a revoked credential is exactly what stale data is not
+   * for.
+   */
+  it.each([498, 499])("fails closed when the query is refused with %i", async (status) => {
+    let refused = false;
+    const test = harness((url) => {
+      if (url.includes("oauth2/token")) {
+        return json({ access_token: "t-1", expires_in: 24 * HOUR_SECONDS });
+      }
+      return refused
+        ? json({ message: "token" }, status)
+        : json(upstreamCollection(upstreamFeature(1)));
+    });
+
+    const fresh = await test.reader.read();
+    expect(fresh.metadata.stale).toBe(false);
+
+    refused = true;
+    test.advance(HOUR_MS + 1);
+
+    await expect(test.reader.read()).rejects.toBeInstanceOf(ParcelAuthorizationError);
+  });
 });
 
 describe("choosing a reader", () => {

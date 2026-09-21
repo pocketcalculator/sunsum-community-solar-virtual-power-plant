@@ -106,6 +106,15 @@ const TOKEN_LIFETIME_MINUTES = 60;
 const TOKEN_LIFETIME_SECONDS = TOKEN_LIFETIME_MINUTES * 60;
 
 /**
+ * Statuses that mean the credential was rejected, rather than that the service
+ * had a bad moment. 401 and 403 are the HTTP originals; 498 (invalid token)
+ * and 499 (token required) are Esri's own, and are the ones actually observed
+ * against the live layer — delivered in the body of a `200 OK` rather than as
+ * a status. Both deliveries are checked, because both have been seen.
+ */
+const AUTHORIZATION_STATUSES: ReadonlySet<number> = new Set([401, 403, 498, 499]);
+
+/**
  * A ceiling on what we will hold in memory from upstream.
  *
  * The published layer is a few dozen parcels and roughly 11 KB of GeoJSON. A
@@ -378,7 +387,7 @@ export function toParcelCollection(
   if (Object.keys(error).length > 0) {
     const message = asNullableString(error.message) ?? "unknown error";
     const code = error.code;
-    if (code === 498 || code === 499 || code === 403) {
+    if (typeof code === "number" && AUTHORIZATION_STATUSES.has(code)) {
       throw new ParcelAuthorizationError(`ArcGIS rejected the token: ${message}`);
     }
     throw new Error(`ArcGIS returned an error: ${message}`);
@@ -555,7 +564,14 @@ export class ArcGisCandidateParcelReader implements CandidateParcelReader {
       signal: AbortSignal.timeout(this.timeoutMs),
     });
 
-    if (response.status === 401 || response.status === 403) {
+    /**
+     * 498 and 499 are Esri's own token codes. They normally arrive in the body
+     * of a `200 OK`, which `toParcelCollection` handles, but a gateway between
+     * us and ArcGIS can surface them as the HTTP status instead. Either way a
+     * rejected credential must fail closed rather than fall through to the
+     * generic branch, which would serve stale data over an entitlement loss.
+     */
+    if (AUTHORIZATION_STATUSES.has(response.status)) {
       throw new ParcelAuthorizationError(
         `ArcGIS refused the parcel query with ${response.status}.`,
       );
