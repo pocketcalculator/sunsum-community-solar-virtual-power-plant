@@ -26,7 +26,8 @@ demo seam.
 > caller has no account yet, which is the point. It makes the cross-site check
 > itself rather than inheriting it from an identity step, accepts no
 > credential, and writes a `participant_profiles` row that grants no access and
-> that nothing in the authorization path reads.
+> that nothing in the authorization path reads. `GET /profiles` is the operator
+> read of that list, and is role-checked in both the route and core.
 >
 > What is not production-ready is the sign-in endpoint. `POST /auth/demo-switch`
 > hands out one of three **seeded** identities and verifies no credential, so
