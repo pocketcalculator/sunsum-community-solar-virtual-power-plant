@@ -254,7 +254,14 @@ function toPosition(value: readonly number[]): CandidateParcelPosition {
   return [value[0] as number, value[1] as number];
 }
 
-/** A linear ring needs four positions to enclose an area, and must be closed. */
+/**
+ * A linear ring needs four positions to enclose an area, and must be closed.
+ *
+ * GeoJSON requires the first and last position to be identical. Esri's own
+ * format requires the same, so an unclosed ring is malformed upstream rather
+ * than a dialect difference — but closing it here is cheaper than shipping
+ * invalid GeoJSON to a renderer, which fails far from the cause.
+ */
 function toRing(value: unknown): CandidateParcelRing | null {
   if (!Array.isArray(value) || value.length < 4) return null;
   const ring: CandidateParcelPosition[] = [];
@@ -262,9 +269,18 @@ function toRing(value: unknown): CandidateParcelRing | null {
     if (!isPosition(position)) return null;
     ring.push(toPosition(position));
   }
-  const first = ring[0];
-  const last = ring[ring.length - 1];
-  if (first[0] !== last[0] || first[1] !== last[1]) ring.push(first);
+
+  /**
+   * Indexed access is widened to `| undefined` by `noUncheckedIndexedAccess`,
+   * and a length check does not narrow it. The guard above already proved
+   * there are at least four.
+   */
+  const first = ring[0] as CandidateParcelPosition;
+  const last = ring[ring.length - 1] as CandidateParcelPosition;
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    ring.push([first[0], first[1]]);
+  }
+
   return ring;
 }
 
@@ -571,6 +587,11 @@ export class ArcGisCandidateParcelReader implements CandidateParcelReader {
     }
 
     const text = await response.text();
+    /**
+     * Measured in UTF-8 bytes, not string length. `String.length` counts
+     * UTF-16 code units, so an address with non-ASCII characters would be
+     * undercounted against a byte ceiling.
+     */
     const bytes = new TextEncoder().encode(text).byteLength;
     if (bytes > MAX_RESPONSE_BYTES) {
       throw new Error(`ArcGIS response exceeded ${MAX_RESPONSE_BYTES} bytes.`);

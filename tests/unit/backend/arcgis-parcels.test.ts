@@ -289,6 +289,44 @@ describe("the geometry a parcel publishes", () => {
       }),
     ).toBeNull();
   });
+
+  /**
+   * GeoJSON requires a LinearRing's first and last position to be identical.
+   * Esri requires the same, so an unclosed ring is malformed upstream — but a
+   * renderer is the worst place to discover that, so we close it here.
+   */
+  it("closes a ring that arrives open", () => {
+    const geometry = toParcelGeometry({
+      type: "Polygon",
+      coordinates: [
+        [
+          [-89.4, 43.07],
+          [-89.3, 43.07],
+          [-89.3, 43.08],
+          [-89.4, 43.08],
+        ],
+      ],
+    });
+
+    if (geometry?.type !== "Polygon") throw new Error("expected a polygon");
+    const ring = geometry.coordinates[0];
+    if (ring === undefined) throw new Error("expected a ring");
+    expect(ring).toHaveLength(5);
+    expect(ring[4]).toEqual([-89.4, 43.07]);
+  });
+
+  it("leaves an already closed ring alone", () => {
+    const geometry = toParcelGeometry({
+      type: "Polygon",
+      coordinates: square(-89.4, 43.07),
+    });
+
+    if (geometry?.type !== "Polygon") throw new Error("expected a polygon");
+    const ring = geometry.coordinates[0];
+    if (ring === undefined) throw new Error("expected a ring");
+    expect(ring).toHaveLength(5);
+    expect(ring[0]).toEqual(ring[4]);
+  });
 });
 
 describe("a payload from upstream", () => {
@@ -447,18 +485,49 @@ describe("how often we actually call upstream", () => {
    * looks exactly like a revoked credential, so it is replaced early instead.
    */
   it("replaces a token before it expires rather than after", async () => {
+    /**
+     * The token has to outlive the data cache for this to be observable at
+     * all. With both at an hour, the second read is served from cache and
+     * never reaches the token at all — so the margin goes untested while the
+     * test still passes for the wrong reason.
+     *
+     * Seventy minutes puts the margin window at 65-70. Reading at 66 finds
+     * the collection stale, so it refreshes, and finds a token that is still
+     * valid but inside its margin.
+     */
+    const tokenLifetimeSeconds = 70 * 60;
     const test = harness((url) =>
       url.includes("oauth2/token")
-        ? json({ access_token: "t-short", expires_in: HOUR_SECONDS })
+        ? json({ access_token: "t-short", expires_in: tokenLifetimeSeconds })
         : json(upstreamCollection(upstreamFeature(1))),
     );
 
     await test.reader.read();
     /** Past freshness, and inside the five-minute expiry margin. */
-    test.advance(HOUR_MS - 60_000);
+    test.advance(66 * 60 * 1000);
     await test.reader.read();
 
     expect(test.fetches.tokenCalls()).toHaveLength(2);
+  });
+
+  /**
+   * The companion case. A token comfortably outside its margin is reused even
+   * though the collection itself had to be refetched, which is the whole point
+   * of caching the token separately from the data.
+   */
+  it("reuses a token that is nowhere near expiry", async () => {
+    const test = harness((url) =>
+      url.includes("oauth2/token")
+        ? json({ access_token: "t-long", expires_in: 24 * HOUR_SECONDS })
+        : json(upstreamCollection(upstreamFeature(1))),
+    );
+
+    await test.reader.read();
+    test.advance(HOUR_MS + 60_000);
+    await test.reader.read();
+
+    expect(test.fetches.queryCalls()).toHaveLength(2);
+    expect(test.fetches.tokenCalls()).toHaveLength(1);
   });
 });
 
