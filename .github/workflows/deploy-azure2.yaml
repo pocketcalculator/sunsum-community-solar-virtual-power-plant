@@ -21,7 +21,6 @@ env:
   RESOURCE_GROUP_NAME: rg-sunsum-solar-dev-centralus
   TEMPLATE_FILE: infrastructure/templates/resources.bicep
   DEPLOYMENT_NAME: sunsum-test-${{ github.run_number }}
-  PARAMETERS_FILE: ${{ runner.temp }}/deployment-parameters.json
 
 jobs:
   deploy:
@@ -84,6 +83,10 @@ jobs:
           POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
         run: |
           set -euo pipefail
+          # The runner context is not available to workflow-level env, so the
+          # path is resolved here and exported for the later steps.
+          PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"
+          echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"
           jq -n \
             --arg tenantId "$TENANT_ID" \
             --arg postgresAdminObjectId "$POSTGRES_ADMIN_OBJECT_ID" \

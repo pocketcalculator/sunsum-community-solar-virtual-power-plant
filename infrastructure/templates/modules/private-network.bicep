@@ -12,6 +12,11 @@
   network interface are separately billable, and the address space has to be
   chosen deliberately rather than defaulted into an occupied range.
 
+  The endpoint makes the data plane reachable from inside this network only. A
+  GitHub-hosted runner, a workstation and any other caller outside the network
+  still cannot read or write blobs; deployment steps must stay on the control
+  plane, and data-plane access needs its own reviewed route.
+
   PostgreSQL deliberately gets no private endpoint here. Its documented posture
   is public network access with separately approved individual firewall rules
   (postgres-firewall.bicep); moving it behind private link is a reviewed

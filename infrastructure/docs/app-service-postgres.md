@@ -1190,7 +1190,11 @@ Cost and network assumptions to confirm before deploying:
   link is a reviewed architecture change.
 - Storage keeps `publicNetworkAccess` disabled, shared-key access disabled and
   the network ACL default action Deny. The private endpoint is the route to the
-  data plane, not an exception to that posture.
+  data plane, not an exception to that posture. It reaches only callers inside
+  the virtual network: a GitHub-hosted runner or a workstation still cannot read
+  or write blobs, so deployment steps must stay on the control plane.
+- Regional virtual-network integration needs Basic or higher. The dev plan is
+  B1/Basic, which supports it; Free and Shared tiers do not.
 - `Microsoft.OperationalInsights`, `Microsoft.Insights` and `Microsoft.Network`
   must be registered in the subscription. The workflow checks this and fails
   with a named provider before attempting any deployment.

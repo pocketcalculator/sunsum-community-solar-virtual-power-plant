@@ -181,7 +181,8 @@ describe("the bounded Azure preparation contract", () => {
     const workflow = read(".github/workflows/deploy-azure2.yaml");
     expect(workflow.match(/--parameters "@\$PARAMETERS_FILE"/gu)).toHaveLength(3);
     expect(workflow).not.toMatch(/\n\s+environmentName=dev-test/u);
-    expect(workflow).toContain("PARAMETERS_FILE: ${{ runner.temp }}/deployment-parameters.json");
+    expect(workflow).toContain('PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"');
+    expect(workflow).toContain('echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"');
     for (const entry of [
       'enableObservability: { value: true }',
       'logAnalyticsWorkspaceName: { value: "log-sunsum-dev-test-centralus" }',
