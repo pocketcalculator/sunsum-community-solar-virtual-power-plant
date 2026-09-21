@@ -325,7 +325,8 @@ describe("the bounded Azure preparation contract", () => {
     const workflow = read(".github/workflows/deploy-app.yml");
     expect(workflow).toContain("environment: azure-infrastructure");
     expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
-    expect(workflow).toContain("WEB_APP_NAME: app-sunsum-dev-test-centralus");
+    expect(workflow).toContain("DEPLOYMENT_CONFIG: infrastructure/config/dev.json");
+    expect(workflow).not.toContain("app-sunsum-dev-test-centralus");
     expect(workflow).toContain('- ".github/workflows/deploy-app.yml"');
     expect(workflow).toContain("workflow_dispatch:");
     expect(workflow).toContain("node-version: 22");

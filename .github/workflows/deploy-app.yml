@@ -31,8 +31,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  WEB_APP_NAME: app-sunsum-dev-test-centralus
-  RESOURCE_GROUP_NAME: rg-sunsum-solar-dev-centralus
+  # The deployment target itself is resolved by the deployment script from the
+  # shared dev config, so it is never restated here.
+  DEPLOYMENT_CONFIG: infrastructure/config/dev.json
+  DEPLOYMENT_OUTPUT_DIRECTORY: code-deployments
   NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:
@@ -111,12 +113,11 @@ jobs:
       # temporary directory so they never enter the workspace.
       - name: Package and deploy application source
         shell: pwsh
-        env:
-          DEPLOYMENT_OUTPUT_ROOT: ${{ runner.temp }}/code-deployments
         run: |
+          $outputRoot = Join-Path $env:RUNNER_TEMP $env:DEPLOYMENT_OUTPUT_DIRECTORY
           $reference = "github-actions-run-$env:GITHUB_RUN_ID-attempt-$env:GITHUB_RUN_ATTEMPT-$env:GITHUB_SHA"
           & ./infrastructure/scripts/Deploy-Application.ps1 `
-            -OutputRoot $env:DEPLOYMENT_OUTPUT_ROOT -Apply -ApprovalReference $reference
+            -OutputRoot $outputRoot -Apply -ApprovalReference $reference
 
       - name: Summarize the deployment
         if: always()
@@ -128,8 +129,8 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "| --- | --- |"
-            echo "| Web app | \`$WEB_APP_NAME\` |"
-            echo "| Resource group | \`$RESOURCE_GROUP_NAME\` |"
+            echo "| Web app | \`$(jq -r '.webAppName' "$DEPLOYMENT_CONFIG")\` |"
+            echo "| Resource group | \`$(jq -r '.resourceGroupName' "$DEPLOYMENT_CONFIG")\` |"
             echo "| Commit | \`$GITHUB_SHA\` |"
             echo "| Result | ${{ job.status }} |"
             echo ""
@@ -139,4 +140,4 @@ jobs:
       - name: Remove deployment artifacts
         if: always()
         shell: bash
-        run: rm -rf "$RUNNER_TEMP/code-deployments"
+        run: rm -rf "$RUNNER_TEMP/$DEPLOYMENT_OUTPUT_DIRECTORY"

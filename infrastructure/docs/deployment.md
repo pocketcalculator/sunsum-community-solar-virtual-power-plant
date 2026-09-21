@@ -308,7 +308,9 @@ fails fast when `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` or `AZURE_SUBSCRIPTION_ID`
 is missing, signs in with the same federated OIDC credential and
 `azure-infrastructure` environment used by the infrastructure workflow, and
 invokes `Deploy-Application.ps1 -Apply` with the run identifiers as the review
-reference. Reusing that script keeps packaging, the guarded upload and the
+reference. The target web app therefore comes from the same
+[shared dev config](../config/dev.json) the manual path uses; the workflow does
+not restate it. Reusing that script keeps packaging, the guarded upload and the
 bounded HTTP verification identical to the manual path. Artifacts are written
 under the runner temporary directory and removed when the job ends.
 
