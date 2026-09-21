@@ -30,8 +30,10 @@ export {
   postParticipantProfileRoute,
 } from "./participants";
 export {
+  getCandidateParcelsRoute,
   getSubmissionDetailRoute,
   getSubmissionsRoute,
+  handleGetCandidateParcels,
   handleGetSubmissionDetail,
   handleGetSubmissions,
   handlePatchSite,
