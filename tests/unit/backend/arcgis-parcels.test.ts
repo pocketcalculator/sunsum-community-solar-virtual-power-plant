@@ -648,17 +648,24 @@ describe("choosing a reader", () => {
 describe("ArcGIS credential selection", () => {
   const LAYER = "https://example.test/FeatureServer/0";
 
-  function tokenBodyFor(
+  async function tokenBodyFor(
     options: Partial<ConstructorParameters<typeof ArcGisCandidateParcelReader>[0]>,
     tokenResponse: Record<string, unknown>,
-  ): { url: string; body: string } {
+  ): Promise<{ url: string; body: string }> {
     const seen: { url: string; body: string }[] = [];
     const reader = new ArcGisCandidateParcelReader({
       layerUrl: LAYER,
       fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         seen.push({ url, body: String(init?.body ?? "") });
-        const payload = url.includes("oken")
+        /**
+         * Matched on the path, not the whole URL. The layer query carries its
+         * own `token=` parameter, so a substring test for "token" identifies
+         * the query as a token call and hands it a token body, which then
+         * fails to parse as a feature collection.
+         */
+        const isTokenCall = !new URL(url).pathname.endsWith("/query");
+        const payload = isTokenCall
           ? tokenResponse
           : { type: "FeatureCollection", features: [] };
         return new Response(JSON.stringify(payload), {
@@ -668,16 +675,15 @@ describe("ArcGIS credential selection", () => {
       }) as unknown as typeof fetch,
       ...options,
     });
-    void reader.read();
+    await reader.read();
     return seen[0] ?? { url: "", body: "" };
   }
 
   it("uses the user endpoint and shape when only a sign-in is configured", async () => {
-    const seen = tokenBodyFor(
+    const seen = await tokenBodyFor(
       { username: "parcel-reader", password: "not-a-real-password" },
       { token: "legacy-1", expires: Date.now() + 3_600_000 },
     );
-    await Promise.resolve();
 
     expect(seen.url).toContain("generateToken");
     expect(seen.body).toContain("username=parcel-reader");
@@ -686,7 +692,7 @@ describe("ArcGIS credential selection", () => {
   });
 
   it("prefers the application credential when both are present", async () => {
-    const seen = tokenBodyFor(
+    const seen = await tokenBodyFor(
       {
         clientId: "sunsum-parcels-app",
         clientSecret: "not-a-real-secret",
@@ -695,7 +701,6 @@ describe("ArcGIS credential selection", () => {
       },
       { access_token: "app-1", expires_in: 3600 },
     );
-    await Promise.resolve();
 
     /**
      * This is the whole migration: issuing the app credential retires the
@@ -718,11 +723,10 @@ describe("ArcGIS credential selection", () => {
    * because the two requests left through different egress addresses.
    */
   it("binds a user token to a referer, because requestip does not survive NAT", async () => {
-    const seen = tokenBodyFor(
+    const seen = await tokenBodyFor(
       { username: "parcel-reader", password: "not-a-real-password" },
       { token: "legacy-1", expires: Date.now() + 3_600_000 },
     );
-    await Promise.resolve();
 
     expect(seen.body).toContain("client=referer");
     expect(seen.body).not.toContain("client=requestip");
