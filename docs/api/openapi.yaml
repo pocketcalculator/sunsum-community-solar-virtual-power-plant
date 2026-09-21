@@ -68,6 +68,8 @@ tags:
     description: S-INV — investor profiles, mandate capture, portfolio matching
   - name: Engagements
     description: S-ENG and S-VIEW — interest, operator review, and deal-room disclosure
+  - name: Participants
+    description: The `/join` sign-up form, before a participant has any role
   - name: Export
     description: Composed download of whatever the caller can already see
 paths:
@@ -143,6 +145,52 @@ paths:
                 properties:
                   signed_out: { type: boolean, enum: [true] }
         "403": { $ref: "#/components/responses/CrossSiteRefused" }
+  /profiles:
+    post:
+      tags: [Participants]
+      operationId: createParticipantProfile
+      security: []
+      summary: Store a completed sign-up form
+      description: |
+        The `/join` form. Open by design: the caller has no account yet, which
+        is the whole point of the endpoint. It therefore checks
+        `Sec-Fetch-Site`, falling back to `Origin`, instead of inheriting that
+        check from an identity step.
+
+        What it writes is a pre-account record. Nothing in it is verified,
+        nothing reads it to make an authorization decision, and it grants no
+        access to anything.
+
+        **No credential is accepted.** There is no `password` property, and
+        sending one is a `400` rather than a field the server quietly ignores.
+
+        `role_id` is derived from `user_type_id` and cannot be supplied, so a
+        request cannot claim a workspace its user type does not map to. It is
+        `null` for the user types that map to no workspace, which is an answer
+        rather than a missing value.
+
+        Submissions are appended, never merged. Two sign-ups from the same
+        email address produce two records: the address is unverified, so
+        letting it decide which record is overwritten would let anyone displace
+        a stranger's submission.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ParticipantProfileRequest" }
+      responses:
+        "201":
+          description: The stored profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ParticipantProfile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/CrossSiteRefused" }
+        "422":
+          description: Consent was explicitly refused.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationError" }
   /me:
     get:
       tags: [Identity]
@@ -1609,6 +1657,102 @@ components:
           sponsor_equity,
           corporate_offtake,
         ]
+    ParticipantProfileRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        `additionalProperties: false` is enforced, not decorative: an unknown
+        property is a `400`. That is what keeps `password` and `role_id` out —
+        the first must never reach the server, the second is derived.
+      required:
+        [
+          full_name,
+          email,
+          account_method,
+          representation,
+          user_type_id,
+          consent_accepted,
+        ]
+      properties:
+        full_name: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email, maxLength: 254 }
+        account_method: { $ref: "#/components/schemas/AccountMethod" }
+        representation: { $ref: "#/components/schemas/Representation" }
+        organisation_name:
+          type: string
+          nullable: true
+          maxLength: 160
+          description: |
+            Required when `representation` is `organisation`. Ignored and
+            stored as `null` for an individual, so the record cannot claim an
+            organisation the person did not say they represent.
+        user_type_id:
+          type: string
+          description: |
+            One of the user type ids in `src/domain/userTypes.ts`. Validated
+            against that list, but stored as text: the taxonomy belongs to the
+            sign-up form and grows whenever the charter names a new audience.
+        intent_option_ids:
+          type: array
+          maxItems: 16
+          description: |
+            Optional. Omitting it means no selections. Duplicates are collapsed.
+          items: { type: string }
+        consent_accepted:
+          type: boolean
+          description: |
+            Must be `true`. `false` is `422`; absent is `400`. Consent is the
+            basis for holding the contact details, so the database refuses a
+            row without it as well.
+    ParticipantProfile:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          full_name,
+          email,
+          account_method,
+          representation,
+          organisation_name,
+          user_type_id,
+          role_id,
+          intent_option_ids,
+          consent_accepted,
+          created_at,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        full_name: { type: string }
+        email: { type: string }
+        account_method: { $ref: "#/components/schemas/AccountMethod" }
+        representation: { $ref: "#/components/schemas/Representation" }
+        organisation_name: { type: string, nullable: true }
+        user_type_id: { type: string }
+        role_id:
+          type: string
+          nullable: true
+          enum: [site-owner, operator, financier, null]
+          description: |
+            Derived from `user_type_id`, never supplied. `null` when the user
+            type maps to no workspace — an answer, not a missing value. Note
+            these are the UI charter role ids, hyphenated; the backend wire
+            roles used elsewhere in this document are `site_owner`, `operator`
+            and `investor`.
+        intent_option_ids:
+          type: array
+          items: { type: string }
+        consent_accepted: { type: boolean, enum: [true] }
+        created_at: { type: string, format: date-time }
+    AccountMethod:
+      type: string
+      description: |
+        How the person said they intend to sign in later. An intention only —
+        no credential is accepted or stored by this API.
+      enum: [microsoft, google, apple, email]
+    Representation:
+      type: string
+      enum: [individual, organisation]
     JourneyStageId:
       type: string
       description: UI delivery ribbon ids from `src/domain/journey.ts`.
