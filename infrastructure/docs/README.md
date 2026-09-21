@@ -20,6 +20,10 @@ procedures, and decision records in this directory.
   one entry for source packaging, Azure-side build, upload and HTTP verification.
 - [App Service / PostgreSQL operations](./app-service-postgres.md) - network
   approvals, Entra SQL bootstrap, migrations, sign-in and code deployment.
+- [Observability and private networking](./app-service-postgres.md#observability-and-private-networking) -
+  the opt-in Log Analytics workspace, Application Insights component, diagnostic
+  settings, virtual network, blob private endpoint and private DNS resources,
+  with their dev-test names and portal locations.
 - [Template configuration](../templates/README.md#configuration-contract) -
   versioned source inputs and resource ownership.
 - [ADR 0001 — database and persistence](./adr-0001-database-and-persistence.md)

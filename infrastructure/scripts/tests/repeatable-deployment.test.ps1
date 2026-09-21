@@ -208,6 +208,41 @@ try {
     $state.ParametersJson='{"parameters":{"webAppName":{"value":"SAMPLE-WEB"}}}'
     & $runner @runnerOptions -Preview | Out-Null
     $state.ParametersJson=$defaultParametersJson
+    $state.TemplateJson='{"resources":[],"parameters":{"deployRbac":{"type":"bool","defaultValue":false},"approvedWebPrincipalId":{"type":"string","defaultValue":""},"blobRoleApprovalReference":{"type":"string","defaultValue":""}}}'
+    foreach ($rbac in @($false, 'omitted')) {
+        $inputs=@{webAppName=@{value='sample-web'}}
+        if ($rbac -is [bool]) { $inputs.deployRbac=@{value=$rbac} }
+        $state.ParametersJson=@{parameters=$inputs} | ConvertTo-Json -Depth 5
+        & $runner @runnerOptions -Preview | Out-Null
+        & $runner @runnerOptions -Apply | Out-Null
+    }
+    $rbacInputs=@{webAppName=@{value='sample-web'};deployRbac=@{value=$true};approvedWebPrincipalId=@{value='44444444-4444-4444-8444-444444444444'};blobRoleApprovalReference=@{value='review-container-contributor'}}
+    foreach ($field in @('deployRbac', 'approvedWebPrincipalId', 'blobRoleApprovalReference')) {
+        $invalidValues=if ($field -ceq 'deployRbac') { @('true', 1, $null) } else { @('', $null, $false, '<redacted>', "invalid`nvalue", 'missing-entry') }
+        if ($field -ceq 'approvedWebPrincipalId') { $invalidValues+=@('00000000-0000-0000-0000-000000000000','not-a-uuid') }
+        foreach ($value in $invalidValues) {
+            $inputs=$rbacInputs.Clone()
+            if ($value -ceq 'missing-entry') { $null=$inputs.Remove($field) } else { $inputs[$field]=@{value=$value} }
+            $state.ParametersJson=@{parameters=$inputs} | ConvertTo-Json -Depth 5
+            Assert-Blocked { & $runner @runnerOptions } "invalid RBAC local inputs: $field" $true
+            Assert-Blocked { & $runner @runnerOptions -Preview } "invalid RBAC preview inputs: $field" $true
+            Assert-Blocked { & $runner @runnerOptions -Apply } "invalid RBAC apply inputs: $field" $true
+        }
+    }
+    $state.ParametersJson=@{parameters=$rbacInputs} | ConvertTo-Json -Depth 5
+    & $runner @runnerOptions -Preview | Out-Null
+    & $runner @runnerOptions -Apply | Out-Null
+    $state.Mode='apply-denied'
+    $state.Calls.Clear()
+    $message=''
+    try { & $runner @runnerOptions -Apply | Out-Null } catch { $message=$_.Exception.Message }
+    if ($message -notlike '*AuthorizationFailed*' -or
+        @($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count -ne 1) {
+        throw 'Enabled RBAC permission failures must be surfaced without retry or fallback.'
+    }
+    $state.Mode='Create'
+    $state.TemplateJson='{"resources":[]}'
+    $state.ParametersJson=$defaultParametersJson
     foreach ($nested in @(
         @{ mode='Incremental'; templateLink=@{uri='https://example.invalid/template.json'} },
         @{ mode='Incremental'; parametersLink=@{uri='https://example.invalid/parameters.json'}; template=@{resources=@()} },
@@ -242,6 +277,64 @@ try {
     $state.ParametersJson=@{parameters=$identityInputs} | ConvertTo-Json -Depth 5 -Compress
     & $runner @runnerOptions -Preview | Out-Null
     & $runner @runnerOptions -Apply | Out-Null
+    $state.TemplateJson=@{resources=@();parameters=@{
+        tenantId=@{type='string'}
+        postgresAdminObjectId=@{type='string';defaultValue='00000000-0000-0000-0000-000000000000'}
+        postgresAdminPrincipalName=@{type='string';defaultValue='<postgres-admin-principal-name>'}
+        postgresAdminPrincipalType=@{type='string';defaultValue='Group'}
+        postgresAdministrators=@{type='array'}
+    }} | ConvertTo-Json -Depth 5
+    & $runner @runnerOptions -Preview | Out-Null
+    & $runner @runnerOptions -Apply | Out-Null
+    $firstAdmin=@{objectId='aaaaaaaa-1111-4111-8111-111111111111';principalName='synthetic-admin';principalType='User'}
+    $secondAdmin=@{objectId='bbbbbbbb-2222-4222-8222-222222222222';principalName='synthetic-admin-group';principalType='Group'}
+    $thirdAdmin=@{objectId='cccccccc-3333-4333-8333-333333333333';principalName='synthetic-admin-service';principalType='ServicePrincipal'}
+    $listInputs=@{webAppName=$identityInputs.webAppName;tenantId=$identityInputs.tenantId}
+    foreach ($list in @(@{value=@($firstAdmin)}, @{value=@($firstAdmin,$secondAdmin,$thirdAdmin)})) {
+        $listInputs.postgresAdministrators=$list
+        $state.ParametersJson=@{parameters=$listInputs} | ConvertTo-Json -Depth 6 -Compress
+        & $runner @runnerOptions | Out-Null
+        & $runner @runnerOptions -Preview | Out-Null
+        & $runner @runnerOptions -Apply | Out-Null
+    }
+    $invalidLists=[System.Collections.Generic.List[object]]::new()
+    foreach ($value in @($null, $true, 'invalid', @{}, @(), @('invalid'), @($firstAdmin,$firstAdmin))) { $invalidLists.Add($value) }
+    foreach ($field in @('objectId','principalName','principalType')) {
+        $badValues=switch ($field) {
+            'objectId' { @('not-a-uuid', '00000000-0000-0000-0000-000000000000', $null) }
+            'principalName' { @('', ' ', '<redacted>', "invalid`nname", $false) }
+            'principalType' { @('user','ManagedIdentity','', $null) }
+        }
+        foreach ($value in $badValues) {
+            $changed=$firstAdmin.Clone()
+            $changed[$field]=$value
+            $invalidLists.Add(@($changed))
+        }
+        $changed=$firstAdmin.Clone()
+        $null=$changed.Remove($field)
+        $invalidLists.Add(@($changed))
+    }
+    $changed=$firstAdmin.Clone()
+    $changed.objectId=$firstAdmin.objectId.ToUpperInvariant()
+    $invalidLists.Add(@($firstAdmin,$changed))
+    $changed=$firstAdmin.Clone()
+    $changed.tenantId=$identityInputs.tenantId.value
+    $invalidLists.Add(@($changed))
+    foreach ($list in $invalidLists) {
+        $listInputs.postgresAdministrators=@{value=$list}
+        $state.ParametersJson=@{parameters=$listInputs} | ConvertTo-Json -Depth 6 -Compress
+        Assert-Blocked { & $runner @runnerOptions -Preview } 'invalid PostgreSQL admin list preview' $true
+        Assert-Blocked { & $runner @runnerOptions -Apply } 'invalid PostgreSQL admin list apply' $true
+    }
+    $listInputs.postgresAdministrators=@{value=@(@{objectId='00000000-0000-0000-0000-000000000000';principalName='<postgres-admin-principal-name>';principalType='User'})}
+    $state.ParametersJson=@{parameters=$listInputs} | ConvertTo-Json -Depth 6 -Compress
+    $state.Calls.Clear()
+    & $runner @runnerOptions | Out-Null
+    if ($state.Calls.Count) { throw 'Redacted admin-list local compilation called Azure.' }
+    $mixedInputs=$identityInputs.Clone()
+    $mixedInputs.postgresAdministrators=@{value=@($firstAdmin)}
+    $state.ParametersJson=@{parameters=$mixedInputs} | ConvertTo-Json -Depth 6 -Compress
+    Assert-Blocked { & $runner @runnerOptions -Apply } 'mixed legacy and list administrators' $true
     $state.TemplateJson='{"resources":[]}'
     $state.ParametersJson=$defaultParametersJson
     Push-Location ([System.IO.Path]::GetTempPath())

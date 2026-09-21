@@ -3,20 +3,40 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { ThemeToggle } from "@/components/ui/theme/ThemeToggle";
 import type { ParticipantRoleId } from "@/domain/roles";
+import { CONTEXT_PAGES } from "../content/contextPages";
 import { BrandMark } from "./BrandMark";
 import styles from "./PublicShell.module.css";
 
 interface PublicShellProps {
   children: ReactNode;
   headerAction?: ReactNode;
+  /**
+   * The demo sign-in control, when the server has enabled it.
+   *
+   * Passed in rather than imported because the module boundary forbids one
+   * feature importing another, and because whether demo sign-in exists at all
+   * is a server decision this component must not try to make.
+   */
+  demoControl?: ReactNode;
   visibleRoleIds?: readonly ParticipantRoleId[];
 }
 
+/**
+ * The primary navigation.
+ *
+ * Review replaced the previous in-page anchors with the three context pages:
+ * "Participation paths" and "Delivery journey" both pointed at sections the
+ * landing page already shows as cards, so they navigated to something already
+ * on screen. The Need, Opportunity and Impact are the questions a first-time
+ * visitor actually arrives with, and they are real pages rather than anchors.
+ */
 const PRIMARY_NAV = [
-  { href: "/#participate", label: "Participation paths" },
-  { href: "/#journey", label: "Delivery journey" },
+  ...CONTEXT_PAGES.map((page) => ({
+    href: page.href,
+    label: page.navLabel,
+  })),
   { href: "/#faq", label: "FAQ" },
-] as const;
+] as const satisfies readonly { href: string; label: string }[];
 
 const ROLE_NAV = [
   {
@@ -26,10 +46,10 @@ const ROLE_NAV = [
   },
   {
     id: "financier",
-    href: "/join?start=i-would-fund",
+    href: "/dashboard/investor",
     label: "Investor",
   },
-  { id: "operator", href: "/join", label: "Platform Operator" },
+  { id: "operator", href: "/dashboard/operator", label: "Platform Operator" },
 ] as const satisfies readonly {
   id: ParticipantRoleId;
   href: string;
@@ -46,6 +66,7 @@ const ALL_ROLE_IDS = ROLE_NAV.map((item) => item.id);
 export function PublicShell({
   children,
   headerAction,
+  demoControl,
   visibleRoleIds = ALL_ROLE_IDS,
 }: PublicShellProps) {
   const visibleRoleLinks = ROLE_NAV.filter((item) =>
@@ -86,18 +107,23 @@ export function PublicShell({
           ) : null}
         </div>
 
-        {visibleRoleLinks.length > 0 ? (
+        {visibleRoleLinks.length > 0 || demoControl ? (
           <nav className={styles.roleNav} aria-label="Role workspaces">
             <div className={styles.roleNavInner}>
-              <ul className={styles.roleNavList}>
-                {visibleRoleLinks.map((item) => (
-                  <li key={item.id}>
-                    <Link className={styles.roleNavLink} href={item.href}>
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              {visibleRoleLinks.length > 0 ? (
+                <ul className={styles.roleNavList}>
+                  {visibleRoleLinks.map((item) => (
+                    <li key={item.id}>
+                      <Link className={styles.roleNavLink} href={item.href}>
+                        {item.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {demoControl ? (
+                <div className={styles.roleNavAside}>{demoControl}</div>
+              ) : null}
             </div>
           </nav>
         ) : null}

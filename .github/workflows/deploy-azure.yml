@@ -77,13 +77,18 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          normalized_sha256="${PARAMETERS_SHA256,,}"
+          if ! [[ "$normalized_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::AZURE_RESOURCES_PARAMETERS_SHA256/parameters_sha256 must be a 64-character hexadecimal SHA-256 digest." >&2
+            exit 1
+          fi
           printf '%s' "$PARAMETERS_JSON" > "$RUNNER_TEMP/resources.parameters.json"
-          printf '%s  %s\n' "${PARAMETERS_SHA256,,}" "$RUNNER_TEMP/resources.parameters.json" | sha256sum --check -
+          printf '%s  %s\n' "$normalized_sha256" "$RUNNER_TEMP/resources.parameters.json" | sha256sum --check -
           echo "PARAMETER_FILE=$RUNNER_TEMP/resources.parameters.json" >> "$GITHUB_ENV"
 
       - name: Azure Login
         if: steps.params.outputs.configured == 'true'
-        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -124,6 +129,12 @@ jobs:
     environment: azure-infrastructure
 
     steps:
+      - name: Block incompatible legacy provisioning
+        shell: bash
+        run: |
+          echo "::error::Legacy provisioning is disabled: its first-time/F1 parameter contract is incompatible with the current B1 template. Use the reviewed Deploy-Infrastructure.ps1 flow or the separately authorized manual deploy-azure2.yaml workflow."
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # An explicitly dispatched deployment must fail loudly rather than
@@ -169,16 +180,26 @@ jobs:
             exit 1
           fi
           umask 077
+          normalized_parameters_sha256="${PARAMETERS_SHA256,,}"
+          normalized_approval_sha256="${APPROVAL_SHA256,,}"
+          if ! [[ "$normalized_parameters_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::parameters_sha256 must be a 64-character hexadecimal SHA-256 digest." >&2
+            exit 1
+          fi
+          if ! [[ "$normalized_approval_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::approval_sha256 must be a 64-character hexadecimal SHA-256 digest." >&2
+            exit 1
+          fi
           printf '%s' "$PARAMETERS_JSON" > "$RUNNER_TEMP/resources.parameters.json"
           printf '%s' "$APPROVAL_JSON" > "$RUNNER_TEMP/provision-approval.json"
-          printf '%s  %s\n' "${PARAMETERS_SHA256,,}" "$RUNNER_TEMP/resources.parameters.json" | sha256sum --check -
-          printf '%s  %s\n' "${APPROVAL_SHA256,,}" "$RUNNER_TEMP/provision-approval.json" | sha256sum --check -
+          printf '%s  %s\n' "$normalized_parameters_sha256" "$RUNNER_TEMP/resources.parameters.json" | sha256sum --check -
+          printf '%s  %s\n' "$normalized_approval_sha256" "$RUNNER_TEMP/provision-approval.json" | sha256sum --check -
           echo "PARAMETER_FILE=$RUNNER_TEMP/resources.parameters.json" >> "$GITHUB_ENV"
           echo "APPROVAL_FILE=$RUNNER_TEMP/provision-approval.json" >> "$GITHUB_ENV"
 
       - name: Azure Login
         if: steps.deployment-artifacts.outputs.configured == 'true'
-        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}

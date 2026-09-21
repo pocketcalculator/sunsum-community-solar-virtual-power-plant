@@ -1,0 +1,147 @@
+name: Deploy SunSum application code
+
+# Continuous code deployment for the dev-test stack. It builds and validates the
+# application first, then reuses the existing guarded code-deployment entry
+# point so automated and manual deployments package and ship identical content.
+# It deploys application code only: no Bicep template is applied and no app
+# setting is created or changed.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "src/**"
+      - "public/**"
+      - "package.json"
+      - "package-lock.json"
+      - "next.config.ts"
+      - "tsconfig.json"
+      - ".github/workflows/deploy-app.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+# Queue code deployments so two pushes cannot upload competing packages to the
+# same web app.
+concurrency:
+  group: deploy-app-${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  # The deployment target itself is resolved by the deployment script from the
+  # shared dev config, so it is never restated here.
+  DEPLOYMENT_CONFIG: infrastructure/config/dev.json
+  DEPLOYMENT_OUTPUT_DIRECTORY: code-deployments
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  deploy:
+    name: Build, validate and deploy application code
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: azure-infrastructure
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Every check below must pass before the job signs in to Azure, so a
+      # broken build is never uploaded to the web app.
+      - name: Run lint script
+        run: npm run lint
+
+      - name: Check TypeScript
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run build
+        run: npm run build
+
+      # Fail loudly with a clear message instead of letting the Azure sign-in
+      # fail with an opaque error when these secrets have not been provisioned.
+      - name: Check required secrets
+        shell: bash
+        env:
+          CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          missing_secrets=""
+          if [ -z "${CLIENT_ID:-}" ]; then
+            missing_secrets="AZURE_CLIENT_ID"
+          fi
+          if [ -z "${TENANT_ID:-}" ]; then
+            missing_secrets="${missing_secrets}${missing_secrets:+, }AZURE_TENANT_ID"
+          fi
+          if [ -z "${SUBSCRIPTION_ID:-}" ]; then
+            missing_secrets="${missing_secrets}${missing_secrets:+, }AZURE_SUBSCRIPTION_ID"
+          fi
+          if [ -n "$missing_secrets" ]; then
+            echo "::error::Missing required environment secrets: $missing_secrets. Provision these secrets before deploying application code."
+            exit 1
+          fi
+
+      - name: Azure Login
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Deploy-Application.ps1 packages the allowlisted application source
+      # (no .next or node_modules), validates the archive, uploads it with
+      # az webapp deploy through the existing guarded uploader and performs the
+      # existing bounded homepage verification. Azure builds the uploaded source
+      # with the already configured Oryx settings. The script does not create
+      # resources or mutate app settings. The artifacts stay under the runner
+      # temporary directory so they never enter the workspace.
+      - name: Package and deploy application source
+        shell: pwsh
+        run: |
+          $outputRoot = Join-Path $env:RUNNER_TEMP $env:DEPLOYMENT_OUTPUT_DIRECTORY
+          $reference = "github-actions-run-$env:GITHUB_RUN_ID-attempt-$env:GITHUB_RUN_ATTEMPT-$env:GITHUB_SHA"
+          & ./infrastructure/scripts/Deploy-Application.ps1 `
+            -OutputRoot $outputRoot -Apply -ApprovalReference $reference
+
+      - name: Summarize the deployment
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Best effort: this step also runs after a failure, so it must never
+          # mask the real cause with a reporting error.
+          web_app="$(jq -r '.webAppName' "$DEPLOYMENT_CONFIG" 2>/dev/null || echo unknown)"
+          resource_group="$(jq -r '.resourceGroupName' "$DEPLOYMENT_CONFIG" 2>/dev/null || echo unknown)"
+          {
+            echo "### Application code deployment"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Web app | \`${web_app:-unknown}\` |"
+            echo "| Resource group | \`${resource_group:-unknown}\` |"
+            echo "| Commit | \`$GITHUB_SHA\` |"
+            echo "| Result | ${{ job.status }} |"
+            echo ""
+            echo "Application code only. This run applied no Bicep template and changed no app setting."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove deployment artifacts
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/$DEPLOYMENT_OUTPUT_DIRECTORY"

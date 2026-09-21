@@ -100,3 +100,112 @@
   font-size: 0.85rem;
   color: var(--text-critical);
 }
+
+/* Compact header form. Shares the sign-in behaviour, not the layout. */
+.pillGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.pillCaption {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pillOptions {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--pill-count), 1fr);
+  gap: var(--space-1);
+  align-items: center;
+  padding: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-neutral-soft);
+}
+
+/*
+ * The travelling highlight. Sized to one column and translated by the active
+ * index, so switching role reads as one control moving rather than two
+ * independent colour changes. Both figures are derived from `--pill-count`
+ * rather than hard-coded, so adding a role does not silently misalign it.
+ */
+.pillIndicator {
+  position: absolute;
+  top: var(--space-1);
+  bottom: var(--space-1);
+  left: var(--space-1);
+  width: calc(
+    (100% - 2 * var(--space-1) - (var(--pill-count) - 1) * var(--space-1)) /
+      var(--pill-count)
+  );
+  border-radius: var(--radius-pill);
+  background: var(--accent-solar);
+  transform: translateX(calc(var(--pill-index) * (100% + var(--space-1))));
+  transition: transform var(--motion-base) var(--easing-standard);
+}
+
+.pill {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--easing-standard);
+}
+
+.pillIcon {
+  flex: 0 0 auto;
+  font-size: 1rem;
+}
+
+.pill:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.pill:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+.pill:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.pillActive {
+  color: var(--text-on-accent);
+}
+
+.pillActive:hover:not(:disabled) {
+  color: var(--text-on-accent);
+}
+
+.pillError {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-critical);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pillIndicator {
+    transition: none;
+  }
+}
