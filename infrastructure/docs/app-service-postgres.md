@@ -123,7 +123,8 @@ resource-group creation/deletion or deployment during ordinary app development.
   CLI-managed Bicep **0.42.1**. No cloud validation or Azure what-if is required
   for these local checks.
 - Azure CLI **2.48.1+** supports Entra deployment when basic publishing is
-  disabled. The installed CLI must also expose `webapp deploy --track-status` and `--clean`;
+  disabled. The installed CLI must also expose `webapp deploy --track-status`, `--clean`,
+  and `--timeout`;
   the deployment script checks that capability instead of assuming it.
 - Required providers are `Microsoft.Web`, `Microsoft.Storage` and
   `Microsoft.DBforPostgreSQL`; the relevant web/storage/identity and PostgreSQL
@@ -1089,7 +1090,7 @@ in the same configuration read before the ZIP is uploaded. An enabled
 settings stop the source ZIP upload and require a separately reviewed correction,
 including when the foundation uses Existing web mode.
 It then uses `az webapp deploy --type zip --clean true --async true
---track-status false`. It never changes resource definitions, roles or app
+--track-status false --timeout 3600`. It never changes resource definitions, roles or app
 settings. It follows deployment with at most 40 remote deployment-status checks
 (15-second retry delay), then at most 12 public-preview checks (10-second
 request timeout, 10-second retry delay), rather than relying on unbounded

@@ -699,7 +699,7 @@ try {
     $global:AzureCodeRuntime = @{}
     $global:AzureCodeBuildSettings = @()
     $global:AzureCodeKind = 'app,linux'
-    $global:AzureCodeHelp = '--track-status --clean'
+    $global:AzureCodeHelp = '--track-status --clean --timeout'
     $global:AzureCodeDeployExitCode = 1
     $global:AzureCodeDeployResponseId = 'current-deployment'
     $global:AzureCodeDeploymentRecords = @()
@@ -763,6 +763,9 @@ try {
             if ($args -notcontains '--async' -or $args[[array]::IndexOf($args, '--async') + 1] -cne 'true') {
                 throw 'Source ZIP upload must use asynchronous Kudu processing.'
             }
+            if ($args -notcontains '--timeout' -or $args[[array]::IndexOf($args, '--timeout') + 1] -ne 3600) {
+                throw 'Source ZIP upload must set a bounded Azure CLI deployment timeout.'
+            }
             $global:AzureCodeSnapshotPath = [string]$args[[array]::IndexOf($args, '--src-path') + 1]
             if ($global:AzureCodeSnapshotPath -ceq $global:AzureCodeOriginalPath -or
                 (Get-FileHash -LiteralPath $global:AzureCodeSnapshotPath -Algorithm SHA256).Hash -ine $global:AzureCodeExpectedHash) {
@@ -783,10 +786,10 @@ try {
     $global:AzureCodeOriginalPath = $package.Path
     $global:AzureCodeExpectedHash = $package.SHA256
     $global:AzureCodeSnapshotPath = ''
-    foreach ($scenario in @('function-app', 'wrong-kind', 'mixed-function-kind', 'no-clean-support', 'no-track-support', 'missing-runtime', 'wrong-node', 'wrong-startup', 'missing-build', 'build-disabled', 'wrong-build', 'duplicate-build', 'run-from-package', 'read-failure', 'valid')) {
+    foreach ($scenario in @('function-app', 'wrong-kind', 'mixed-function-kind', 'no-clean-support', 'no-track-support', 'no-timeout-support', 'missing-runtime', 'wrong-node', 'wrong-startup', 'missing-build', 'build-disabled', 'wrong-build', 'duplicate-build', 'run-from-package', 'read-failure', 'valid')) {
         $global:AzureCodeWrites = 0
         $global:AzureCodeKind = 'app,linux'
-        $global:AzureCodeHelp = '--track-status --clean'
+        $global:AzureCodeHelp = '--track-status --clean --timeout'
         $global:AzureCodeReadFailure = $scenario -ceq 'read-failure'
         $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = '1.2'; scmMinTlsVersion = '1.2'; ftpsState = 'Disabled' }
         $global:AzureCodeBuildSettings = @(
@@ -799,6 +802,7 @@ try {
             'mixed-function-kind' { $global:AzureCodeKind = 'app,functionapp,linux' }
             'no-clean-support' { $global:AzureCodeHelp = '--track-status' }
             'no-track-support' { $global:AzureCodeHelp = '--clean' }
+            'no-timeout-support' { $global:AzureCodeHelp = '--track-status --clean' }
             'missing-runtime' { $global:AzureCodeRuntime = @{} }
             'wrong-node' { $global:AzureCodeRuntime.linuxFxVersion = 'NODE|20-lts' }
             'wrong-startup' { $global:AzureCodeRuntime.appCommandLine = '' }
