@@ -75,6 +75,11 @@ jobs:
       # One parameter set is composed here and reused by validate, what-if and
       # create, so the previewed template inputs cannot drift from the applied
       # ones. The file stays on the runner and is not uploaded.
+      #
+      # The nonsecret values repeat infrastructure/templates/resources.dev.bicepparam,
+      # which cannot be used directly here because it carries redacted identity
+      # placeholders. tests/unit/infrastructure.test.ts compares the two so they
+      # cannot drift silently.
       - name: Compose deployment parameters
         shell: bash
         env:
@@ -87,6 +92,9 @@ jobs:
           # path is resolved here and exported for the later steps.
           PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"
           echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"
+          # The file holds the secret-derived identity values, so it is created
+          # readable only by the job account and deleted when the job ends.
+          umask 077
           jq -n \
             --arg tenantId "$TENANT_ID" \
             --arg postgresAdminObjectId "$POSTGRES_ADMIN_OBJECT_ID" \
@@ -213,3 +221,10 @@ jobs:
             echo "Private DNS virtual-network link: \`$(echo "$outputs" | jq -r '.AZURE_PRIVATE_DNS_ZONE_LINK_NAME.value // "not deployed"')\`"
             echo "Diagnostic setting on the web app and PostgreSQL server: \`$(echo "$outputs" | jq -r '.AZURE_DIAGNOSTIC_SETTING_NAME.value // "not deployed"')\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove composed parameters
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${PARAMETERS_FILE:-}"

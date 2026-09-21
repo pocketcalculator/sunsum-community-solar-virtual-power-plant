@@ -10,6 +10,10 @@
 
   The settings are child resources on existing references, so no property of the
   site or the server is redeclared here.
+
+  PostgreSQL is in scope for diagnostics even though private-network.bicep
+  deliberately leaves it off private link: sending its platform logs to the
+  workspace changes no network posture.
 */
 
 targetScope = 'resourceGroup'

@@ -200,7 +200,25 @@ describe("the bounded Azure preparation contract", () => {
     expect(workflow).toContain("AZURE_BLOB_PRIVATE_ENDPOINT_NAME");
     expect(workflow).toContain("--mode Incremental");
 
+    expect(workflow).toContain("umask 077");
+    expect(workflow).toContain('rm -f "${PARAMETERS_FILE:-}"');
+
     const parameters = read("infrastructure/templates/resources.dev.bicepparam");
+    // The workflow cannot consume the bicepparam file, which carries redacted
+    // identity placeholders, so the shared nonsecret values are compared here.
+    const workflowValues = new Map(
+      [...workflow.matchAll(/^\s{16}(\w+): \{ value: (.+) \},?$/gmu)].map(([, key, value]) => [key, value]),
+    );
+    const parameterValues = new Map(
+      [...parameters.matchAll(/^param (\w+) = (.+)$/gmu)].map(([, key, value]) => [key, value]),
+    );
+    const redacted = new Set(["tenantId", "postgresAdminObjectId", "postgresAdminPrincipalName"]);
+    expect(workflowValues.size).toBeGreaterThan(20);
+    expect([...parameterValues.keys()].sort()).toEqual([...workflowValues.keys()].sort());
+    for (const [key, value] of parameterValues) {
+      if (redacted.has(key)) continue;
+      expect(`${key}=${workflowValues.get(key)?.replace(/"/gu, "'")}`).toBe(`${key}=${value}`);
+    }
     expect(parameters).toContain("param enableObservability = true");
     expect(parameters).toContain("param logAnalyticsWorkspaceName = 'log-sunsum-dev-test-centralus'");
     expect(parameters).toContain("param applicationInsightsName = 'appi-sunsum-dev-test-centralus'");
