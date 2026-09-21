@@ -168,7 +168,7 @@ jobs:
             fi
             actual_sha256="$(printf '%s' "$secret_value" | sha256sum | awk '{print $1}')"
             if [ "${supplied_sha256,,}" != "$actual_sha256" ]; then
-              echo "::error::$input_name does not match $secret_name. Recompute by hashing the exact stored secret value, including any trailing newline and with no extra added newline (printf '%s' \"<value of $secret_name>\" | sha256sum)."
+              echo "::error::$input_name does not match $secret_name. Recompute with printf '%s' \"<exact $secret_name secret value>\" | sha256sum so no newline is appended."
               return 1
             fi
             return 0
