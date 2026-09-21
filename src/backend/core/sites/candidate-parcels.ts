@@ -67,8 +67,8 @@ export async function getCandidateParcels(
      * The upstream reason is swallowed on purpose. A GIS credential or
      * configuration fault is an operational fact about us, not advice for the
      * caller, and echoing it would let an authenticated user probe the state of
-     * a third-party subscription. The adapter logs the bounded detail; the
-     * caller gets the one thing they can act on, which is "try later".
+     * a third-party subscription. The caller gets the one thing they can act on,
+     * which is "try later".
      */
     return failure(
       "service_unavailable",
