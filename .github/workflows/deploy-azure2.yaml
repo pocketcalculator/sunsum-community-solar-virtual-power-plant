@@ -1,10 +1,16 @@
 name: Deploy SunSum Test Infrastructure (No Approval Artifacts)
 
-# Manual test-deployment workflow. It deploys the same Bicep template as
-# deploy-azure.yml with explicit dev-test parameters instead of the reviewed
-# parameter/approval artifacts, so it must only be dispatched for the
-# disposable dev-test target. The final step creates billable Azure resources.
+# Validates infrastructure changes automatically; only manual dispatches create
+# billable resources in the disposable dev-test target.
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "infrastructure/templates/**"
+      - "infrastructure/config/**"
+      - "infrastructure/scripts/**"
+      - ".github/workflows/deploy-azure2.yaml"
   workflow_dispatch:
 
 permissions:
@@ -23,7 +29,7 @@ env:
   DEPLOYMENT_NAME: sunsum-test-${{ github.run_number }}
 
 jobs:
-  deploy:
+  validate:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -72,14 +78,6 @@ jobs:
             exit 1
           fi
 
-      # One parameter set is composed here and reused by validate, what-if and
-      # create, so the previewed template inputs cannot drift from the applied
-      # ones. The file stays on the runner and is not uploaded.
-      #
-      # The nonsecret values repeat infrastructure/templates/resources.dev.bicepparam,
-      # which cannot be used directly here because it carries redacted identity
-      # placeholders. tests/unit/infrastructure.test.ts compares the two so they
-      # cannot drift silently.
       - name: Compose deployment parameters
         shell: bash
         env:
@@ -88,49 +86,9 @@ jobs:
           POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
         run: |
           set -euo pipefail
-          # The runner context is not available to workflow-level env, so the
-          # path is resolved here and exported for the later steps.
           PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"
           echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"
-          # The file holds the secret-derived identity values, so it is created
-          # readable only by the job account and deleted when the job ends.
-          umask 077
-          jq -n \
-            --arg tenantId "$TENANT_ID" \
-            --arg postgresAdminObjectId "$POSTGRES_ADMIN_OBJECT_ID" \
-            --arg postgresAdminPrincipalName "$POSTGRES_ADMIN_PRINCIPAL_NAME" \
-            '{
-              "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-              contentVersion: "1.0.0.0",
-              parameters: {
-                environmentName: { value: "dev-test" },
-                location: { value: "centralus" },
-                appServicePlanName: { value: "asp-sunsum-dev-test-centralus" },
-                webAppName: { value: "app-sunsum-dev-test-centralus" },
-                storageAccountName: { value: "stsunsumdevtestcentralus" },
-                postgresServerName: { value: "db-sunsum-dev-test-centralus" },
-                databaseName: { value: "sunsum_test" },
-                runtimeRoleName: { value: "sunsum_runtime" },
-                tenantId: { value: $tenantId },
-                postgresAdminObjectId: { value: $postgresAdminObjectId },
-                postgresAdminPrincipalName: { value: $postgresAdminPrincipalName },
-                postgresAdminPrincipalType: { value: "User" },
-                postgresTier: { value: "Burstable" },
-                postgresSkuName: { value: "Standard_B1ms" },
-                postgresStorageSizeGB: { value: 32 },
-                postgresVersion: { value: "17" },
-                enableObservability: { value: true },
-                logAnalyticsWorkspaceName: { value: "log-sunsum-dev-test-centralus" },
-                applicationInsightsName: { value: "appi-sunsum-dev-test-centralus" },
-                logAnalyticsRetentionDays: { value: 30 },
-                logAnalyticsDailyQuotaGb: { value: 1 },
-                enablePrivateNetworking: { value: true },
-                virtualNetworkName: { value: "vnet-sunsum-dev-test-centralus" },
-                virtualNetworkAddressPrefix: { value: "10.30.0.0/16" },
-                appSubnetPrefix: { value: "10.30.1.0/26" },
-                privateEndpointSubnetPrefix: { value: "10.30.2.0/28" }
-              }
-            }' > "$PARAMETERS_FILE"
+          infrastructure/scripts/Compose-Azure2DeploymentParameters.sh "$PARAMETERS_FILE"
 
       # Resource providers the added observability and private-network
       # resources need. An unregistered provider otherwise surfaces as an
@@ -169,10 +127,82 @@ jobs:
             --template-file "$TEMPLATE_FILE" \
             --parameters "@$PARAMETERS_FILE"
 
-      # This step creates billable Azure resources (App Service plan,
-      # PostgreSQL flexible server, Storage account, Log Analytics workspace,
-      # Application Insights, virtual network and blob private endpoint) in the
-      # dev-test target.
+      - name: Remove composed parameters
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${PARAMETERS_FILE:-}"
+
+  deploy:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: azure-infrastructure
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Azure Login
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check required secrets
+        shell: bash
+        env:
+          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
+          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
+        run: |
+          set -euo pipefail
+          missing_secrets=""
+          if [ -z "${TENANT_ID:-}" ]; then
+            missing_secrets="AZURE_TENANT_ID"
+          fi
+          if [ -z "${POSTGRES_ADMIN_OBJECT_ID:-}" ]; then
+            missing_secrets="${missing_secrets}${missing_secrets:+, }POSTGRES_ADMIN_OBJECT_ID"
+          fi
+          if [ -z "${POSTGRES_ADMIN_PRINCIPAL_NAME:-}" ]; then
+            missing_secrets="${missing_secrets}${missing_secrets:+, }POSTGRES_ADMIN_PRINCIPAL_NAME"
+          fi
+          if [ -n "$missing_secrets" ]; then
+            echo "::error::Missing required repository secrets: $missing_secrets. Provision these secrets before dispatching this workflow."
+            exit 1
+          fi
+
+      - name: Compose deployment parameters
+        shell: bash
+        env:
+          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
+          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
+        run: |
+          set -euo pipefail
+          PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"
+          echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"
+          infrastructure/scripts/Compose-Azure2DeploymentParameters.sh "$PARAMETERS_FILE"
+
+      - name: Check required resource providers
+        shell: bash
+        run: |
+          set -euo pipefail
+          unregistered=""
+          for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do
+            state="$(az provider show --namespace "$namespace" --query registrationState --output tsv)"
+            if [ "$state" != "Registered" ]; then
+              unregistered="${unregistered}${unregistered:+, }${namespace} ($state)"
+            fi
+          done
+          if [ -n "$unregistered" ]; then
+            echo "::error::Required resource providers are not registered: $unregistered. Register them in the subscription before dispatching this workflow."
+            exit 1
+          fi
+
       - name: Deploy test infrastructure
         shell: bash
         run: |
