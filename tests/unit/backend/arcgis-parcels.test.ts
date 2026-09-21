@@ -369,8 +369,7 @@ describe("talking to ArcGIS", () => {
     const test = servingTwoParcels();
     await test.reader.read();
 
-    const outFields = new URL(test.fetches.queryCalls()[0]?.url ?? "").searchParams.get(      "outFields",
-    );
+    const outFields = new URL(test.fetches.queryCalls()[0]?.url ?? "").searchParams.get("outFields");
 
     expect(outFields).toBe("ObjectId,PARCELID,SITEADDRESS,SITECITY,SITESTATE,SITEZIP");
     expect(outFields).not.toContain("*");
