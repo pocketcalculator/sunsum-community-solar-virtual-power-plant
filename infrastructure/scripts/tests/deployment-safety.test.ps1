@@ -746,6 +746,9 @@ try {
             if ($args -notcontains '--clean' -or $args[[array]::IndexOf($args, '--clean') + 1] -cne 'true') {
                 throw 'Source ZIP upload must explicitly request target cleanup.'
             }
+            if ($args -notcontains '--async' -or $args[[array]::IndexOf($args, '--async') + 1] -cne 'true') {
+                throw 'Source ZIP upload must use asynchronous Kudu processing.'
+            }
             $global:AzureCodeSnapshotPath = [string]$args[[array]::IndexOf($args, '--src-path') + 1]
             if ($global:AzureCodeSnapshotPath -ceq $global:AzureCodeOriginalPath -or
                 (Get-FileHash -LiteralPath $global:AzureCodeSnapshotPath -Algorithm SHA256).Hash -ine $global:AzureCodeExpectedHash) {

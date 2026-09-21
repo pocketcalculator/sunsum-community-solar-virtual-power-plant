@@ -79,7 +79,7 @@ try {
     Assert-DeploymentSnapshot $snapshot
     Assert-DeploymentSnapshot $approvalSnapshot
     & az webapp deploy --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
-        --src-path $artifact.Path --type zip --clean true --async false --track-status false --timeout 600000 `
+        --src-path $artifact.Path --type zip --clean true --async true --track-status false --timeout 600000 `
         --only-show-errors --output none
     if ($LASTEXITCODE -ne 0) {
         throw 'Deployment did not report success. It may still finish remotely: inspect deployment logs before retrying; do not change the web tier.'

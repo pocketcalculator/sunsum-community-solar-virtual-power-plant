@@ -1088,8 +1088,8 @@ in the same configuration read before the ZIP is uploaded. An enabled
 `WEBSITE_RUN_FROM_PACKAGE` is rejected. Missing or different
 settings stop the source ZIP upload and require a separately reviewed correction,
 including when the foundation uses Existing web mode.
-It then uses `az webapp deploy --type zip --clean true --track-status false
---timeout 600000`. The CLI timeout is in milliseconds, so this requests a
+It then uses `az webapp deploy --type zip --clean true --async true
+--track-status false --timeout 600000`. The CLI timeout is in milliseconds, so this requests a
 10-minute deployment timeout, not 600,000 seconds. It never changes resource
 definitions, roles or app settings. It follows
 deployment with at most 12 public-preview checks (10-second request timeout,
