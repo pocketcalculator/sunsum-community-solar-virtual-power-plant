@@ -8,4 +8,5 @@
 export {
   DemoRoleSwitcher,
   type DemoRoleSwitcherProps,
+  type DemoRoleSwitcherVariant,
 } from "./components/DemoRoleSwitcher";

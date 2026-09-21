@@ -46,9 +46,28 @@ deploy application code or enable application database access. Network approvals
 SQL bootstrap, schema migrations and application activation remain separate
 operations in the [operating guide](app-service-postgres.md).
 
+The legacy `deploy-azure.yml` deployment job is explicitly blocked before checkout
+or Azure login: `Provision-Infrastructure.ps1` still has incompatible first-time/F1
+and parameter assumptions. Its push validation/what-if path remains read-only.
+The newer `deploy-azure2.yaml` workflow remains manual-only with main's existing
+parameter contract; it is not dispatched by this change. Routine reviewed local
+deployment continues to use `Deploy-Infrastructure.ps1`.
+
 B1 is a paid tier explicitly selected for this dev experiment after Azure rejected
 Linux F1 creation in the target resource group (`FreeLinuxSkuNotAllowedInResourceGroup`).
 This is not an automatic fallback or evidence that B1 has deployed successfully.
+
+### Optional Blob grants
+
+The root reuses `storage-role-grants.bicep` when `deployRbac=true`. It grants Storage
+Blob Data Contributor, including delete access, only on `site-documents` and
+`project-documents`. Supply a reviewed `approvedWebPrincipalId` and
+`blobRoleApprovalReference` in ignored local inputs. The actual app identity must
+match the approved ID. New apps need identity review after creation before grants.
+Contributor-only operators leave `deployRbac=false`; role-assignment writes need
+separate authorization. Invalid approvals fail before Azure calls, and permission
+errors are not silently skipped. False preserves existing grants in Incremental
+mode; it does not revoke them or prove access. SQL grants and bootstrap stay separate.
 
 ### Test targets
 
@@ -78,10 +97,11 @@ It has a public endpoint with no firewall allowances. Storage is network-closed
 with private containers and disabled shared keys. B1 hosting, PostgreSQL and
 Storage are separately billable; this is not a data restore of the existing server.
 
-The public native parameter file redacts `tenantId`, `postgresAdminObjectId`
-and `postgresAdminPrincipalName`. The two IDs use the all-zero UUID and the name
-uses `<postgres-admin-principal-name>`. These are compilation placeholders, not
-deployable identities. Preview/apply rejects them locally before any Azure call.
+The public native parameter file redacts `tenantId` and the single entry in
+`postgresAdministrators`. The tenant/object IDs use the all-zero UUID and the
+principal name uses `<postgres-admin-principal-name>`. These are compilation
+placeholders, not deployable identities. Preview/apply rejects them locally
+before any Azure call.
 
 Use the [local identity setup](#local-identity-setup) below before preview/apply.
 No passwords, tokens or environment variables are required in these parameter
@@ -154,7 +174,7 @@ local compilation command. No compiled artifacts or approval files are inputs.
    and `parametersPath` to `resources.local.bicepparam`.
 3. In the local parameters, set the first line to
    `using '../../infrastructure/templates/resources.bicep'`. Supply the approved
-   values for the fields below and verify that `postgresAdminPrincipalType`
+  values for the fields below and verify that each entry's `principalType`
   matches the selected identity (`User`, `Group` or `ServicePrincipal`). Keep the
   native `webAppName` equal to the shared config's `webAppName`.
 4. Keep both local copies ignored by Git. Do not force-add them, paste real values
@@ -163,11 +183,52 @@ local compilation command. No compiled artifacts or approval files are inputs.
 | Local parameter | Value to supply |
 | --- | --- |
 | `tenantId` | The approved Entra tenant ID, a nonempty UUID. |
-| `postgresAdminObjectId` | The selected administrator's object ID in that tenant, not an app/client ID. |
-| `postgresAdminPrincipalName` | The approved principal name matching that object and principal type. |
+| `postgresAdministrators[].objectId` | Each approved administrator's object ID in `tenantId`, not an app/client ID. |
+| `postgresAdministrators[].principalName` | The approved principal name matching that object. |
+| `postgresAdministrators[].principalType` | `User`, `Group` or `ServicePrincipal`; managed identities use `ServicePrincipal`. |
+
+`postgresAdministrators` is a nonempty array of the exported, sealed Bicep type
+`EntraAdministrator` from `modules/postgres.bicep`. The module accepts the same
+type through `administrators`. The current public input contains **one** redacted
+entry. Legacy private inputs retain their one-admin fallback when the list is omitted.
+To add more later, append approved entries to the local array:
+
+```bicep
+param postgresAdministrators = [
+  {
+    objectId: '<approved-object-id>'
+    principalName: '<approved-principal-name>'
+    principalType: 'User'
+  }
+]
+```
+
+Replace the placeholders locally before preview/apply. Entries have exactly
+those three fields; all share the server's `tenantId`. UUIDs must be nonzero and
+unique, including case-insensitive duplicates. Principal names cannot be blank
+or placeholders for deployment. The template checks the list and serializes
+administrator writes after TLS configuration; database creation waits for all
+administrators. Compilation does not verify directory existence, matching names,
+membership or authorization to administer the server.
+
+For compatibility, omitting the array uses the existing `postgresAdminObjectId`,
+`postgresAdminPrincipalName` and `postgresAdminPrincipalType` inputs as a one-entry
+list. The module retains equivalent `admin*` fallback inputs. The normal deployment
+command rejects explicitly supplying both formats; direct Bicep consumers should
+also use only one format (an explicit list takes precedence over fallback fields).
+To migrate an existing local file, move its current values into one array entry
+and remove the three old declarations. No private file is rewritten automatically.
+
+These are server-level Entra administrators, not `sunsum_migrator` or runtime SQL
+roles. Keep those non-admin identities separate and review admin-group membership.
+**Removing an entry does not revoke it in Incremental mode.** Renaming/replacing an
+object ID can leave the previous administrator authorized; removal requires a
+separately approved operation and verification. Do not use Complete mode as cleanup.
+This array support applies to `Deploy-Infrastructure.ps1`; the legacy
+`Provision-Infrastructure.ps1` and its workflow remain unmigrated.
 
 If `.azure/dev/identity-values.json` already exists on your machine, it is only a
-local reference for these three values. The script does not create or load it,
+local reference for the existing tenant and administrator values. The script does not create or load it,
 and the repository does not provide the real values. Obtain them through your
 approved identity process if you do not have that local reference. Do not change
 the Azure CLI deployment identity or grant roles as part of filling these fields.
@@ -287,6 +348,42 @@ Legacy provisioning still requires F1/Free. Code-only deployment is separate and
 does not inspect the plan SKU or change infrastructure.
 
 ## Application code deployment
+
+Pushes to `main` that touch application sources deploy automatically through
+[`.github/workflows/deploy-app.yml`](../../.github/workflows/deploy-app.yml);
+the manual PowerShell entry below remains available for local or out-of-band
+deployments. Both paths package and ship the same allowlisted source.
+
+### Automatic deployment from `main`
+
+The **Deploy SunSum application code** workflow runs on every push to `main`
+that changes `app/`, `src/`, `public/`, `package.json`, `package-lock.json`,
+`next.config.ts`, `tsconfig.json` or the workflow file itself, and can also be
+dispatched manually. It is queued through a concurrency group so two pushes
+cannot upload competing packages.
+
+The job installs dependencies with `npm ci` and then runs `npm run lint`,
+`npm run typecheck`, `npm test` and `npm run build`. Any failure stops the run
+before Azure sign-in, so a broken build never reaches the web app. It then
+fails fast when `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` or `AZURE_SUBSCRIPTION_ID`
+is missing, signs in with the same federated OIDC credential and
+`azure-infrastructure` environment used by the infrastructure workflow, and
+invokes `Deploy-Application.ps1 -Apply` with the run identifiers as the review
+reference. The target web app therefore comes from the same
+[shared dev config](../config/dev.json) the manual path uses; the workflow does
+not restate it. Reusing that script keeps packaging, the guarded upload and the
+bounded HTTP verification identical to the manual path. Artifacts are written
+under the runner temporary directory and removed when the job ends.
+
+The workflow deploys application code only: it applies no Bicep template,
+creates no resources and neither sets nor changes `SUNSUM_STORE`,
+`SUNSUM_BLOB`, `SUNSUM_VIABILITY` or any other app setting. Infrastructure
+remains the separate, manually dispatched
+[`deploy-azure2.yaml`](../../.github/workflows/deploy-azure2.yaml) run, and the
+web app must already exist with the reviewed runtime and Oryx build settings
+before a code deployment can succeed.
+
+### Manual deployment
 
 Use `infrastructure/scripts/Deploy-Application.ps1` as the single source-to-service
 entry. It packages the source, validates the ZIP and records its hash and target.

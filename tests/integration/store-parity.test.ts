@@ -28,6 +28,8 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { randomUUID } from "node:crypto";
+
 import { sql } from "drizzle-orm";
 
 import type { Viewer, ViewerIdentity } from "@/backend/core/identity";
@@ -37,6 +39,7 @@ import {
   type InvestorProfileInput,
   type PortfolioQuery,
 } from "@/backend/core/investors";
+import type { ParticipantProfileRecord } from "@/backend/core/participants";
 import type { ProjectRecord } from "@/backend/core/projects";
 import { createMemoryBackendStore, type BackendStore } from "@/backend/core/store";
 import { closeDb, getDb } from "@/backend/db/client";
@@ -366,6 +369,76 @@ describe.skipIf(!databaseUrl)("the PostgreSQL store matches the mock", () => {
       expect(rows.rows[0]?.count, "the race left more than one profile row").toBe("1");
     } finally {
       await removeFixture();
+    }
+  });
+
+  /*
+   * A sign-up profile is the one record written by an unauthenticated caller,
+   * and the only one the two stores append rather than upsert. The memory
+   * store appends to an array, which cannot fail; PostgreSQL has to satisfy
+   * seven CHECK constraints and round-trip a jsonb array, so passing the unit
+   * test against the mock is not evidence about this store.
+   *
+   * It writes, so it cleans up in a `finally` for the same reason the investor
+   * test restores its row: a failed assertion must not leave fixtures behind
+   * that make every later run start from corrupted data.
+   */
+  it("appends sign-up profiles rather than collapsing them onto the email", async () => {
+    const email = `parity-${randomUUID()}@example.org`;
+    const base: Omit<ParticipantProfileRecord, "id" | "fullName"> = {
+      email,
+      accountMethod: "email",
+      representation: "individual",
+      organisationName: null,
+      userTypeId: "property-owner",
+      roleId: "site-owner",
+      intentOptionIds: ["i-am-property-owner"],
+      consentAccepted: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    const first: ParticipantProfileRecord = {
+      ...base,
+      id: store.nextId("participant_profile"),
+      fullName: "Jackie Jackson",
+    };
+    const second: ParticipantProfileRecord = {
+      ...base,
+      id: store.nextId("participant_profile"),
+      fullName: "Jacqueline Jackson",
+      createdAt: new Date(Date.now() + 1_000).toISOString(),
+    };
+
+    try {
+      await store.addParticipantProfile(first);
+      await store.addParticipantProfile(second);
+
+      const stored = (await store.listParticipantProfiles()).filter(
+        (profile) => profile.email === email,
+      );
+
+      /** Both survive: an unverified address must not decide which row wins. */
+      expect(stored).toHaveLength(2);
+      expect(stored.map((profile) => profile.fullName)).toStrictEqual([
+        "Jackie Jackson",
+        "Jacqueline Jackson",
+      ]);
+      /** jsonb, not a string that happens to look like one. */
+      expect(stored[0]?.intentOptionIds).toStrictEqual(["i-am-property-owner"]);
+      expect(stored[0]).toStrictEqual(first);
+
+      /*
+       * The same two writes against the mock produce the same two records, in
+       * the same order. This is the comparison the suite exists for.
+       */
+      const mock = createMemoryBackendStore();
+      await mock.addParticipantProfile(first);
+      await mock.addParticipantProfile(second);
+      expect(stored).toStrictEqual(await mock.listParticipantProfiles());
+    } finally {
+      await getDb().execute(
+        sql`DELETE FROM participant_profiles WHERE email = ${email}`,
+      );
     }
   });
 });

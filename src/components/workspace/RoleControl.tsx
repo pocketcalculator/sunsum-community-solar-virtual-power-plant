@@ -96,6 +96,7 @@ export function RoleControl({ value, allowedRoles, mode, onChange }: RoleControl
           data-disabled={disabled}>
           <input type="radio" name={`${id}-role`} value={role.value}
             checked={!disabled && value === role.value} disabled={disabled}
+            aria-label={disabled ? role.label : undefined}
             aria-describedby={disabled ? `${id}-${role.value}-unavailable` : undefined}
             onChange={() => choose(role.value)} onKeyDown={(event) => keyboard(event, role.value)} />
           <span>{role.label}</span>
