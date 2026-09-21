@@ -113,8 +113,9 @@ resource privateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLin
 /*
   Named references rather than positions in the inline subnet array, so
   inserting or reordering a subnet cannot silently repoint the private endpoint
-  at the delegated App Service subnet. Only resource ids are read, so these add
-  no deployment-time read while still ordering consumers after the network.
+  at the delegated App Service subnet. Only `id` is read, which ARM computes
+  with resourceId rather than a deployment-time read; reading any other property
+  of these references would change that.
 */
 resource appSubnet 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' existing = {
   parent: virtualNetwork
