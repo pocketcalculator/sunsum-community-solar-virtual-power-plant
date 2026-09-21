@@ -187,6 +187,7 @@ export function RoleControl({
           data-selected={selected} data-preview={!busy && preview === role.value} data-disabled={unavailable}>
           <input type="radio" name={`${id}-role`} value={role.value} data-role-control={role.value}
             checked={selected} disabled={busy || unavailable}
+            aria-label={role.label}
             aria-describedby={unavailable ? `${id}-${role.value}-unavailable` : undefined}
             onChange={() => choose(role.value)} onKeyDown={(event) => keyboard(event, role.value)} />
           <span>{role.label}</span>
@@ -194,7 +195,7 @@ export function RoleControl({
             viewBox="0 0 12 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
             <rect x="1" y="6" width="10" height="7" rx="2" /><path d="M3 6V4a3 3 0 0 1 6 0v2" />
           </svg>}
-          {unavailable && <small id={`${id}-${role.value}-unavailable`} className={s.unavailable} aria-hidden="true">
+          {unavailable && <small id={`${id}-${role.value}-unavailable`} className={s.unavailable}>
             {mode === "live" ? "Not granted" : "Unavailable"}
           </small>}
         </label>;

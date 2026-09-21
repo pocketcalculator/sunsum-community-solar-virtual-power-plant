@@ -15,11 +15,20 @@ demo seam.
 
 > [!WARNING]
 > **Requests are authenticated; sign-in is not.** Every implemented route
-> except `POST /auth/demo-switch` and `POST /auth/logout` resolves its caller
+> except `POST /auth/demo-switch`, `POST /auth/logout` and `POST /profiles`
+> resolves its caller
 > from a signed, `HttpOnly` `sunsum_session` cookie and answers
 > `401 unauthenticated` without one. Writes are additionally checked against
 > `Sec-Fetch-Site`, falling back to `Origin`, and a cross-site write is refused
 > `403 forbidden_origin`.
+>
+> `POST /profiles` supports pre-account participation intake and is open by design — the
+> caller has no account yet, which is the point. It makes the cross-site check
+> itself rather than inheriting it from an identity step, accepts no
+> credential, and writes a `participant_profiles` row that grants no access and
+> that nothing in the authorization path reads. `GET /profiles` is the operator
+> read of that list, and is role-checked in both the route and core.
+> The current public `/join` preview does not call this write endpoint.
 >
 > What is not production-ready is the sign-in endpoint. `POST /auth/demo-switch`
 > hands out one of three **seeded** identities and verifies no credential, so
@@ -81,9 +90,10 @@ it is misplaced.
 | **S-PROJ**  | `projects/`    | `/pipeline`, `/projects/{id}`, `/projects/{id}/stage`, `.../visibility`      | done    |
 | **S-INV**   | `investors/`   | `/portfolio`, `/investors/me/profile`                                        | done    |
 | **S-ENG**   | `engagements/` | `/projects/{id}/engagements`, `/me/engagements`, funding needs; engagement state and diligence later | partial |
-| **S-DOC**   | `documents/`   | `/sites/{id}/documents`, `/sites/{id}/acknowledgements`                      | partial |
+| **S-DOC**   | `documents/`   | `/sites/{id}/documents`, `/projects/{id}/documents`, `/sites/{id}/acknowledgements` | partial |
 | **S-ACT**   | `activity/`    | `/projects/{id}/activity`                                                    | partial |
 | **S-VIEW**  | `views/`       | Composed reads: the site-owner dashboard, `/projects/{id}/deal-room`         | partial |
+| —           | `participants/`| `/profiles`                                                                  | done    |
 | —           | `export/`      | `/export`                                                                    | done    |
 
 S-IAM request/session authentication shipped in
@@ -98,6 +108,10 @@ Its core/handler implementation currently lives under `projects/`, and the
 route uses singular `assessment`. This implemented override is not evidence
 that the external WS4 model's actual output has been agreed or that a real
 site-to-GIS-to-viability flow has been exercised.
+
+`participants/` is not one of the design document's services either. It serves
+pre-account intake, which happens before a participant has an authenticated role, so
+it sits outside the role-scoped services rather than inside one of them.
 
 `export/` is not one of the design document's services. It is a composed read
 like `views/`, but it belongs to every role rather than to one, so giving it a

@@ -312,7 +312,10 @@ describe("the bounded Azure preparation contract", () => {
     expect(firewall).toContain("startIpAddress: address");
     expect(firewall).toContain("endIpAddress: address");
     const deploy = read("infrastructure/scripts/Deploy-AppServiceCode.ps1");
-    expect(deploy).toContain("--track-status false --timeout 600000");
+    expect(deploy).toContain("--async true --track-status false");
+    expect(deploy).toContain("Azure CLI did not return an async deployment id");
+    expect(deploy).toContain("az webapp log deployment show");
+    expect(deploy).toContain("$attempt -lt 40");
     expect(deploy).toContain("$attempt -lt 12");
     expect(deploy).toContain("if (-not $Apply)");
   });
