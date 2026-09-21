@@ -895,7 +895,16 @@ try {
                     $planReference -cnotin $webResource[0].dependsOn -or $webResource[0].properties.siteConfig.alwaysOn -ne $false) {
                     throw 'The web module must create one Linux B1/Basic plan and link the web app to it with Always On disabled.'
                 }
-                $settings = @($webResource[0].properties.siteConfig.appSettings)
+                $appSettings = $webResource[0].properties.siteConfig.appSettings
+                if ($appSettings -isnot [string] -or -not $appSettings.StartsWith("[concat(variables('baseAppSettings'), ")) {
+                    throw 'Web app settings must extend the reviewed base list instead of replacing it.'
+                }
+                $appended = $appSettings.Substring("[concat(variables('baseAppSettings'), ".Length)
+                if ($appended -cnotmatch "'APPLICATIONINSIGHTS_CONNECTION_STRING'" -or
+                    $appended -cmatch "'(PG[A-Z]*|SUNSUM_DATABASE_AUTH|DATABASE_URL|SUNSUM_DB_AUTH)'") {
+                    throw 'Only the telemetry connection string may be appended to the web app settings.'
+                }
+                $settings = @($compiled.variables.baseAppSettings)
                 $store = @($settings | Where-Object { $_.name -ceq 'SUNSUM_STORE' })
                 if ($store.Count -ne 1 -or $store[0].value -cne 'mock' -or
                     @($settings | Where-Object { $_.name -cmatch '^(PG|SUNSUM_DATABASE_AUTH$|DATABASE_URL$|SUNSUM_DB_AUTH$)' }).Count -ne 0) {
@@ -907,8 +916,15 @@ try {
                 continue
             }
             $modules = @($compiled.resources | Where-Object { $_.type -ceq 'Microsoft.Resources/deployments' })
-            $postgresModule = @($modules | Where-Object { $_.properties.parameters.Contains('serverName') })
-            if ($modules.Count -ne 3 -or $postgresModule.Count -ne 1) { throw 'The root must deploy web, Storage and PostgreSQL modules.' }
+            $requiredModules = @($modules | Where-Object { -not $_.Contains('condition') })
+            $optionalModules = @($modules | Where-Object { $_.Contains('condition') })
+            $postgresModule = @($requiredModules | Where-Object { $_.properties.parameters.Contains('serverName') })
+            if ($requiredModules.Count -ne 3 -or $postgresModule.Count -ne 1) { throw 'The root must deploy web, Storage and PostgreSQL modules.' }
+            foreach ($optional in $optionalModules) {
+                if ($optional.condition -cnotin @("[parameters('enableObservability')]", "[parameters('enablePrivateNetworking')]")) {
+                    throw 'Optional root modules must stay gated behind the observability or private-networking switches.'
+                }
+            }
             $postgresInputs = $postgresModule[0].properties.parameters
             foreach ($binding in @{ serverName='postgresServerName'; databaseName='databaseName'; tenantId='tenantId'; adminObjectId='postgresAdminObjectId'; adminPrincipalName='postgresAdminPrincipalName'; adminPrincipalType='postgresAdminPrincipalType' }.GetEnumerator()) {
                 if ($postgresInputs[$binding.Key].value -cne "[parameters('$($binding.Value)')]") { throw "PostgreSQL input is not bound to the root: $($binding.Key)" }
