@@ -1,4 +1,4 @@
-name: Deploy SunSum Test Infrastructure (No Approval Artifacts)
+name: Validate and Deploy SunSum Test Infrastructure
 
 on:
   push:
@@ -9,6 +9,8 @@ on:
       - "infrastructure/config/**"
       - "infrastructure/scripts/**"
       - ".github/workflows/deploy-azure2.yaml"
+      - ".github/actions/check-infrastructure-providers/**"
+      - ".github/actions/check-infrastructure-secrets/**"
       - ".github/actions/compose-infrastructure-parameters/**"
   workflow_dispatch:
 
@@ -38,25 +40,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check required secrets
-        shell: bash
-        env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
-          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
-        run: |
-          set -euo pipefail
-          missing_secrets=""
-          for secret in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID POSTGRES_ADMIN_OBJECT_ID POSTGRES_ADMIN_PRINCIPAL_NAME; do
-            if [ -z "${!secret:-}" ]; then
-              missing_secrets="${missing_secrets}${missing_secrets:+, }$secret"
-            fi
-          done
-          if [ -n "$missing_secrets" ]; then
-            echo "::error::Missing required repository secrets: $missing_secrets. Provision repository-scoped secrets before running this workflow."
-            exit 1
-          fi
+        uses: ./.github/actions/check-infrastructure-secrets
+        with:
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          postgres-admin-object-id: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
+          postgres-admin-principal-name: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
 
       - name: Azure Login
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
@@ -79,20 +69,7 @@ jobs:
           postgres-admin-principal-name: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
 
       - name: Check required resource providers
-        shell: bash
-        run: |
-          set -euo pipefail
-          unregistered=""
-          for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do
-            state="$(az provider show --namespace "$namespace" --query registrationState --output tsv)"
-            if [ "$state" != "Registered" ]; then
-              unregistered="${unregistered}${unregistered:+, }${namespace} ($state)"
-            fi
-          done
-          if [ -n "$unregistered" ]; then
-            echo "::error::Required resource providers are not registered: $unregistered. Register them in the subscription before deployment."
-            exit 1
-          fi
+        uses: ./.github/actions/check-infrastructure-providers
 
       - name: Validate deployment
         shell: bash
@@ -130,25 +107,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check required secrets
-        shell: bash
-        env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
-          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
-        run: |
-          set -euo pipefail
-          missing_secrets=""
-          for secret in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID POSTGRES_ADMIN_OBJECT_ID POSTGRES_ADMIN_PRINCIPAL_NAME; do
-            if [ -z "${!secret:-}" ]; then
-              missing_secrets="${missing_secrets}${missing_secrets:+, }$secret"
-            fi
-          done
-          if [ -n "$missing_secrets" ]; then
-            echo "::error::Missing required secrets: $missing_secrets. Provision them before approving deployment."
-            exit 1
-          fi
+        uses: ./.github/actions/check-infrastructure-secrets
+        with:
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          postgres-admin-object-id: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
+          postgres-admin-principal-name: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
 
       - name: Azure Login
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
@@ -165,20 +130,7 @@ jobs:
           postgres-admin-principal-name: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
 
       - name: Check required resource providers
-        shell: bash
-        run: |
-          set -euo pipefail
-          unregistered=""
-          for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do
-            state="$(az provider show --namespace "$namespace" --query registrationState --output tsv)"
-            if [ "$state" != "Registered" ]; then
-              unregistered="${unregistered}${unregistered:+, }${namespace} ($state)"
-            fi
-          done
-          if [ -n "$unregistered" ]; then
-            echo "::error::Required resource providers are not registered: $unregistered. Register them in the subscription before deployment."
-            exit 1
-          fi
+        uses: ./.github/actions/check-infrastructure-providers
 
       - name: Deploy test infrastructure
         shell: bash

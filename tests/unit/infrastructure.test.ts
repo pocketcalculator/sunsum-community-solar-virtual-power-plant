@@ -180,6 +180,7 @@ describe("the bounded Azure preparation contract", () => {
   it("validates infrastructure automatically before an environment-gated deployment", () => {
     const workflow = read(".github/workflows/deploy-azure2.yaml");
     const parametersAction = read(".github/actions/compose-infrastructure-parameters/action.yml");
+    const providersAction = read(".github/actions/check-infrastructure-providers/action.yml");
     const validateJob = workflow.slice(workflow.indexOf("  validate:"), workflow.indexOf("\n  deploy:"));
     const deployJob = workflow.slice(workflow.indexOf("  deploy:"));
 
@@ -219,8 +220,8 @@ describe("the bounded Azure preparation contract", () => {
     ]) {
       expect(parametersAction).toContain(entry);
     }
-    expect(validateJob).toContain("for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do");
-    expect(deployJob).toContain("Required resource providers are not registered");
+    expect(workflow.match(/uses: \.\/\.github\/actions\/check-infrastructure-providers/gu)).toHaveLength(2);
+    expect(providersAction).toContain("for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do");
     expect(deployJob).toContain("AZURE_BLOB_PRIVATE_ENDPOINT_NAME");
     expect(deployJob).toContain("--mode Incremental");
 
