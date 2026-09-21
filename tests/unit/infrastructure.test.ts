@@ -181,12 +181,14 @@ describe("the bounded Azure preparation contract", () => {
     const workflow = read(".github/workflows/deploy-azure2.yaml");
     const parametersScript = read("infrastructure/scripts/Compose-Azure2DeploymentParameters.sh");
     const prepareScript = read("infrastructure/scripts/Prepare-Azure2Deployment.sh");
+    const prepareAction = read(".github/actions/prepare-azure2-deployment/action.yaml");
     const validateJob = workflow.slice(workflow.indexOf("  validate:"), workflow.indexOf("\n  deploy:"));
     const deployJob = workflow.slice(workflow.indexOf("  deploy:"));
     expect(workflow).toContain("push:");
     expect(workflow).toContain('      - "infrastructure/templates/**"');
     expect(workflow).toContain('      - "infrastructure/config/**"');
     expect(workflow).toContain('      - "infrastructure/scripts/**"');
+    expect(workflow).toContain('      - ".github/actions/prepare-azure2-deployment/**"');
     expect(workflow).toContain('      - ".github/workflows/deploy-azure2.yaml"');
     expect(workflow).toContain("workflow_dispatch:");
     expect(validateJob).toContain("az deployment group validate");
@@ -199,9 +201,10 @@ describe("the bounded Azure preparation contract", () => {
     expect(deployJob).not.toContain("az deployment group what-if");
     expect(workflow.match(/--parameters "@\$PARAMETERS_FILE"/gu)).toHaveLength(3);
     expect(workflow).not.toMatch(/\n\s+environmentName=dev-test/u);
-    expect(workflow).toContain('PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"');
-    expect(workflow).toContain('echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"');
-    expect(workflow.match(/Prepare-Azure2Deployment\.sh "\$PARAMETERS_FILE"/gu)).toHaveLength(2);
+    expect(prepareAction).toContain('PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"');
+    expect(prepareAction).toContain('echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"');
+    expect(workflow.match(/uses: \.\/\.github\/actions\/prepare-azure2-deployment/gu)).toHaveLength(2);
+    expect(prepareAction).toContain('"$GITHUB_WORKSPACE/infrastructure/scripts/Prepare-Azure2Deployment.sh" "$PARAMETERS_FILE"');
     for (const entry of [
       'enableObservability: { value: true }',
       'logAnalyticsWorkspaceName: { value: "log-sunsum-dev-test-centralus" }',

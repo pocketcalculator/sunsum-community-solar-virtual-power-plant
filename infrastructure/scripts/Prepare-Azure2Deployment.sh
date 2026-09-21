@@ -2,6 +2,7 @@
 set -euo pipefail
 
 parameters_file="${1:?A deployment parameters path is required.}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 missing_secrets=""
 if [ -z "${TENANT_ID:-}" ]; then
   missing_secrets="AZURE_TENANT_ID"
@@ -13,11 +14,11 @@ if [ -z "${POSTGRES_ADMIN_PRINCIPAL_NAME:-}" ]; then
   missing_secrets="${missing_secrets}${missing_secrets:+, }POSTGRES_ADMIN_PRINCIPAL_NAME"
 fi
 if [ -n "$missing_secrets" ]; then
-  echo "::error::Missing required repository secrets: $missing_secrets. Provision these secrets before dispatching this workflow."
+  echo "::error::Missing required repository secrets: $missing_secrets. Provision these secrets before running this workflow."
   exit 1
 fi
 
-infrastructure/scripts/Compose-Azure2DeploymentParameters.sh "$parameters_file"
+"$script_dir/Compose-Azure2DeploymentParameters.sh" "$parameters_file"
 
 unregistered=""
 for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do
@@ -27,6 +28,6 @@ for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Netw
   fi
 done
 if [ -n "$unregistered" ]; then
-  echo "::error::Required resource providers are not registered: $unregistered. Register them in the subscription before dispatching this workflow."
+  echo "::error::Required resource providers are not registered: $unregistered. Register them in the subscription before running this workflow."
   exit 1
 fi
