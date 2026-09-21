@@ -126,6 +126,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # An explicitly dispatched deployment must fail loudly rather than
+      # silently skip the actual Azure steps when the reviewed artifacts are
+      # missing; a green run here must mean infrastructure was provisioned.
       - name: Check reviewed deployment artifacts availability
         id: deployment-artifacts
         shell: bash
@@ -142,9 +145,8 @@ jobs:
             missing_artifacts="${missing_artifacts}${missing_artifacts:+, }AZURE_PROVISION_APPROVAL_JSON"
           fi
           if [ -n "$missing_artifacts" ]; then
-            echo "::notice::Missing reviewed deployment artifact secrets: $missing_artifacts; skipping Azure deployment until an operator provisions them."
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "::error::Missing reviewed deployment artifact secrets: $missing_artifacts. Provision these secrets before dispatching an Azure deployment."
+            exit 1
           fi
           echo "configured=true" >> "$GITHUB_OUTPUT"
 
