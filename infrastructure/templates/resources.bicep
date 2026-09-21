@@ -77,6 +77,15 @@ param appSubnetPrefix string = '10.30.1.0/26'
 @description('Subnet holding the blob private endpoint network interface.')
 param privateEndpointSubnetPrefix string = '10.30.2.0/28'
 
+@description('Opt in only with role-assignment write permissions. False leaves existing assignments untouched in Incremental mode.')
+param deployRbac bool = false
+@description('Approved system-assigned principal ID of the target web app. Required when deployRbac is true; obtain it after provisioning a new app.')
+@maxLength(36)
+param approvedWebPrincipalId string = ''
+@description('Nonsecret approval for Contributor access to the two document containers. Required when deployRbac is true.')
+@maxLength(200)
+param blobRoleApprovalReference string = ''
+
 var tags = {
   environment: environmentName
   application: 'sunsum'
@@ -176,6 +185,19 @@ module diagnostics './modules/diagnostics.bicep' = if (enableObservability) {
   ]
 }
 
+module blobRoles './storage-role-grants.bicep' = if (deployRbac) {
+  name: 'blob-roles-${uniqueString(deployment().name)}'
+  params: {
+    storageAccountName: storageAccountName
+    webAppName: web.outputs.name
+    approvedWebPrincipalId: approvedWebPrincipalId
+    blobDataAccess: 'Contributor'
+    approvalReference: blobRoleApprovalReference
+  }
+}
+
+output RBAC_REQUESTED bool = deployRbac
+output BLOB_ROLE_ASSIGNMENT_IDS array = deployRbac ? blobRoles!.outputs.roleAssignmentIds : []
 output AZURE_WEB_APP_NAME string = webAppName
 output AZURE_WEB_APP_URL string = web.outputs.url
 output AZURE_WEB_APP_PRINCIPAL_ID string = web.outputs.principalId

@@ -208,6 +208,41 @@ try {
     $state.ParametersJson='{"parameters":{"webAppName":{"value":"SAMPLE-WEB"}}}'
     & $runner @runnerOptions -Preview | Out-Null
     $state.ParametersJson=$defaultParametersJson
+    $state.TemplateJson='{"resources":[],"parameters":{"deployRbac":{"type":"bool","defaultValue":false},"approvedWebPrincipalId":{"type":"string","defaultValue":""},"blobRoleApprovalReference":{"type":"string","defaultValue":""}}}'
+    foreach ($rbac in @($false, 'omitted')) {
+        $inputs=@{webAppName=@{value='sample-web'}}
+        if ($rbac -is [bool]) { $inputs.deployRbac=@{value=$rbac} }
+        $state.ParametersJson=@{parameters=$inputs} | ConvertTo-Json -Depth 5
+        & $runner @runnerOptions -Preview | Out-Null
+        & $runner @runnerOptions -Apply | Out-Null
+    }
+    $rbacInputs=@{webAppName=@{value='sample-web'};deployRbac=@{value=$true};approvedWebPrincipalId=@{value='44444444-4444-4444-8444-444444444444'};blobRoleApprovalReference=@{value='review-container-contributor'}}
+    foreach ($field in @('deployRbac', 'approvedWebPrincipalId', 'blobRoleApprovalReference')) {
+        $invalidValues=if ($field -ceq 'deployRbac') { @('true', 1, $null) } else { @('', $null, $false, '<redacted>', "invalid`nvalue", 'missing-entry') }
+        if ($field -ceq 'approvedWebPrincipalId') { $invalidValues+=@('00000000-0000-0000-0000-000000000000','not-a-uuid') }
+        foreach ($value in $invalidValues) {
+            $inputs=$rbacInputs.Clone()
+            if ($value -ceq 'missing-entry') { $null=$inputs.Remove($field) } else { $inputs[$field]=@{value=$value} }
+            $state.ParametersJson=@{parameters=$inputs} | ConvertTo-Json -Depth 5
+            Assert-Blocked { & $runner @runnerOptions } "invalid RBAC local inputs: $field" $true
+            Assert-Blocked { & $runner @runnerOptions -Preview } "invalid RBAC preview inputs: $field" $true
+            Assert-Blocked { & $runner @runnerOptions -Apply } "invalid RBAC apply inputs: $field" $true
+        }
+    }
+    $state.ParametersJson=@{parameters=$rbacInputs} | ConvertTo-Json -Depth 5
+    & $runner @runnerOptions -Preview | Out-Null
+    & $runner @runnerOptions -Apply | Out-Null
+    $state.Mode='apply-denied'
+    $state.Calls.Clear()
+    $message=''
+    try { & $runner @runnerOptions -Apply | Out-Null } catch { $message=$_.Exception.Message }
+    if ($message -notlike '*AuthorizationFailed*' -or
+        @($state.Calls | Where-Object { $_ -like 'deployment group create *' }).Count -ne 1) {
+        throw 'Enabled RBAC permission failures must be surfaced without retry or fallback.'
+    }
+    $state.Mode='Create'
+    $state.TemplateJson='{"resources":[]}'
+    $state.ParametersJson=$defaultParametersJson
     foreach ($nested in @(
         @{ mode='Incremental'; templateLink=@{uri='https://example.invalid/template.json'} },
         @{ mode='Incremental'; parametersLink=@{uri='https://example.invalid/parameters.json'}; template=@{resources=@()} },

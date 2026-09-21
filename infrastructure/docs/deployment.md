@@ -50,6 +50,18 @@ B1 is a paid tier explicitly selected for this dev experiment after Azure reject
 Linux F1 creation in the target resource group (`FreeLinuxSkuNotAllowedInResourceGroup`).
 This is not an automatic fallback or evidence that B1 has deployed successfully.
 
+### Optional Blob grants
+
+The root reuses `storage-role-grants.bicep` when `deployRbac=true`. It grants Storage
+Blob Data Contributor, including delete access, only on `site-documents` and
+`project-documents`. Supply a reviewed `approvedWebPrincipalId` and
+`blobRoleApprovalReference` in ignored local inputs. The actual app identity must
+match the approved ID. New apps need identity review after creation before grants.
+Contributor-only operators leave `deployRbac=false`; role-assignment writes need
+separate authorization. Invalid approvals fail before Azure calls, and permission
+errors are not silently skipped. False preserves existing grants in Incremental
+mode; it does not revoke them or prove access. SQL grants and bootstrap stay separate.
+
 ### Test targets
 
 | Resource | Name |

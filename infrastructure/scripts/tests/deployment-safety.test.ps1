@@ -921,9 +921,17 @@ try {
             $postgresModule = @($requiredModules | Where-Object { $_.properties.parameters.Contains('serverName') })
             if ($requiredModules.Count -ne 3 -or $postgresModule.Count -ne 1) { throw 'The root must deploy web, Storage and PostgreSQL modules.' }
             foreach ($optional in $optionalModules) {
-                if ($optional.condition -cnotin @("[parameters('enableObservability')]", "[parameters('enablePrivateNetworking')]")) {
-                    throw 'Optional root modules must stay gated behind the observability or private-networking switches.'
+                if ($optional.condition -cnotin @("[parameters('enableObservability')]", "[parameters('enablePrivateNetworking')]", "[parameters('deployRbac')]")) {
+                    throw 'Optional root modules must stay gated behind their explicit switches.'
                 }
+            }
+            $blobRoles = @($optionalModules | Where-Object { $_.properties.parameters.Contains('blobDataAccess') })
+            if ($blobRoles.Count -ne 1 -or $compiled.parameters.deployRbac.defaultValue -ne $false -or
+                $blobRoles[0].condition -cne "[parameters('deployRbac')]" -or
+                $blobRoles[0].properties.parameters.blobDataAccess.value -cne 'Contributor' -or
+                $blobRoles[0].properties.parameters.approvedWebPrincipalId.value -cne "[parameters('approvedWebPrincipalId')]" -or
+                $blobRoles[0].properties.parameters.approvalReference.value -cne "[parameters('blobRoleApprovalReference')]") {
+                throw 'Blob grants must remain optional and bound to the approved web identity and review reference.'
             }
             $postgresInputs = $postgresModule[0].properties.parameters
             foreach ($binding in @{ serverName='postgresServerName'; databaseName='databaseName'; tenantId='tenantId'; adminObjectId='postgresAdminObjectId'; adminPrincipalName='postgresAdminPrincipalName'; adminPrincipalType='postgresAdminPrincipalType' }.GetEnumerator()) {

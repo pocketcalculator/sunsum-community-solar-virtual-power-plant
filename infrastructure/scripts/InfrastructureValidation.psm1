@@ -31,6 +31,24 @@ function Assert-InfrastructureTemplate {
         $webApp.value -ine $ExpectedWebAppName) {
         throw 'Compiled webAppName must match the shared deployment config. Update the native parameters and shared target together. No Azure calls attempted.'
     }
+    if ($Compiled['parameters'] -is [System.Collections.IDictionary] -and $Compiled.parameters.Contains('deployRbac')) {
+        $rbac = if ($Inputs.parameters.Contains('deployRbac')) { $Inputs.parameters['deployRbac']['value'] } else { $Compiled.parameters.deployRbac['defaultValue'] }
+        if ($rbac -isnot [bool]) { throw 'deployRbac must be an explicit boolean or have a boolean template default. No Azure calls attempted.' }
+        if ($rbac) {
+            $values = @{}
+            foreach ($field in @('approvedWebPrincipalId', 'blobRoleApprovalReference')) {
+                $value = if ($Inputs.parameters.Contains($field)) { $Inputs.parameters[$field]['value'] } else { $Compiled.parameters[$field]['defaultValue'] }
+                if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value) -or $value -match '[<>\x00-\x1f]') {
+                    throw "Enabled RBAC requires a real $field. No Azure calls attempted."
+                }
+                $values[$field] = $value
+            }
+            $principal = [guid]::Empty
+            if (-not [guid]::TryParseExact($values.approvedWebPrincipalId, 'D', [ref]$principal) -or $principal -eq [guid]::Empty) {
+                throw 'Enabled RBAC requires a nonempty approvedWebPrincipalId UUID. No Azure calls attempted.'
+            }
+        }
+    }
     if ($RequireDeploymentIdentity -and $Compiled['parameters'] -is [System.Collections.IDictionary] -and
         $Compiled.parameters.Contains('postgresAdminObjectId')) {
         foreach ($field in @('tenantId', 'postgresAdminObjectId', 'postgresAdminPrincipalName')) {
