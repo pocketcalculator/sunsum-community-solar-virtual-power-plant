@@ -22,8 +22,12 @@ Next.js app as **Linux App Service code**, not a customer container image. The
 dev plan is explicitly **B1/Basic** for this experiment after the target resource
 group rejected Linux F1 creation. B1 is billable; there is no automatic tier
 fallback. Distinct plan and app names leave the previous B1 resources untouched.
-There is no ACR, Container Apps, Azurite, Fabric, Key
-Vault, Application Insights, or Log Analytics resource in this foundation.
+There is no ACR, Container Apps, Azurite, Fabric or Key Vault resource in this
+foundation. A Log Analytics workspace, a workspace-based Application Insights
+component, a virtual network and a blob private endpoint are declared but
+deployed only when `enableObservability` and `enablePrivateNetworking` are set
+to true; both are false by default and both add separately billable resources.
+See [observability and private networking](#observability-and-private-networking).
 The Storage account is Standard LRS, StorageV2, Hot, with private
 `site-documents` and `project-documents` containers. Shared-key access and
 anonymous Blob access are disabled.
@@ -49,7 +53,9 @@ HTTP checks. The dev infrastructure entry owns only its explicitly named B1 plan
 | Blob upload/download service | **NOT IMPLEMENTED** | Container role grants do not implement per-site/project document access or browser upload paths |
 | Business schema and store | Canonical `src/backend/db` schema, four migrations, seed, constraint probes and PostgreSQL-backed store from main | Runtime configuration, real data and table grants require separate integration and review; no parallel schema is created |
 | Python viability service | **PENDING** | Hosting/runtime/model interface not configured by this PR |
-| Logging, Application Insights and health configuration | **PENDING** | A route or successful smoke response does not configure deployed readiness probes, monitoring, alerts or paid logging resources |
+| Log Analytics, Application Insights and platform diagnostics | Opt-in Bicep modules ready | Separately billable ingestion and retention; confirm the daily cap. Deploying them configures no readiness probes, alerts, dashboards or application-side telemetry SDK |
+| Private blob networking | Opt-in Bicep module ready | Separately billable virtual network and private endpoint; the address space must be confirmed free before deploying |
+| Application telemetry instrumentation and health configuration | **PENDING** | The connection string app setting does not add an SDK, traces, readiness probes or alerts |
 
 These are prepared artifacts, not a deployed or production-ready MVP. Public
 registration is not implemented; an external collaborator must first be approved
@@ -1134,3 +1140,60 @@ compatibility and backup/restore procedures before any future migration.
 - [Easy Auth workforce configuration, code flow and 500-character identity limit](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-provider-aad),
   [authsettingsV2 schema](https://learn.microsoft.com/en-us/azure/templates/microsoft.web/sites/config-authsettingsv2),
   and [enterprise-app assignment and licensing](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/assign-user-or-group-access-portal).
+
+## Observability and private networking
+
+`resources.bicep` declares two opt-in groups of resources. Both default to
+false, so a deployment that does not set them keeps the previous four top-level
+resources and their current cost.
+
+| Parameter | Creates | Default |
+| --- | --- | --- |
+| `enableObservability` | Log Analytics workspace, workspace-based Application Insights component, diagnostic settings on the web app and the PostgreSQL server, and the site's `APPLICATIONINSIGHTS_CONNECTION_STRING` setting | `false` |
+| `enablePrivateNetworking` | Virtual network with `snet-app` and `snet-privatelink`, the blob private endpoint and its network interface, the `privatelink.blob.*` private DNS zone, the virtual-network link, the private DNS zone group, and App Service regional virtual-network integration | `false` |
+
+`.github/workflows/deploy-azure2.yaml` and `resources.dev.bicepparam` set both
+to true for the dev-test target, with these names:
+
+| Resource | Dev-test name | Portal location |
+| --- | --- | --- |
+| Log Analytics workspace | `log-sunsum-dev-test-centralus` | Resource group → the workspace → **Logs** |
+| Application Insights | `appi-sunsum-dev-test-centralus` | Resource group → the component → **Overview**, **Logs** |
+| Diagnostic settings | `send-to-log-analytics` | App Service or PostgreSQL server → **Monitoring → Diagnostic settings** |
+| Virtual network | `vnet-sunsum-dev-test-centralus` | Resource group → the network → **Subnets** |
+| Blob private endpoint | `pe-stsunsumdevtestcentralus-blob` | Resource group → the endpoint → **DNS configuration** |
+| Private DNS zone | `privatelink.blob.core.windows.net` | Resource group → the zone → **Recordsets**, **Virtual network links** |
+| Virtual-network link | `vnet-sunsum-dev-test-centralus-link` | The private DNS zone → **Virtual network links** |
+| App Service integration | `snet-app` | App Service → **Networking → Virtual network integration** |
+
+The workflow prints the same names, and direct portal links, in its job summary
+and returns them as deployment outputs (`AZURE_LOG_ANALYTICS_WORKSPACE_NAME`,
+`AZURE_APPLICATION_INSIGHTS_NAME`, `AZURE_VIRTUAL_NETWORK_NAME`,
+`AZURE_BLOB_PRIVATE_ENDPOINT_NAME`, `AZURE_BLOB_PRIVATE_DNS_ZONE_NAME`,
+`AZURE_PRIVATE_DNS_ZONE_LINK_NAME`, `AZURE_DIAGNOSTIC_SETTING_NAME`). The
+Application Insights connection string is read by the web module from the
+deployed component; it is never written to a deployment output.
+
+Cost and network assumptions to confirm before deploying:
+
+- Log Analytics ingestion and retention are billed. The workspace is created
+  with a 1 GiB daily cap (`logAnalyticsDailyQuotaGb`) and 30-day retention
+  (`logAnalyticsRetentionDays`). The cap stops ingestion for the rest of the
+  UTC day; it is a cost guard, not a quality-of-service setting.
+- `10.30.0.0/16` is used for the dev-test network so it does not overlap the
+  `10.20.0.0/16` range that `main.bicep`'s optional network path uses. Confirm
+  both ranges are free in the subscription; overlapping ranges break routing
+  rather than failing deployment.
+- The delegated `snet-app` prefix cannot be resized after the plan joins it.
+- PostgreSQL keeps public network access with separately approved individual
+  firewall rules. It gets no private endpoint here; moving it behind private
+  link is a reviewed architecture change.
+- Storage keeps `publicNetworkAccess` disabled, shared-key access disabled and
+  the network ACL default action Deny. The private endpoint is the route to the
+  data plane, not an exception to that posture.
+- `Microsoft.OperationalInsights`, `Microsoft.Insights` and `Microsoft.Network`
+  must be registered in the subscription. The workflow checks this and fails
+  with a named provider before attempting any deployment.
+
+Deployment stays Incremental and rerunnable: the added resources are declared
+by name, so a repeat run reports no change rather than recreating them.
