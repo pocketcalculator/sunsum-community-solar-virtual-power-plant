@@ -31,9 +31,62 @@ function Assert-InfrastructureTemplate {
         $webApp.value -ine $ExpectedWebAppName) {
         throw 'Compiled webAppName must match the shared deployment config. Update the native parameters and shared target together. No Azure calls attempted.'
     }
+    if ($Compiled['parameters'] -is [System.Collections.IDictionary] -and $Compiled.parameters.Contains('deployRbac')) {
+        $rbac = if ($Inputs.parameters.Contains('deployRbac')) { $Inputs.parameters['deployRbac']['value'] } else { $Compiled.parameters.deployRbac['defaultValue'] }
+        if ($rbac -isnot [bool]) { throw 'deployRbac must be an explicit boolean or have a boolean template default. No Azure calls attempted.' }
+        if ($rbac) {
+            $values = @{}
+            foreach ($field in @('approvedWebPrincipalId', 'blobRoleApprovalReference')) {
+                $value = if ($Inputs.parameters.Contains($field)) { $Inputs.parameters[$field]['value'] } else { $Compiled.parameters[$field]['defaultValue'] }
+                if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value) -or $value -match '[<>\x00-\x1f]') {
+                    throw "Enabled RBAC requires a real $field. No Azure calls attempted."
+                }
+                $values[$field] = $value
+            }
+            $principal = [guid]::Empty
+            if (-not [guid]::TryParseExact($values.approvedWebPrincipalId, 'D', [ref]$principal) -or $principal -eq [guid]::Empty) {
+                throw 'Enabled RBAC requires a nonempty approvedWebPrincipalId UUID. No Azure calls attempted.'
+            }
+        }
+    }
+    $hasAdminList = $Compiled['parameters'] -is [System.Collections.IDictionary] -and $Compiled.parameters.Contains('postgresAdministrators')
+    if ($hasAdminList) {
+        if ($Inputs.parameters.Contains('postgresAdministrators')) {
+            foreach ($legacyField in @('postgresAdminObjectId', 'postgresAdminPrincipalName', 'postgresAdminPrincipalType')) {
+                if ($Inputs.parameters.Contains($legacyField)) { throw 'Use postgresAdministrators or the legacy single-admin fields, not both. No Azure calls attempted.' }
+            }
+            $administrators = $Inputs.parameters.postgresAdministrators['value']
+        } else {
+            $legacy = @{}
+            foreach ($binding in @{objectId='postgresAdminObjectId';principalName='postgresAdminPrincipalName';principalType='postgresAdminPrincipalType'}.GetEnumerator()) {
+                $legacy[$binding.Key] = if ($Inputs.parameters.Contains($binding.Value)) { $Inputs.parameters[$binding.Value]['value'] } else { $Compiled.parameters[$binding.Value]['defaultValue'] }
+            }
+            $administrators = @($legacy)
+        }
+        if ($administrators -isnot [array] -or $administrators.Count -eq 0) { throw 'postgresAdministrators must be a nonempty array. No Azure calls attempted.' }
+        $seenAdministrators = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($administrator in $administrators) {
+            if ($administrator -isnot [System.Collections.IDictionary] -or $administrator.Count -ne 3 -or
+                @($administrator.Keys | Where-Object { $_ -cnotin @('objectId', 'principalName', 'principalType') }).Count -ne 0 -or
+                $administrator['objectId'] -isnot [string] -or $administrator['principalName'] -isnot [string] -or
+                [string]::IsNullOrWhiteSpace($administrator.principalName) -or $administrator.principalName -match '[\x00-\x1f]' -or
+                $administrator['principalType'] -cnotin @('User', 'Group', 'ServicePrincipal')) {
+                throw 'Each PostgreSQL administrator needs objectId, principalName and a supported principalType. No Azure calls attempted.'
+            }
+            $identifier = [guid]::Empty
+            if (-not [guid]::TryParseExact($administrator.objectId, 'D', [ref]$identifier) -or
+                -not $seenAdministrators.Add($administrator.objectId)) {
+                throw 'PostgreSQL administrator object IDs must be unique UUIDs. No Azure calls attempted.'
+            }
+            if ($RequireDeploymentIdentity -and ($identifier -eq [guid]::Empty -or $administrator.principalName -match '[<>]')) {
+                throw 'Supply real PostgreSQL administrator identities locally before preview/apply. No Azure calls attempted.'
+            }
+        }
+    }
     if ($RequireDeploymentIdentity -and $Compiled['parameters'] -is [System.Collections.IDictionary] -and
         $Compiled.parameters.Contains('postgresAdminObjectId')) {
-        foreach ($field in @('tenantId', 'postgresAdminObjectId', 'postgresAdminPrincipalName')) {
+        $identityFields = if ($hasAdminList) { @('tenantId') } else { @('tenantId', 'postgresAdminObjectId', 'postgresAdminPrincipalName') }
+        foreach ($field in $identityFields) {
             $entry = $Inputs.parameters[$field]
             if ($entry -isnot [System.Collections.IDictionary] -or $entry['value'] -isnot [string] -or
                 [string]::IsNullOrWhiteSpace($entry.value) -or $entry.value -match '[<>\x00-\x1f]') {

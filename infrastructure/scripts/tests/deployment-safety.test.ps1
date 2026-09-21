@@ -915,18 +915,34 @@ try {
                 }
                 continue
             }
-            $modules = @($compiled.resources | Where-Object { $_.type -ceq 'Microsoft.Resources/deployments' })
+            $rootResources = if ($compiled.resources -is [System.Collections.IDictionary]) { @($compiled.resources.Values) } else { @($compiled.resources) }
+            $modules = @($rootResources | Where-Object { $_.type -ceq 'Microsoft.Resources/deployments' })
             $requiredModules = @($modules | Where-Object { -not $_.Contains('condition') })
             $optionalModules = @($modules | Where-Object { $_.Contains('condition') })
             $postgresModule = @($requiredModules | Where-Object { $_.properties.parameters.Contains('serverName') })
             if ($requiredModules.Count -ne 3 -or $postgresModule.Count -ne 1) { throw 'The root must deploy web, Storage and PostgreSQL modules.' }
             foreach ($optional in $optionalModules) {
-                if ($optional.condition -cnotin @("[parameters('enableObservability')]", "[parameters('enablePrivateNetworking')]")) {
-                    throw 'Optional root modules must stay gated behind the observability or private-networking switches.'
+                if ($optional.condition -cnotin @("[parameters('enableObservability')]", "[parameters('enablePrivateNetworking')]", "[parameters('deployRbac')]")) {
+                    throw 'Optional root modules must stay gated behind their explicit switches.'
                 }
             }
+            $blobRoles = @($optionalModules | Where-Object { $_.properties.parameters.Contains('blobDataAccess') })
+            if ($blobRoles.Count -ne 1 -or $compiled.parameters.deployRbac.defaultValue -ne $false -or
+                $blobRoles[0].condition -cne "[parameters('deployRbac')]" -or
+                $blobRoles[0].properties.parameters.blobDataAccess.value -cne 'Contributor' -or
+                $blobRoles[0].properties.parameters.approvedWebPrincipalId.value -cne "[parameters('approvedWebPrincipalId')]" -or
+                $blobRoles[0].properties.parameters.approvalReference.value -cne "[parameters('blobRoleApprovalReference')]") {
+                throw 'Blob grants must remain optional and bound to the approved web identity and review reference.'
+            }
             $postgresInputs = $postgresModule[0].properties.parameters
-            foreach ($binding in @{ serverName='postgresServerName'; databaseName='databaseName'; tenantId='tenantId'; adminObjectId='postgresAdminObjectId'; adminPrincipalName='postgresAdminPrincipalName'; adminPrincipalType='postgresAdminPrincipalType' }.GetEnumerator()) {
+            if ($compiled.parameters.postgresAdministrators.minLength -ne 1 -or
+                $compiled.parameters.postgresAdministrators.defaultValue.Count -ne 1 -or
+                $compiled.parameters.postgresAdministrators.defaultValue[0].objectId -cne "[parameters('postgresAdminObjectId')]" -or
+                $compiled.parameters.postgresAdministrators.defaultValue[0].principalName -cne "[parameters('postgresAdminPrincipalName')]" -or
+                $compiled.parameters.postgresAdministrators.defaultValue[0].principalType -cne "[parameters('postgresAdminPrincipalType')]") {
+                throw 'The root must accept a nonempty administrator list and retain the exact single-admin fallback.'
+            }
+            foreach ($binding in @{ serverName='postgresServerName'; databaseName='databaseName'; tenantId='tenantId'; administrators='postgresAdministrators' }.GetEnumerator()) {
                 if ($postgresInputs[$binding.Key].value -cne "[parameters('$($binding.Value)')]") { throw "PostgreSQL input is not bound to the root: $($binding.Key)" }
             }
             $postgresResources = $postgresModule[0].properties.template.resources
@@ -984,6 +1000,17 @@ try {
                 throw "PostgreSQL child writes must be serialized: $($dependency.Key) must depend on $($dependency.Value)."
             }
         }
+        if ($compiled.resources.entraAdmin.copy.mode -cne 'serial' -or $compiled.resources.entraAdmin.copy.batchSize -ne 1 -or
+            $compiled.resources.entraAdmin.copy.count -cne "[length(variables('validatedAdministrators'))]" -or
+            $compiled.resources.entraAdmin.properties.tenantId -cne "[parameters('tenantId')]" -or
+            $compiled.resources.entraAdmin.name -notlike '*validatedAdministrators*copyIndex()*objectId*' -or
+            $compiled.resources.entraAdmin.properties.principalName -notlike '*validatedAdministrators*copyIndex()*principalName*' -or
+            $compiled.resources.entraAdmin.properties.principalType -notlike '*validatedAdministrators*copyIndex()*principalType*' -or
+            $compiled.variables.validatedAdministrators -cne "[__bicep.validateAdministrators(parameters('administrators'))]" -or
+            $compiled.parameters.administrators.minLength -ne 1 -or $compiled.parameters.administrators.defaultValue.Count -ne 1 -or
+            $compiled.parameters.administrators.defaultValue[0].objectId -cne "[parameters('adminObjectId')]") {
+            throw 'PostgreSQL administrators must use validated, same-tenant, serialized list entries and preserve the single-admin fallback.'
+        }
         if ($compiled.variables.validatedDatabaseName -cne "[__bicep.validateDatabaseName(parameters('databaseName'))]" -or
             -not $compiled.resources.database.name.Contains("variables('validatedDatabaseName')") -or
             $compiled.parameters.databaseName.defaultValue -cne 'sunsum') {
@@ -991,6 +1018,57 @@ try {
         }
         $policy = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\postgres-database-name-policy.json') -Raw | ConvertFrom-Json -AsHashtable
         $relativeDatabaseTemplate = [System.IO.Path]::GetRelativePath($fixture, $databaseTemplate).Replace('\', '/')
+        $firstAdmin=@{objectId='aaaaaaaa-1111-4111-8111-111111111111';principalName='synthetic-admin';principalType='User'}
+        $secondAdmin=@{objectId='bbbbbbbb-2222-4222-8222-222222222222';principalName='synthetic-admin-group';principalType='Group'}
+        $thirdAdmin=@{objectId='cccccccc-3333-4333-8333-333333333333';principalName='synthetic-admin-service';principalType='ServicePrincipal'}
+        $adminCases=[System.Collections.Generic.List[object]]::new()
+        $adminCases.Add(@{allowed=$true;value=@($firstAdmin)})
+        $adminCases.Add(@{allowed=$true;value=@($firstAdmin,$secondAdmin,$thirdAdmin)})
+        $adminCases.Add(@{allowed=$false;value=@()})
+        $adminCases.Add(@{allowed=$false;value=@($firstAdmin,$firstAdmin)})
+        $uppercase=$firstAdmin.Clone()
+        $uppercase.objectId=$firstAdmin.objectId.ToUpperInvariant()
+        $adminCases.Add(@{allowed=$true;value=@($uppercase)})
+        $adminCases.Add(@{allowed=$false;value=@($firstAdmin,$uppercase)})
+        foreach ($entry in @(
+            @{field='objectId';value='00000000-0000-0000-0000-000000000000'},
+            @{field='objectId';value='gggggggg-1111-4111-8111-111111111111'},
+            @{field='objectId';value='aaaaaaaa1111-4111-8111-111111111111-'},
+            @{field='objectId';value='short'},
+            @{field='principalName';value=''},
+            @{field='principalName';value=' '},
+            @{field='principalName';value='<redacted>'},
+            @{field='principalName';value="invalid`nname"},
+            @{field='principalType';value='user'},
+            @{field='principalType';value='ManagedIdentity'}
+        )) {
+            $changed=$firstAdmin.Clone()
+            $changed[$entry.field]=$entry.value
+            $adminCases.Add(@{allowed=$false;value=@($changed)})
+        }
+        foreach ($case in $adminCases) {
+            $encoded=(ConvertTo-Json -InputObject $case.value -Depth 5 -Compress).Replace('\', '\\').Replace("'", "\'")
+            $inputPath=Join-Path $fixture "admin-list-$([guid]::NewGuid().ToString('N')).bicepparam"
+            $outputPath=[System.IO.Path]::ChangeExtension($inputPath, '.json')
+            $lines=@(
+                "using '$relativeDatabaseTemplate'",
+                "import { validateAdministrators } from '$relativeDatabaseTemplate'",
+                "param location = 'centralus'",
+                "param serverName = 'sample-postgres'",
+                "param tenantId = '22222222-2222-4222-8222-222222222222'",
+                "param administrators = validateAdministrators(json('$encoded'))"
+            )
+            Set-Content -LiteralPath $inputPath -Value $lines -Encoding utf8NoBOM
+            $diagnostics=& $BicepPath build-params $inputPath --no-restore --outfile $outputPath 2>&1
+            if ($case.allowed) {
+                if ($LASTEXITCODE -ne 0) { throw "Valid administrator list failed: $diagnostics" }
+                $actual=Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json -AsHashtable
+                if ($actual.parameters.administrators.value.Count -ne $case.value.Count) { throw 'Administrator list changed during compilation.' }
+            } elseif ($LASTEXITCODE -eq 0 -or (Test-Path -LiteralPath $outputPath)) {
+                throw 'Invalid administrator list passed Bicep evaluation.'
+            }
+        }
+        Write-Output "PostgreSQL administrator list guard passed: $($adminCases.Count) evaluations, single-admin fallback and serialized resource wiring."
         $databaseNames = @('a', 'sunsum', 'sunsum_prod', 'app123', ('a' * 63),
             'postgres', 'public', 'template0', 'template1', 'pg_custom', 'azure_custom', 'SunSum', '_sunsum', '1sunsum',
             'sunsum-prod', 'sunsum.prod', 'sunsum prod', ('a' * 64), ('db' + [char]0xe9), '', ' sunsum', 'sunsum ',

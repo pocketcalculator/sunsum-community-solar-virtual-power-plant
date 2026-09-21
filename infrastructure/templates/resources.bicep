@@ -1,5 +1,7 @@
 targetScope = 'resourceGroup'
 
+import { EntraAdministrator } from './modules/postgres.bicep'
+
 @minLength(1)
 @maxLength(32)
 param environmentName string
@@ -24,14 +26,23 @@ param runtimeRoleName string = 'sunsum_runtime'
 param tenantId string
 @minLength(36)
 @maxLength(36)
-param postgresAdminObjectId string
-param postgresAdminPrincipalName string
+param postgresAdminObjectId string = '00000000-0000-0000-0000-000000000000'
+param postgresAdminPrincipalName string = '<postgres-admin-principal-name>'
 @allowed([
   'User'
   'Group'
   'ServicePrincipal'
 ])
 param postgresAdminPrincipalType string = 'Group'
+@description('One or more approved Entra administrators in tenantId. Prefer this list; omit it only when using the legacy single-admin fields.')
+@minLength(1)
+param postgresAdministrators EntraAdministrator[] = [
+  {
+    objectId: postgresAdminObjectId
+    principalName: postgresAdminPrincipalName
+    principalType: postgresAdminPrincipalType
+  }
+]
 @allowed([
   'Burstable'
   'GeneralPurpose'
@@ -77,6 +88,15 @@ param appSubnetPrefix string = '10.30.1.0/26'
 @description('Subnet holding the blob private endpoint network interface.')
 param privateEndpointSubnetPrefix string = '10.30.2.0/28'
 
+@description('Opt in only with role-assignment write permissions. False leaves existing assignments untouched in Incremental mode.')
+param deployRbac bool = false
+@description('Approved system-assigned principal ID of the target web app. Required when deployRbac is true; obtain it after provisioning a new app.')
+@maxLength(36)
+param approvedWebPrincipalId string = ''
+@description('Nonsecret approval for Contributor access to the two document containers. Required when deployRbac is true.')
+@maxLength(200)
+param blobRoleApprovalReference string = ''
+
 var tags = {
   environment: environmentName
   application: 'sunsum'
@@ -89,9 +109,7 @@ module postgres './modules/postgres.bicep' = {
     serverName: postgresServerName
     databaseName: databaseName
     tenantId: tenantId
-    adminObjectId: postgresAdminObjectId
-    adminPrincipalName: postgresAdminPrincipalName
-    adminPrincipalType: postgresAdminPrincipalType
+    administrators: postgresAdministrators
     tier: postgresTier
     skuName: postgresSkuName
     storageSizeGB: postgresStorageSizeGB
@@ -176,6 +194,19 @@ module diagnostics './modules/diagnostics.bicep' = if (enableObservability) {
   ]
 }
 
+module blobRoles './storage-role-grants.bicep' = if (deployRbac) {
+  name: 'blob-roles-${uniqueString(deployment().name)}'
+  params: {
+    storageAccountName: storageAccountName
+    webAppName: web.outputs.name
+    approvedWebPrincipalId: approvedWebPrincipalId
+    blobDataAccess: 'Contributor'
+    approvalReference: blobRoleApprovalReference
+  }
+}
+
+output RBAC_REQUESTED bool = deployRbac
+output BLOB_ROLE_ASSIGNMENT_IDS array = deployRbac ? blobRoles!.outputs.roleAssignmentIds : []
 output AZURE_WEB_APP_NAME string = webAppName
 output AZURE_WEB_APP_URL string = web.outputs.url
 output AZURE_WEB_APP_PRINCIPAL_ID string = web.outputs.principalId
