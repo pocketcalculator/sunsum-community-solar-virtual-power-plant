@@ -148,6 +148,7 @@ jobs:
             echo "::error::Missing reviewed deployment artifact secrets: $missing_artifacts. Provision these secrets before dispatching an Azure deployment."
             exit 1
           fi
+          # Keep each Azure-writing step independently gated if failure handling changes later.
           echo "configured=true" >> "$GITHUB_OUTPUT"
 
       # Both reviewed artifacts are supplied as secrets and verified against the
