@@ -129,7 +129,7 @@ jobs:
       # An explicitly dispatched deployment must fail loudly rather than
       # silently skip the actual Azure steps when the reviewed artifacts are
       # missing; a green run here must mean infrastructure was provisioned.
-      - name: Check reviewed deployment artifacts availability
+      - name: Check reviewed deployment artifacts and digests
         id: deployment-artifacts
         shell: bash
         env:
@@ -139,15 +139,6 @@ jobs:
           APPROVAL_SHA256: ${{ inputs.approval_sha256 }}
         run: |
           set -euo pipefail
-          sha256_pattern='^[a-fA-F0-9]{64}$'
-          if [[ ! "$PARAMETERS_SHA256" =~ $sha256_pattern ]]; then
-            echo "::error::parameters_sha256 must be the 64-character hexadecimal SHA-256 digest of AZURE_RESOURCES_PARAMETERS_JSON, not an approval reference or label."
-            exit 1
-          fi
-          if [[ ! "$APPROVAL_SHA256" =~ $sha256_pattern ]]; then
-            echo "::error::approval_sha256 must be the 64-character hexadecimal SHA-256 digest of AZURE_PROVISION_APPROVAL_JSON, not an approval reference or label."
-            exit 1
-          fi
           missing_artifacts=""
           if [ -z "${PARAMETERS_JSON:-}" ]; then
             missing_artifacts="AZURE_RESOURCES_PARAMETERS_JSON"
@@ -157,6 +148,25 @@ jobs:
           fi
           if [ -n "$missing_artifacts" ]; then
             echo "::error::Missing reviewed deployment artifact secrets: $missing_artifacts. Provision these secrets before dispatching an Azure deployment."
+            exit 1
+          fi
+          sha256_pattern='^[a-fA-F0-9]{64}$'
+          if [[ ! "$PARAMETERS_SHA256" =~ $sha256_pattern ]]; then
+            echo "::error::parameters_sha256 must be the 64-character hexadecimal SHA-256 digest of AZURE_RESOURCES_PARAMETERS_JSON, not an approval reference or label."
+            exit 1
+          fi
+          if [[ ! "$APPROVAL_SHA256" =~ $sha256_pattern ]]; then
+            echo "::error::approval_sha256 must be the 64-character hexadecimal SHA-256 digest of AZURE_PROVISION_APPROVAL_JSON, not an approval reference or label."
+            exit 1
+          fi
+          actual_parameters_sha256="$(printf '%s' "$PARAMETERS_JSON" | sha256sum | awk '{print $1}')"
+          actual_approval_sha256="$(printf '%s' "$APPROVAL_JSON" | sha256sum | awk '{print $1}')"
+          if [ "${PARAMETERS_SHA256,,}" != "$actual_parameters_sha256" ]; then
+            echo "::error::parameters_sha256 does not match AZURE_RESOURCES_PARAMETERS_JSON."
+            exit 1
+          fi
+          if [ "${APPROVAL_SHA256,,}" != "$actual_approval_sha256" ]; then
+            echo "::error::approval_sha256 does not match AZURE_PROVISION_APPROVAL_JSON."
             exit 1
           fi
           # These guards are redundant while this preflight hard-fails, but keep
