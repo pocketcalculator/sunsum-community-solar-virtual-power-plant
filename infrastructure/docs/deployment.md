@@ -288,6 +288,40 @@ does not inspect the plan SKU or change infrastructure.
 
 ## Application code deployment
 
+Pushes to `main` that touch application sources deploy automatically through
+[`.github/workflows/deploy-app.yml`](../../.github/workflows/deploy-app.yml);
+the manual PowerShell entry below remains available for local or out-of-band
+deployments. Both paths package and ship the same allowlisted source.
+
+### Automatic deployment from `main`
+
+The **Deploy SunSum application code** workflow runs on every push to `main`
+that changes `app/`, `src/`, `public/`, `package.json`, `package-lock.json`,
+`next.config.ts`, `tsconfig.json` or the workflow file itself, and can also be
+dispatched manually. It is queued through a concurrency group so two pushes
+cannot upload competing packages.
+
+The job installs dependencies with `npm ci` and then runs `npm run lint`,
+`npm run typecheck`, `npm test` and `npm run build`. Any failure stops the run
+before Azure sign-in, so a broken build never reaches the web app. It then
+fails fast when `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` or `AZURE_SUBSCRIPTION_ID`
+is missing, signs in with the same federated OIDC credential and
+`azure-infrastructure` environment used by the infrastructure workflow, and
+invokes `Deploy-Application.ps1 -Apply` with the run identifiers as the review
+reference. Reusing that script keeps packaging, the guarded upload and the
+bounded HTTP verification identical to the manual path. Artifacts are written
+under the runner temporary directory and removed when the job ends.
+
+The workflow deploys application code only: it applies no Bicep template,
+creates no resources and neither sets nor changes `SUNSUM_STORE`,
+`SUNSUM_BLOB`, `SUNSUM_VIABILITY` or any other app setting. Infrastructure
+remains the separate, manually dispatched
+[`deploy-azure2.yaml`](../../.github/workflows/deploy-azure2.yaml) run, and the
+web app must already exist with the reviewed runtime and Oryx build settings
+before a code deployment can succeed.
+
+### Manual deployment
+
 Use `infrastructure/scripts/Deploy-Application.ps1` as the single source-to-service
 entry. It packages the source, validates the ZIP and records its hash and target.
 With `-Apply`, it calls the existing guarded uploader, waits for the Azure CLI

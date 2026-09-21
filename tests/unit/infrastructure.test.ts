@@ -321,6 +321,30 @@ describe("the bounded Azure preparation contract", () => {
     expect(entry).not.toMatch(/postgresAdmin|BicepPath|build-params/u);
   });
 
+  it("builds and validates before deploying code, and deploys no infrastructure", () => {
+    const workflow = read(".github/workflows/deploy-app.yml");
+    expect(workflow).toContain("environment: azure-infrastructure");
+    expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
+    expect(workflow).toContain("WEB_APP_NAME: app-sunsum-dev-test-centralus");
+    expect(workflow).toContain('- ".github/workflows/deploy-app.yml"');
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).toContain("node-version: 22");
+    expect(workflow).toContain("cache: npm");
+    // The checks must precede the sign-in so a failing check stops the run
+    // before any Azure write.
+    const order = ["npm ci", "npm run lint", "npm run typecheck", "npm test", "npm run build",
+      "Missing required environment secrets", "uses: azure/login@", "Deploy-Application.ps1"]
+      .map((marker) => workflow.indexOf(marker));
+    expect(order).not.toContain(-1);
+    expect([...order].sort((first, second) => first - second)).toEqual(order);
+    for (const secret of ["AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID"]) {
+      expect(workflow).toContain(`secrets.${secret} }}`);
+    }
+    expect(workflow).toContain("-Apply -ApprovalReference $reference");
+    // Code deployment must not apply templates or change runtime settings.
+    expect(workflow).not.toMatch(/az deployment group|\.bicep|appsettings|SUNSUM_STORE|SUNSUM_BLOB|SUNSUM_VIABILITY/u);
+  });
+
   it("runs the actual network, archive and unified code-entry guards without Azure calls", () => {
     const result = execFileSync("pwsh", [
       "-NoProfile", "-NonInteractive", "-Command",

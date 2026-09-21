@@ -259,9 +259,13 @@ authorization and uses the same workflow for creation, updates and unchanged rer
 
 Infrastructure deployment does **not** upload application code, run migrations,
 grant runtime database access or activate the PostgreSQL-backed application store.
-The web app remains `SUNSUM_STORE=mock`. Use the separate
+The web app remains `SUNSUM_STORE=mock`. Application code deploys separately:
+pushes to `main` that touch application sources run the
+[automatic code-deployment workflow](infrastructure/docs/deployment.md#automatic-deployment-from-main),
+and the same
 [code-deployment entry](infrastructure/docs/deployment.md#application-code-deployment)
-to package, upload and build the application without reapplying infrastructure.
+packages, uploads and builds the application manually without reapplying
+infrastructure.
 Both commands default to [one shared dev config](infrastructure/config/dev.json).
 Use the same `-ConfigPath` for both when targeting a local config; infrastructure
 validation rejects a web-app name that differs from the compiled Bicep parameters.
