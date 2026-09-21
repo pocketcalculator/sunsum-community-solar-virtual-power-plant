@@ -27,6 +27,11 @@ import {
   type JsonObject,
 } from "../shared";
 
+export {
+  getCandidateParcelsRoute,
+  handleGetCandidateParcels,
+} from "./candidate-parcels";
+
 const SITE_CREATE_KEYS = [
   "address_raw",
   "site_type",
