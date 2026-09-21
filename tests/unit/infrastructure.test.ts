@@ -207,10 +207,18 @@ describe("the bounded Azure preparation contract", () => {
     // The workflow cannot consume the bicepparam file, which carries redacted
     // identity placeholders, so the shared nonsecret values are compared here.
     const workflowValues = new Map(
-      [...workflow.matchAll(/^\s+(\w+): \{ value: (.+) \},?$/gmu)].map(([, key, value]) => [key, value]),
+      [...workflow.matchAll(/^\s+(\w+): \{ value: (.+) \},?$/gmu)].map((match) => {
+        const [, key, value] = match;
+        if (key === undefined || value === undefined) throw new Error("Failed to parse workflow parameter value.");
+        return [key, value] as const;
+      }),
     );
     const parameterValues = new Map(
-      [...parameters.matchAll(/^param (\w+) = (.+)$/gmu)].map(([, key, value]) => [key, value]),
+      [...parameters.matchAll(/^param (\w+) = (.+)$/gmu)].map((match) => {
+        const [, key, value] = match;
+        if (key === undefined || value === undefined) throw new Error("Failed to parse Bicep parameter value.");
+        return [key, value] as const;
+      }),
     );
     const redacted = new Set(["tenantId", "postgresAdminObjectId", "postgresAdminPrincipalName"]);
     expect(workflowValues.size).toBe(26);
