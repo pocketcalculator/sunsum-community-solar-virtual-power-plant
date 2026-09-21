@@ -112,6 +112,7 @@ try {
     } catch {
         $deploymentId = $null
     }
+    # Kudu deployment status enum: 3 = Failed, 4 = Success.
     $kuduDeploymentFailedStatus = '3'
     $kuduDeploymentSuccessStatus = '4'
     $deploymentSucceeded = $false
