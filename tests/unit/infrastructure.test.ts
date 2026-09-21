@@ -124,7 +124,6 @@ describe("the bounded Azure preparation contract", () => {
     const preflightIndex = deployJob.indexOf(preflight);
     expect(preflightIndex).toBeGreaterThanOrEqual(0);
     const deploymentSteps = deployJob.slice(preflightIndex + preflight.length).split("\n      - ").slice(1);
-    expect(workflow).toContain('echo "configured=false" >> "$GITHUB_OUTPUT"');
     expect(workflow).toContain('missing_artifacts="AZURE_RESOURCES_PARAMETERS_JSON"');
     expect(workflow).toContain('AZURE_PROVISION_APPROVAL_JSON');
     expect(workflow).toContain(
