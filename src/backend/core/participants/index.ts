@@ -2,6 +2,7 @@ import type { IntentOptionId } from "@/domain/intents";
 import type { ParticipantRoleId } from "@/domain/roles";
 import { getUserType, type UserTypeId } from "@/domain/userTypes";
 
+import type { Viewer } from "../identity";
 import { failure, ok, type Result } from "../shared";
 import { demoBackendStore, type BackendStore } from "../store";
 
@@ -53,6 +54,23 @@ export const MAX_FULL_NAME_LENGTH = 120;
 export const MAX_EMAIL_LENGTH = 254;
 export const MAX_ORGANISATION_NAME_LENGTH = 160;
 export const MAX_INTENT_OPTIONS = 16;
+
+/**
+ * Bounds on the read side.
+ *
+ * Every other list endpoint reads rows that only an authenticated caller could
+ * have created, so the table size is bounded by the people trusted to write to
+ * it. This table is not: the `/join` form is open by necessity, so the row
+ * count is decided by whoever is posting to it. A default page keeps one
+ * operator request from having to serialise whatever that turns out to be.
+ */
+export const DEFAULT_PROFILE_LIMIT = 200;
+export const MAX_PROFILE_LIMIT = 1000;
+
+/** How many of the most recent profiles to return. */
+export interface ParticipantProfileQuery {
+  readonly limit: number;
+}
 
 export interface ParticipantProfileRecord {
   readonly id: string;
@@ -182,17 +200,33 @@ export async function createParticipantProfile(
 }
 
 /**
- * The read side, for operators reconciling submissions.
+ * The read side, for operators reconciling sign-ups.
  *
- * Intentionally without an HTTP route in this change: these rows are
- * unverified, self-reported contact details, so exposing them needs an
- * operator-authorized endpoint designed on purpose rather than added by
- * default. Keeping the port method means the two stores are held to the same
- * behaviour by test, which is where a past parity bug came from.
+ * Operator-only, and checked here as well as at the route. These rows are
+ * unverified, self-reported contact details written by an unauthenticated
+ * caller, so the role check is a property of the data rather than of the HTTP
+ * layer: seeds, exports and tests reach core directly, and none of them should
+ * be able to read the list by skipping the route.
  */
 export async function listParticipantProfiles(
+  viewer: Viewer,
+  query: ParticipantProfileQuery = { limit: DEFAULT_PROFILE_LIMIT },
   store: BackendStore = demoBackendStore,
-): Promise<readonly ParticipantProfilePayload[]> {
+): Promise<Result<readonly ParticipantProfilePayload[]>> {
+  if (viewer.role !== "operator") {
+    return failure("forbidden_role", "Only an operator can read participant profiles.");
+  }
+
+  const limit = Math.min(Math.max(Math.trunc(query.limit), 0), MAX_PROFILE_LIMIT);
+  if (limit === 0) return ok([]);
+
   const profiles = await store.listParticipantProfiles();
-  return profiles.map(toParticipantProfilePayload);
+
+  /**
+   * The store returns oldest first, which is the right order to store but the
+   * wrong one to page: truncating that list would hand back the oldest rows
+   * and hide today's sign-ups. The page is taken from the end and reversed so
+   * a capped read shows the most recent.
+   */
+  return ok(profiles.slice(-limit).reverse().map(toParticipantProfilePayload));
 }

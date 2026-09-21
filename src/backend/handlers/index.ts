@@ -22,8 +22,11 @@ export {
   postInvestorProfileRoute,
 } from "./investors";
 export {
+  getParticipantProfilesRoute,
+  handleGetParticipantProfiles,
   handlePostParticipantProfile,
   parseParticipantProfile,
+  parseParticipantProfileQuery,
   postParticipantProfileRoute,
 } from "./participants";
 export {

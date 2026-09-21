@@ -1,12 +1,20 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 
+import type { Viewer } from "@/backend/core/identity";
 import {
   createParticipantProfile,
+  DEFAULT_PROFILE_LIMIT,
   listParticipantProfiles,
+  MAX_PROFILE_LIMIT,
 } from "@/backend/core/participants";
-import { createMemoryBackendStore } from "@/backend/core/store";
-import { handlePostParticipantProfile, parseParticipantProfile } from "@/backend/handlers";
+import { createMemoryBackendStore, type BackendStore } from "@/backend/core/store";
+import {
+  handleGetParticipantProfiles,
+  handlePostParticipantProfile,
+  parseParticipantProfile,
+  parseParticipantProfileQuery,
+} from "@/backend/handlers";
 
 /**
  * `POST /api/profiles` — the `/join` sign-up form.
@@ -16,6 +24,16 @@ import { handlePostParticipantProfile, parseParticipantProfile } from "@/backend
  * it refuses: it is the only unauthenticated write in the service, which makes
  * the parser the entire perimeter.
  */
+
+const operator: Viewer = {
+  role: "operator",
+  userId: "3f8b6c21-9d44-4e15-8a27-6b5c1d9e4f02",
+};
+
+const siteOwner: Viewer = {
+  role: "site_owner",
+  userId: "9c2d5e14-7a38-4b96-8f21-3e7a6d4c8b15",
+};
 
 const completeBody = {
   full_name: "Jackie Jackson",
@@ -38,6 +56,35 @@ async function post(body: unknown) {
   const store = createMemoryBackendStore();
   const response = await handlePostParticipantProfile(request(body), store);
   return { store, response, body: (await response.json()) as Record<string, unknown> };
+}
+
+/** The operator read, unwrapped, for assertions that only care about the rows. */
+async function readProfiles(store: BackendStore) {
+  const result = await listParticipantProfiles(operator, { limit: MAX_PROFILE_LIMIT }, store);
+  return result.ok ? result.value : [];
+}
+
+/** Writes `count` profiles in order, so the newest is `Participant <count>`. */
+async function seedProfiles(store: BackendStore, count: number) {
+  for (let index = 1; index <= count; index += 1) {
+    await createParticipantProfile(
+      {
+        fullName: `Participant ${index}`,
+        email: `participant${index}@example.org`,
+        accountMethod: "email",
+        representation: "individual",
+        organisationName: null,
+        userTypeId: "property-owner",
+        intentOptionIds: [],
+        consentAccepted: true,
+      },
+      store,
+    );
+  }
+}
+
+function getRequest(query = ""): Request {
+  return new Request(`http://localhost/api/profiles${query}`);
 }
 
 describe("storing a completed sign-up form", () => {
@@ -185,7 +232,7 @@ describe("storing a completed sign-up form", () => {
     );
 
     expect(result.ok).toBe(false);
-    expect(await listParticipantProfiles(store)).toHaveLength(0);
+    expect(await readProfiles(store)).toHaveLength(0);
   });
 
   it("refuses vocabulary it does not recognise", async () => {
@@ -310,5 +357,114 @@ describe("the sign-up parser", () => {
     });
 
     expect(parsed.ok).toBe(false);
+  });
+});
+
+/**
+ * `GET /api/profiles` — the operator read.
+ *
+ * The write is open to the world, so these tests are about the half that is
+ * not: who may read the list, and how much of it one request can ask for.
+ */
+describe("reading the sign-up list", () => {
+  it("returns the stored profiles to an operator, newest first", async () => {
+    const store = createMemoryBackendStore();
+    await seedProfiles(store, 3);
+
+    const response = await handleGetParticipantProfiles(getRequest(), operator, store);
+    const body = (await response.json()) as { full_name: string }[];
+
+    expect(response.status).toBe(200);
+    expect(body.map((profile) => profile.full_name)).toStrictEqual([
+      "Participant 3",
+      "Participant 2",
+      "Participant 1",
+    ]);
+  });
+
+  /**
+   * The rows are unverified contact details for people with no account, so
+   * every other role is refused — including the site owner, who is
+   * authenticated and still has no reason to read a list of strangers.
+   */
+  it("refuses every role but the operator", async () => {
+    const store = createMemoryBackendStore();
+    await seedProfiles(store, 1);
+
+    const response = await handleGetParticipantProfiles(getRequest(), siteOwner, store);
+
+    expect(response.status).toBe(403);
+    expect(await readProfiles(store)).toHaveLength(1);
+  });
+
+  it("refuses the read in core as well as at the route", async () => {
+    const store = createMemoryBackendStore();
+    await seedProfiles(store, 1);
+
+    const result = await listParticipantProfiles(siteOwner, { limit: 10 }, store);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure.code).toBe("forbidden_role");
+  });
+
+  it("returns the most recent page rather than the oldest rows", async () => {
+    const store = createMemoryBackendStore();
+    await seedProfiles(store, 5);
+
+    const response = await handleGetParticipantProfiles(
+      getRequest("?limit=2"),
+      operator,
+      store,
+    );
+    const body = (await response.json()) as { full_name: string }[];
+
+    expect(body.map((profile) => profile.full_name)).toStrictEqual([
+      "Participant 5",
+      "Participant 4",
+    ]);
+  });
+
+  it("answers with an empty list when nobody has signed up", async () => {
+    const store = createMemoryBackendStore();
+
+    const response = await handleGetParticipantProfiles(getRequest(), operator, store);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toStrictEqual([]);
+  });
+
+  it("defaults to a bounded page", () => {
+    const parsed = parseParticipantProfileQuery(new URLSearchParams());
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.limit).toBe(DEFAULT_PROFILE_LIMIT);
+  });
+
+  /**
+   * `Number` would read every one of these as a limit the caller never wrote,
+   * and `1e9` in particular would defeat the cap the bound exists to impose.
+   */
+  it("refuses a limit that is not written as digits", () => {
+    for (const value of ["1e3", "0x10", " 5 ", "Infinity", "-1", "2.5", "many"]) {
+      const parsed = parseParticipantProfileQuery(new URLSearchParams({ limit: value }));
+      expect(parsed.ok, `limit=${value}`).toBe(false);
+    }
+  });
+
+  it("refuses a limit outside the supported range", () => {
+    for (const value of ["0", String(MAX_PROFILE_LIMIT + 1)]) {
+      const parsed = parseParticipantProfileQuery(new URLSearchParams({ limit: value }));
+      expect(parsed.ok, `limit=${value}`).toBe(false);
+    }
+  });
+
+  it("refuses an unknown query parameter rather than ignoring it", () => {
+    const parsed = parseParticipantProfileQuery(new URLSearchParams({ email: "a@b.co" }));
+
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.failure.code).toBe("invalid_query");
   });
 });
