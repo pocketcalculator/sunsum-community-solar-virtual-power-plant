@@ -324,8 +324,9 @@ deployment can succeed.
 
 Pushes to `main` that change `infrastructure/templates/`,
 `infrastructure/config/`, `infrastructure/scripts/`, or
-`.github/workflows/deploy-azure2.yaml` automatically run the **validate** job
-in [`deploy-azure2.yaml`](../../.github/workflows/deploy-azure2.yaml). It builds
+`.github/actions/prepare-azure2-deployment/`, or
+`.github/workflows/deploy-azure2.yaml` automatically run the **validate** job in
+[`deploy-azure2.yaml`](../../.github/workflows/deploy-azure2.yaml). It builds
 the Bicep template and runs Azure deployment validation and `what-if`; it never
 creates Azure resources.
 

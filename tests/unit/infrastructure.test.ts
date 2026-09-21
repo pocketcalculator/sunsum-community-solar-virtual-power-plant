@@ -204,7 +204,7 @@ describe("the bounded Azure preparation contract", () => {
     expect(prepareAction).toContain('PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"');
     expect(prepareAction).toContain('echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"');
     expect(workflow.match(/uses: \.\/\.github\/actions\/prepare-azure2-deployment/gu)).toHaveLength(2);
-    expect(prepareAction).toContain('"$GITHUB_WORKSPACE/infrastructure/scripts/Prepare-Azure2Deployment.sh" "$PARAMETERS_FILE"');
+    expect(prepareAction).toContain('bash "$GITHUB_WORKSPACE/infrastructure/scripts/Prepare-Azure2Deployment.sh" "$PARAMETERS_FILE"');
     for (const entry of [
       'enableObservability: { value: true }',
       'logAnalyticsWorkspaceName: { value: "log-sunsum-dev-test-centralus" }',

@@ -8,4 +8,4 @@ runs:
         set -euo pipefail
         PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"
         echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"
-        "$GITHUB_WORKSPACE/infrastructure/scripts/Prepare-Azure2Deployment.sh" "$PARAMETERS_FILE"
+        bash "$GITHUB_WORKSPACE/infrastructure/scripts/Prepare-Azure2Deployment.sh" "$PARAMETERS_FILE"
