@@ -46,6 +46,13 @@ deploy application code or enable application database access. Network approvals
 SQL bootstrap, schema migrations and application activation remain separate
 operations in the [operating guide](app-service-postgres.md).
 
+The legacy `deploy-azure.yml` deployment job is explicitly blocked before checkout
+or Azure login: `Provision-Infrastructure.ps1` still has incompatible first-time/F1
+and parameter assumptions. Its push validation/what-if path remains read-only.
+The newer `deploy-azure2.yaml` workflow remains manual-only with main's existing
+parameter contract; it is not dispatched by this change. Routine reviewed local
+deployment continues to use `Deploy-Infrastructure.ps1`.
+
 B1 is a paid tier explicitly selected for this dev experiment after Azure rejected
 Linux F1 creation in the target resource group (`FreeLinuxSkuNotAllowedInResourceGroup`).
 This is not an automatic fallback or evidence that B1 has deployed successfully.
@@ -183,7 +190,7 @@ local compilation command. No compiled artifacts or approval files are inputs.
 `postgresAdministrators` is a nonempty array of the exported, sealed Bicep type
 `EntraAdministrator` from `modules/postgres.bicep`. The module accepts the same
 type through `administrators`. The current public input contains **one** redacted
-entry, and existing private inputs still select their one existing administrator.
+entry. Legacy private inputs retain their one-admin fallback when the list is omitted.
 To add more later, append approved entries to the local array:
 
 ```bicep

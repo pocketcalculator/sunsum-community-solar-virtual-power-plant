@@ -247,6 +247,11 @@ describe("the bounded Azure preparation contract", () => {
   it("fails manual deployment until reviewed artifacts are configured", () => {
     const workflow = read(".github/workflows/deploy-azure.yml");
     const deployJob = workflow.slice(workflow.indexOf("  deploy:"));
+    const legacyGate = deployJob.indexOf("- name: Block incompatible legacy provisioning");
+    expect(legacyGate).toBeGreaterThanOrEqual(0);
+    expect(legacyGate).toBeLessThan(deployJob.indexOf("- uses: actions/checkout@"));
+    expect(deployJob.slice(legacyGate, deployJob.indexOf("- uses: actions/checkout@"))).toContain("exit 1");
+    expect(deployJob).toContain("first-time/F1 parameter contract is incompatible");
     const preflight = "      - name: Check reviewed deployment artifacts availability";
     const preflightIndex = deployJob.indexOf(preflight);
     expect(preflightIndex).toBeGreaterThanOrEqual(0);
