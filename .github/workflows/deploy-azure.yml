@@ -171,6 +171,7 @@ jobs:
               echo "::error::$input_name does not match $secret_name. Recompute by hashing the exact stored secret value, including any trailing newline and with no extra added newline (printf '%s' \"<value of $secret_name>\" | sha256sum)."
               return 1
             fi
+            return 0
           }
           validation_failed=false
           validate_reviewed_digest parameters_sha256 AZURE_RESOURCES_PARAMETERS_JSON "$PARAMETERS_JSON" "${PARAMETERS_SHA256:-}" || validation_failed=true
