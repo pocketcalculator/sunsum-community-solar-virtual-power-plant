@@ -89,7 +89,7 @@ it is misplaced.
 | **S-PROJ**  | `projects/`    | `/pipeline`, `/projects/{id}`, `/projects/{id}/stage`, `.../visibility`      | done    |
 | **S-INV**   | `investors/`   | `/portfolio`, `/investors/me/profile`                                        | done    |
 | **S-ENG**   | `engagements/` | `/projects/{id}/engagements`, `/me/engagements`, funding needs; engagement state and diligence later | partial |
-| **S-DOC**   | `documents/`   | `/sites/{id}/documents`, `/sites/{id}/acknowledgements`                      | partial |
+| **S-DOC**   | `documents/`   | `/sites/{id}/documents`, `/projects/{id}/documents`, `/sites/{id}/acknowledgements` | partial |
 | **S-ACT**   | `activity/`    | `/projects/{id}/activity`                                                    | partial |
 | **S-VIEW**  | `views/`       | Composed reads: the site-owner dashboard, `/projects/{id}/deal-room`         | partial |
 | —           | `participants/`| `/profiles`                                                                  | done    |
