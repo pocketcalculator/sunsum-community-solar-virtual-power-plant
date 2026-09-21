@@ -117,6 +117,97 @@ describe("the bounded Azure preparation contract", () => {
     expect(provision).toContain("Assert-AppServiceFreePlan");
   });
 
+  it("adds opt-in observability and private-network resources without changing the default resource set", () => {
+    const core = read("infrastructure/templates/resources.bicep")
+      .replace(/\/\*[\s\S]*?\*\//gu, "")
+      .replace(/^\s*\/\/.*$/gmu, "");
+    expect(core).toContain("param enableObservability bool = false");
+    expect(core).toContain("param enablePrivateNetworking bool = false");
+    expect(core).toContain("module observability './modules/observability.bicep' = if (enableObservability) {");
+    expect(core).toContain("module diagnostics './modules/diagnostics.bicep' = if (enableObservability) {");
+    expect(core).toContain("module privateNetwork './modules/private-network.bicep' = if (enablePrivateNetworking) {");
+    expect(core).toContain("telemetryComponentName: enableObservability ? applicationInsightsName : ''");
+    expect(core).toContain("appSubnetId: enablePrivateNetworking ? privateNetwork!.outputs.appSubnetId : ''");
+    for (const name of [
+      "AZURE_LOG_ANALYTICS_WORKSPACE_NAME",
+      "AZURE_APPLICATION_INSIGHTS_NAME",
+      "AZURE_DIAGNOSTIC_SETTING_NAME",
+      "AZURE_VIRTUAL_NETWORK_NAME",
+      "AZURE_BLOB_PRIVATE_ENDPOINT_NAME",
+      "AZURE_BLOB_PRIVATE_DNS_ZONE_NAME",
+      "AZURE_PRIVATE_DNS_ZONE_LINK_NAME",
+    ]) {
+      expect(core).toContain(`output ${name} string`);
+    }
+    expect(core).not.toMatch(/ConnectionString|InstrumentationKey/u);
+
+    const observability = read("infrastructure/templates/modules/observability.bicep");
+    expect(observability).toContain("Microsoft.OperationalInsights/workspaces@");
+    expect(observability).toContain("name: 'PerGB2018'");
+    expect(observability).toContain("dailyQuotaGb: dailyQuotaGb");
+    expect(observability).toContain("WorkspaceResourceId: workspace.id");
+    expect(observability).toContain("IngestionMode: 'LogAnalytics'");
+    expect(observability).not.toMatch(/output[^\n]*(ConnectionString|InstrumentationKey)/u);
+
+    const diagnostics = read("infrastructure/templates/modules/diagnostics.bicep");
+    expect(diagnostics).toContain("Microsoft.Insights/diagnosticSettings@");
+    expect(diagnostics).toContain("workspaceId: workspaceId");
+    expect(diagnostics).toContain("category: 'AppServiceHTTPLogs'");
+    expect(diagnostics).toContain("category: 'PostgreSQLLogs'");
+
+    const network = read("infrastructure/templates/modules/private-network.bicep")
+      .replace(/\/\*[\s\S]*?\*\//gu, "")
+      .replace(/^\s*\/\/.*$/gmu, "");
+    expect(network).toContain("Microsoft.Network/virtualNetworks@");
+    expect(network).toContain("serviceName: 'Microsoft.Web/serverFarms'");
+    expect(network).toContain("privateEndpointNetworkPolicies: 'Disabled'");
+    expect(network).toContain("name: 'privatelink.blob.${environment().suffixes.storage}'");
+    expect(network).toContain("Microsoft.Network/privateDnsZones/virtualNetworkLinks@");
+    expect(network).toContain("Microsoft.Network/privateEndpoints@");
+    expect(network).toContain("Microsoft.Network/privateEndpoints/privateDnsZoneGroups@");
+    expect(network).toContain("groupIds: ['blob']");
+    expect(network).toContain("registrationEnabled: false");
+    expect(network).not.toMatch(/DBforPostgreSQL|publicNetworkAccess/u);
+
+    const web = read("infrastructure/templates/modules/web.bicep");
+    expect(web).toContain("param telemetryComponentName string = ''");
+    expect(web).toContain("param appSubnetId string = ''");
+    expect(web).toContain("virtualNetworkSubnetId: empty(appSubnetId) ? null : appSubnetId");
+    expect(web).toContain("name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'");
+    expect(web).toContain("var telemetrySettings = empty(telemetryComponentName)");
+  });
+
+  it("supplies one complete dev-test parameter set to validate, what-if and create", () => {
+    const workflow = read(".github/workflows/deploy-azure2.yaml");
+    expect(workflow.match(/--parameters "@\$PARAMETERS_FILE"/gu)).toHaveLength(3);
+    expect(workflow).not.toMatch(/\n\s+environmentName=dev-test/u);
+    expect(workflow).toContain("PARAMETERS_FILE: ${{ runner.temp }}/deployment-parameters.json");
+    for (const entry of [
+      'enableObservability: { value: true }',
+      'logAnalyticsWorkspaceName: { value: "log-sunsum-dev-test-centralus" }',
+      'applicationInsightsName: { value: "appi-sunsum-dev-test-centralus" }',
+      'enablePrivateNetworking: { value: true }',
+      'virtualNetworkName: { value: "vnet-sunsum-dev-test-centralus" }',
+      'virtualNetworkAddressPrefix: { value: "10.30.0.0/16" }',
+      'appSubnetPrefix: { value: "10.30.1.0/26" }',
+      'privateEndpointSubnetPrefix: { value: "10.30.2.0/28" }',
+    ]) {
+      expect(workflow).toContain(entry);
+    }
+    expect(workflow).toContain("for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do");
+    expect(workflow).toContain("Required resource providers are not registered");
+    expect(workflow).toContain("AZURE_BLOB_PRIVATE_ENDPOINT_NAME");
+    expect(workflow).toContain("--mode Incremental");
+
+    const parameters = read("infrastructure/templates/resources.dev.bicepparam");
+    expect(parameters).toContain("param enableObservability = true");
+    expect(parameters).toContain("param logAnalyticsWorkspaceName = 'log-sunsum-dev-test-centralus'");
+    expect(parameters).toContain("param applicationInsightsName = 'appi-sunsum-dev-test-centralus'");
+    expect(parameters).toContain("param enablePrivateNetworking = true");
+    expect(parameters).toContain("param virtualNetworkName = 'vnet-sunsum-dev-test-centralus'");
+    expect(parameters).toContain("param virtualNetworkAddressPrefix = '10.30.0.0/16'");
+  });
+
   it("fails manual deployment until reviewed artifacts are configured", () => {
     const workflow = read(".github/workflows/deploy-azure.yml");
     const deployJob = workflow.slice(workflow.indexOf("  deploy:"));

@@ -21,6 +21,7 @@ env:
   RESOURCE_GROUP_NAME: rg-sunsum-solar-dev-centralus
   TEMPLATE_FILE: infrastructure/templates/resources.bicep
   DEPLOYMENT_NAME: sunsum-test-${{ github.run_number }}
+  PARAMETERS_FILE: ${{ runner.temp }}/deployment-parameters.json
 
 jobs:
   deploy:
@@ -72,72 +73,97 @@ jobs:
             exit 1
           fi
 
-      - name: Validate deployment
+      # One parameter set is composed here and reused by validate, what-if and
+      # create, so the previewed template inputs cannot drift from the applied
+      # ones. The file stays on the runner and is not uploaded.
+      - name: Compose deployment parameters
         shell: bash
         env:
           TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
           POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg tenantId "$TENANT_ID" \
+            --arg postgresAdminObjectId "$POSTGRES_ADMIN_OBJECT_ID" \
+            --arg postgresAdminPrincipalName "$POSTGRES_ADMIN_PRINCIPAL_NAME" \
+            '{
+              "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+              contentVersion: "1.0.0.0",
+              parameters: {
+                environmentName: { value: "dev-test" },
+                location: { value: "centralus" },
+                appServicePlanName: { value: "asp-sunsum-dev-test-centralus" },
+                webAppName: { value: "app-sunsum-dev-test-centralus" },
+                storageAccountName: { value: "stsunsumdevtestcentralus" },
+                postgresServerName: { value: "db-sunsum-dev-test-centralus" },
+                databaseName: { value: "sunsum_test" },
+                runtimeRoleName: { value: "sunsum_runtime" },
+                tenantId: { value: $tenantId },
+                postgresAdminObjectId: { value: $postgresAdminObjectId },
+                postgresAdminPrincipalName: { value: $postgresAdminPrincipalName },
+                postgresAdminPrincipalType: { value: "User" },
+                postgresTier: { value: "Burstable" },
+                postgresSkuName: { value: "Standard_B1ms" },
+                postgresStorageSizeGB: { value: 32 },
+                postgresVersion: { value: "17" },
+                enableObservability: { value: true },
+                logAnalyticsWorkspaceName: { value: "log-sunsum-dev-test-centralus" },
+                applicationInsightsName: { value: "appi-sunsum-dev-test-centralus" },
+                logAnalyticsRetentionDays: { value: 30 },
+                logAnalyticsDailyQuotaGb: { value: 1 },
+                enablePrivateNetworking: { value: true },
+                virtualNetworkName: { value: "vnet-sunsum-dev-test-centralus" },
+                virtualNetworkAddressPrefix: { value: "10.30.0.0/16" },
+                appSubnetPrefix: { value: "10.30.1.0/26" },
+                privateEndpointSubnetPrefix: { value: "10.30.2.0/28" }
+              }
+            }' > "$PARAMETERS_FILE"
+
+      # Resource providers the added observability and private-network
+      # resources need. An unregistered provider otherwise surfaces as an
+      # opaque deployment failure minutes into the run.
+      - name: Check required resource providers
+        shell: bash
+        run: |
+          set -euo pipefail
+          unregistered=""
+          for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do
+            state="$(az provider show --namespace "$namespace" --query registrationState --output tsv)"
+            if [ "$state" != "Registered" ]; then
+              unregistered="${unregistered}${unregistered:+, }${namespace} ($state)"
+            fi
+          done
+          if [ -n "$unregistered" ]; then
+            echo "::error::Required resource providers are not registered: $unregistered. Register them in the subscription before dispatching this workflow."
+            exit 1
+          fi
+
+      - name: Validate deployment
+        shell: bash
         run: |
           set -euo pipefail
           az deployment group validate \
             --resource-group "$RESOURCE_GROUP_NAME" \
             --template-file "$TEMPLATE_FILE" \
-            --parameters \
-              environmentName=dev-test \
-              location=centralus \
-              appServicePlanName=asp-sunsum-dev-test-centralus \
-              webAppName=app-sunsum-dev-test-centralus \
-              storageAccountName=stsunsumdevtestcentralus \
-              postgresServerName=db-sunsum-dev-test-centralus \
-              databaseName=sunsum_test \
-              runtimeRoleName=sunsum_runtime \
-              tenantId="$TENANT_ID" \
-              postgresAdminObjectId="$POSTGRES_ADMIN_OBJECT_ID" \
-              postgresAdminPrincipalName="$POSTGRES_ADMIN_PRINCIPAL_NAME" \
-              postgresAdminPrincipalType=User \
-              postgresTier=Burstable \
-              postgresSkuName=Standard_B1ms \
-              postgresStorageSizeGB=32 \
-              postgresVersion=17
+            --parameters "@$PARAMETERS_FILE"
 
       - name: Show what-if
         shell: bash
-        env:
-          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
-          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
         run: |
           set -euo pipefail
           az deployment group what-if \
             --resource-group "$RESOURCE_GROUP_NAME" \
             --template-file "$TEMPLATE_FILE" \
-            --parameters \
-              environmentName=dev-test \
-              location=centralus \
-              appServicePlanName=asp-sunsum-dev-test-centralus \
-              webAppName=app-sunsum-dev-test-centralus \
-              storageAccountName=stsunsumdevtestcentralus \
-              postgresServerName=db-sunsum-dev-test-centralus \
-              databaseName=sunsum_test \
-              runtimeRoleName=sunsum_runtime \
-              tenantId="$TENANT_ID" \
-              postgresAdminObjectId="$POSTGRES_ADMIN_OBJECT_ID" \
-              postgresAdminPrincipalName="$POSTGRES_ADMIN_PRINCIPAL_NAME" \
-              postgresAdminPrincipalType=User \
-              postgresTier=Burstable \
-              postgresSkuName=Standard_B1ms \
-              postgresStorageSizeGB=32 \
-              postgresVersion=17
+            --parameters "@$PARAMETERS_FILE"
 
       # This step creates billable Azure resources (App Service plan,
-      # PostgreSQL flexible server, Storage account) in the dev-test target.
+      # PostgreSQL flexible server, Storage account, Log Analytics workspace,
+      # Application Insights, virtual network and blob private endpoint) in the
+      # dev-test target.
       - name: Deploy test infrastructure
         shell: bash
-        env:
-          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
-          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
         run: |
           set -euo pipefail
           az deployment group create \
@@ -145,20 +171,42 @@ jobs:
             --name "$DEPLOYMENT_NAME" \
             --mode Incremental \
             --template-file "$TEMPLATE_FILE" \
-            --parameters \
-              environmentName=dev-test \
-              location=centralus \
-              appServicePlanName=asp-sunsum-dev-test-centralus \
-              webAppName=app-sunsum-dev-test-centralus \
-              storageAccountName=stsunsumdevtestcentralus \
-              postgresServerName=db-sunsum-dev-test-centralus \
-              databaseName=sunsum_test \
-              runtimeRoleName=sunsum_runtime \
-              tenantId="$TENANT_ID" \
-              postgresAdminObjectId="$POSTGRES_ADMIN_OBJECT_ID" \
-              postgresAdminPrincipalName="$POSTGRES_ADMIN_PRINCIPAL_NAME" \
-              postgresAdminPrincipalType=User \
-              postgresTier=Burstable \
-              postgresSkuName=Standard_B1ms \
-              postgresStorageSizeGB=32 \
-              postgresVersion=17
+            --parameters "@$PARAMETERS_FILE"
+
+      # Makes the added resources locatable without opening the template: the
+      # deployment outputs carry the exact names, and the portal links below
+      # resolve to the deployed resources in the configured resource group.
+      - name: Report deployed resource locations
+        shell: bash
+        run: |
+          set -euo pipefail
+          outputs="$(az deployment group show \
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --name "$DEPLOYMENT_NAME" \
+            --query properties.outputs --output json)"
+          echo "$outputs" | jq '.'
+          subscription="$(az account show --query id --output tsv)"
+          group_url="https://portal.azure.com/#@/resource/subscriptions/$subscription/resourceGroups/$RESOURCE_GROUP_NAME"
+          {
+            echo "### Deployed resources"
+            echo ""
+            echo "| Resource | Name | Portal |"
+            echo "| --- | --- | --- |"
+            while read -r label provider output_name; do
+              value="$(echo "$outputs" | jq -r --arg key "$output_name" '.[$key].value // ""')"
+              if [ -z "$value" ] || [ "$value" = "null" ]; then
+                echo "| $label | not deployed | n/a |"
+              else
+                echo "| $label | \`$value\` | [$value]($group_url/providers/$provider/$value) |"
+              fi
+            done <<'RESOURCES'
+          Log-Analytics-workspace Microsoft.OperationalInsights/workspaces AZURE_LOG_ANALYTICS_WORKSPACE_NAME
+          Application-Insights Microsoft.Insights/components AZURE_APPLICATION_INSIGHTS_NAME
+          Virtual-network Microsoft.Network/virtualNetworks AZURE_VIRTUAL_NETWORK_NAME
+          Blob-private-endpoint Microsoft.Network/privateEndpoints AZURE_BLOB_PRIVATE_ENDPOINT_NAME
+          Private-DNS-zone Microsoft.Network/privateDnsZones AZURE_BLOB_PRIVATE_DNS_ZONE_NAME
+          RESOURCES
+            echo ""
+            echo "Private DNS virtual-network link: \`$(echo "$outputs" | jq -r '.AZURE_PRIVATE_DNS_ZONE_LINK_NAME.value // "not deployed"')\`"
+            echo "Diagnostic setting on the web app and PostgreSQL server: \`$(echo "$outputs" | jq -r '.AZURE_DIAGNOSTIC_SETTING_NAME.value // "not deployed"')\`"
+          } >> "$GITHUB_STEP_SUMMARY"
