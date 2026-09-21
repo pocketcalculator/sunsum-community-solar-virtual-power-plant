@@ -91,6 +91,9 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
   const [downloadState, setDownloadState] = useState<{ key: string; pending: boolean; error: ReadError | null }>({ key: "", pending: false, error: null });
   const returnFocus = useRef<HTMLElement | null>(null);
   const collectionFocus = useRef<HTMLElement | null>(null);
+  const collectionRoot = useRef<HTMLDivElement | null>(null);
+  const historyDestination = useRef<WorkspaceContext | null>(null);
+  const focusFrame = useRef<number | null>(null);
   const downloadController = useRef<AbortController | null>(null);
   const [navigation, setNavigation] = useState(() => ({ generation: 0, controller: new AbortController() }));
   const view = permittedView(snapshot.role, context.view);
@@ -99,6 +102,7 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
   const findRecord = (id: string | null) => id === null ? undefined :
     snapshot.records.find((record) => record.id === id || record.siteId === id || record.projectId === id);
   const target = findRecord(context.projectId ?? context.scopeId);
+  const targetId = target?.id ?? null;
   const detailOpen = context.projectId !== null && isCollection;
   const needsDetail = Boolean(target && (detailOpen || view === "documents" || view === "activity"));
   const targetKey = target ? JSON.stringify(target.detail) : null;
@@ -110,6 +114,9 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
   const activeDownload = downloadState.key === contextKey ? downloadState : { pending: false, error: null };
   const save = useFileDownloads(contextKey);
   const cancelNavigationReads = useCallback(() => {
+    historyDestination.current = null;
+    if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current);
+    focusFrame.current = null;
     closeDetail();
     downloadController.current?.abort();
     downloadController.current = null;
@@ -125,11 +132,38 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
   }, [needsDetail, target, view, context.projectId, navigation.generation, openDetail, closeDetail]);
   useEffect(() => () => { downloadController.current?.abort(); }, [contextKey]);
   useEffect(() => () => { navigation.controller.abort(); }, [navigation.controller]);
+  useEffect(() => () => {
+    if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current);
+  }, []);
   useEffect(() => {
-    window.addEventListener("popstate", cancelNavigationReads);
-    return () => window.removeEventListener("popstate", cancelNavigationReads);
+    const back = () => {
+      cancelNavigationReads();
+      historyDestination.current = workspaceContext(window.location.href, window.history.state);
+    };
+    window.addEventListener("popstate", back);
+    return () => window.removeEventListener("popstate", back);
   }, [cancelNavigationReads]);
+  useEffect(() => {
+    const destination = historyDestination.current;
+    if (!destination || contextHref(destination) !== contextHref(context)) return;
+    historyDestination.current = null;
+    if (!isCollection || detailOpen) return;
+    const root = collectionRoot.current;
+    const previous = returnFocus.current;
+    const previousId = previous?.closest<HTMLElement>("[data-project-id]")?.dataset.projectId;
+    const retained = previous && root?.contains(previous) && !previous.closest("[hidden]") &&
+      (previousId === undefined || previousId === targetId) ? previous : null;
+    const selected = Array.from(root?.querySelectorAll<HTMLButtonElement>("[data-project-open]") ?? [])
+      .find((button) => button.dataset.projectOpen === targetId);
+    (retained ?? selected ?? document.getElementById("workspace-content"))?.focus();
+  }, [context, detailOpen, isCollection, targetId]);
 
+  const scheduleFocus = (focus: () => void) => {
+    focusFrame.current = requestAnimationFrame(() => {
+      focusFrame.current = null;
+      focus();
+    });
+  };
   const navigate = (next: WorkspaceView) => {
     if (next === view && context.projectId === null) return;
     if (isCollection) {
@@ -137,7 +171,7 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
     }
     cancelNavigationReads();
     onContext({ ...context, view: next, projectId: null, scopeId: target?.id ?? null, collectionView });
-    requestAnimationFrame(() => document.getElementById("workspace-content")?.focus());
+    scheduleFocus(() => document.getElementById("workspace-content")?.focus());
   };
   const openRecord = (id: string) => {
     const record = findRecord(id);
@@ -146,12 +180,12 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
     cancelNavigationReads();
     const destination = isCollection ? view : snapshot.role === "operator" ? "pipeline" : snapshot.role === "investor" ? "portfolio" : "sites";
     onContext({ ...context, view: destination, projectId: record.id, scopeId: record.id, collectionView: destination });
-    requestAnimationFrame(() => document.getElementById("live-record-detail")?.focus());
+    scheduleFocus(() => document.getElementById("live-record-detail")?.focus());
   };
   const backToCollection = () => {
     cancelNavigationReads();
     onContext({ ...context, view: collectionView, projectId: null, scopeId: target?.id ?? null, collectionView });
-    requestAnimationFrame(() => {
+    scheduleFocus(() => {
       if (returnFocus.current?.isConnected) returnFocus.current.focus();
       else document.getElementById("workspace-content")?.focus();
     });
@@ -203,7 +237,7 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
         {recordContent}
       </section>}
 
-      <div hidden={!isCollection || detailOpen} className={styles.stack}
+      <div ref={collectionRoot} hidden={!isCollection || detailOpen} className={styles.stack}
         onFocusCapture={(event) => { if (event.target instanceof HTMLElement) collectionFocus.current = event.target; }}>
         {(view === "queue" || view === "overview") && <NextWork snapshot={snapshot} onOpen={openRecord} />}
         {(view === "overview" || view === "queue" || view === "portfolio" || view === "pipeline") && <SnapshotSummary snapshot={snapshot} />}

@@ -79,7 +79,8 @@ preserve invalidation for current 401/403 bodies that fail during reading.
 
 > Last reviewed: 2026-09-21 | Open: 0
 
-The five findings below came from an isolated source snapshot. Corrections
+The first five findings came from an isolated source snapshot. The sixth was
+reproduced while exercising the strengthened continuity harness. Corrections
 preserve immediate cancellation, permission retirement and the mounted
 collection; they do not add business writes or assert remote service access.
 
@@ -127,6 +128,17 @@ collection; they do not add business writes or assert remote service access.
 - Resolution: Each app-owned history entry retains its collection origin while
   preserving framework history metadata. History parsing admits only collection
   names; the current service role still determines the permitted view.
+
+### RELY-6 - Browser-history return did not restore the collection focus
+
+- Severity: MEDIUM
+- Status: RESOLVED
+- File: `src/features/live-workspace/LiveWorkspace.tsx`
+- Resolution: Only a committed history return restores its retained visible
+  collection control or the historical selected record. Superseded navigation
+  focus frames are canceled alongside reads. Mounted regressions reproduce the
+  original focus loss, cover a different more recently opened record, and
+  distinguish an explicit identity refresh from another history return.
 
 The controller suite now exercises these cases together with mounted
 identity/role replacement, visibility retirement, bounded focus refresh and

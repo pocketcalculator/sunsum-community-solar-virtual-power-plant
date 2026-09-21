@@ -259,13 +259,15 @@ export interface SyntheticStorageSnapshot {
 }
 
 interface SyntheticStorageWindow extends Window {
-  __sunsumRecordSyntheticStorageAttempt: (attempt: SyntheticStorageAttempt) => Promise<unknown>;
-  __sunsumSyntheticStorageAudit: { snapshot(): Promise<SyntheticStorageSnapshot> };
+  __sunsumRecordSyntheticStorageAttempt?: (attempt: SyntheticStorageAttempt) => Promise<unknown>;
+  __sunsumSyntheticStorageAudit?: { snapshot(): Promise<SyntheticStorageSnapshot> };
 }
 
 // Serialized by addInitScript: keep all runtime dependencies inside the function.
 export function installSyntheticSaveAudit(canaries: Readonly<Record<string, string>>): void {
-  const host = window as SyntheticStorageWindow;
+  const host: SyntheticStorageWindow = window;
+  const reportAttempt = host.__sunsumRecordSyntheticStorageAttempt;
+  if (!reportAttempt) throw new Error("Synthetic-save observation binding was not installed.");
   const local = window.localStorage;
   const session = window.sessionStorage;
   const originalGet = Storage.prototype.getItem;
@@ -282,7 +284,7 @@ export function installSyntheticSaveAudit(canaries: Readonly<Record<string, stri
     };
     attempts.push(attempt);
     // Record before the native method: caught native errors must not hide access.
-    pending.push(host.__sunsumRecordSyntheticStorageAttempt(attempt));
+    pending.push(reportAttempt(attempt));
   };
   Storage.prototype.getItem = function (key: string) {
     record(this, "getItem", String(key));
@@ -316,7 +318,8 @@ export function installSyntheticSaveAudit(canaries: Readonly<Record<string, stri
 }
 
 export function readSyntheticSaveAudit(): Promise<SyntheticStorageSnapshot> {
-  const audit = (window as SyntheticStorageWindow).__sunsumSyntheticStorageAudit;
+  const host: SyntheticStorageWindow = window;
+  const audit = host.__sunsumSyntheticStorageAudit;
   if (!audit) throw new Error("Synthetic-save guards were not installed before application code.");
   return audit.snapshot();
 }
@@ -397,9 +400,9 @@ export interface SyntheticBrowserRoute {
 
 export interface SyntheticAuditContext {
   on(event: "request", listener: (request: SyntheticBrowserRequest) => void): unknown;
-  exposeBinding(name: string, callback: (source: unknown, attempt: SyntheticStorageAttempt) => void): Promise<void>;
-  addInitScript(callback: typeof installSyntheticSaveAudit, canaries: Readonly<Record<string, string>>): Promise<void>;
-  route(pattern: string, handler: (route: SyntheticBrowserRoute) => Promise<void>): Promise<void>;
+  exposeBinding(name: string, callback: (source: unknown, attempt: SyntheticStorageAttempt) => void): Promise<unknown>;
+  addInitScript(callback: typeof installSyntheticSaveAudit, canaries: Readonly<Record<string, string>>): Promise<unknown>;
+  route(pattern: string, handler: (route: SyntheticBrowserRoute) => Promise<void>): Promise<unknown>;
 }
 
 export interface SyntheticAuditPage {

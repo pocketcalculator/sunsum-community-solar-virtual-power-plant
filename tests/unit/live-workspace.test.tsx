@@ -189,6 +189,41 @@ describe("mocked frontend read workspace (not real service access)", () => {
     await screen.findByRole("heading", { level: 1, name: "Read your sites" });
     expect(selected).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => expect(open).toHaveFocus());
+    const search = screen.getByRole("textbox", { name: "Search permitted records" });
+    search.focus();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh permitted reads" }));
+    await waitFor(() => expect(mocks.snapshot).toHaveBeenCalledTimes(2));
+    // An explicit identity recheck retires the subtree, not another history return.
+    expect(search).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open Contract roof 01" })).not.toHaveFocus();
+  });
+
+  it("restores the historical selected record rather than a more recently opened record", async () => {
+    window.history.replaceState(null, "", "/app?view=sites");
+    render(<LiveWorkspace configuration={configuration} initialHref="/app?view=sites" />);
+    await screen.findByRole("heading", { level: 1, name: "Read your sites" });
+    for (const index of [1, 2]) {
+      mocks.detail.mockResolvedValue({ ok: true, data: detail(record(index)) });
+      const name = `Contract roof 0${index}`;
+      fireEvent.click(screen.getByRole("button", { name: `Select ${name}` }));
+      const open = screen.getByRole("button", { name: `Open ${name}` });
+      open.focus();
+      fireEvent.click(open);
+      await screen.findByRole("region", { name: "Stored record detail" });
+      const documents = within(screen.getByRole("navigation", { name: "Connected workspace" }))
+        .getByRole("button", { name: "Documents" });
+      documents.focus();
+      fireEvent.click(documents);
+      await screen.findByRole("region", { name: "Permitted document metadata" });
+      if (index === 1) {
+        fireEvent.click(screen.getByRole("button", { name: "Back to collection" }));
+        await screen.findByRole("heading", { level: 1, name: "Read your sites" });
+      }
+    }
+    act(() => { window.history.go(-6); });
+    await screen.findByRole("heading", { level: 1, name: "Read your sites" });
+    expect(screen.getByRole("button", { name: "Select Contract roof 01" })).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Open Contract roof 01" })).toHaveFocus());
   });
 
   it("keeps a deep-linked record selected across documents, activity and collection return", async () => {
