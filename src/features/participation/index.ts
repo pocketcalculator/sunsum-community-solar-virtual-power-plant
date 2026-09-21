@@ -6,6 +6,13 @@
  * exported is browser-safe: this feature has no server-only data access.
  */
 
+export { ContextPage } from "./components/ContextPage";
 export { LandingPage } from "./components/LandingPage";
 export { PublicShell } from "./components/PublicShell";
+export {
+  CONTEXT_PAGES,
+  contextPage,
+  type ContextPageContent,
+  type ContextPageId,
+} from "./content/contextPages";
 export { ENTRY_PATHS, entryPathHref, type EntryPath } from "./paths";

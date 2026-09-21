@@ -111,6 +111,18 @@
 
 .roleNavInner {
   composes: container from "../../../styles/layout.module.css";
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.roleNavAside {
+  display: flex;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-block: var(--space-1);
 }
 
 .roleNavList {
