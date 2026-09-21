@@ -1,11 +1,15 @@
 import type { Viewer } from "../../core/identity";
 import {
+  addProjectDocument,
   addSiteDocument,
+  getProjectDocumentContent,
   getSiteDocumentContent,
   isAllowedDocumentContentType,
   isDocumentDisclosureClass,
   MAX_DOCUMENT_SIZE_BYTES,
+  putProjectDocumentContent,
   putSiteDocumentContent,
+  type DocumentContent,
   type DocumentCreateInput,
 } from "../../core/documents";
 import { failure, ok, type Result } from "../../core/shared";
@@ -105,20 +109,27 @@ export async function handleGetSiteDocumentContent(
     store,
   );
   if (!result.ok) return failureResponse(result.failure);
+  return documentContentResponse(result.value);
+}
 
+/**
+ * Builds the download response shared by every document route, so that the
+ * headers protecting one cannot be forgotten on another.
+ */
+function documentContentResponse(content: DocumentContent): Response {
   /**
    * `Response` requires a view backed by a plain `ArrayBuffer`, which a
    * `Uint8Array` widened to `ArrayBufferLike` does not satisfy. `set` is a
    * memcpy rather than an element-wise copy, so this is cheap even at the
    * 10 MB cap, and it avoids asserting a type the compiler cannot verify.
    */
-  const body = new Uint8Array(result.value.content.byteLength);
-  body.set(result.value.content);
+  const body = new Uint8Array(content.content.byteLength);
+  body.set(content.content);
 
   return new Response(body, {
     status: 200,
     headers: {
-      "content-type": result.value.contentType,
+      "content-type": content.contentType,
       /**
        * `attachment` so a document is never rendered in the origin: an uploaded
        * SVG or HTML masquerading as an allowed type would otherwise run as
@@ -126,7 +137,7 @@ export async function handleGetSiteDocumentContent(
        * caller-supplied and may contain quotes or non-ASCII.
        */
       "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(
-        result.value.originalFilename,
+        content.originalFilename,
       )}`,
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
@@ -157,6 +168,112 @@ export async function getSiteDocumentContentRoute(
   const viewer = await resolveViewer(request);
   if (!viewer.ok) return failureResponse(viewer.failure);
   return handleGetSiteDocumentContent(viewer.value, params.id, params.documentId);
+}
+
+/**
+ * The project-scoped half of the document API.
+ *
+ * A site document is evidence an owner supplies before acceptance; a project
+ * document is what the platform produces after it — a screening report or an
+ * underwriting summary — so it hangs off the project and is registered by an
+ * operator. Registration and upload stay separate here for the same reason
+ * they do on a site: the bytes travel as a raw body rather than base64 inside
+ * JSON.
+ */
+export async function handlePostProjectDocument(
+  request: Request,
+  viewer: Viewer,
+  projectId: string,
+  store: BackendStore = demoBackendStore,
+): Promise<Response> {
+  const id = validatePathId(projectId, "invalid_body");
+  if (!id.ok) return failureResponse(id.failure);
+  const body = await readJsonObject(request);
+  if (!body.ok) return failureResponse(body.failure);
+  const input = parseDocumentCreate(body.value);
+  if (!input.ok) return failureResponse(input.failure);
+  const result = await addProjectDocument(viewer, projectId, input.value, store);
+  return result.ok ? jsonResponse(result.value, 201) : failureResponse(result.failure);
+}
+
+export async function postProjectDocumentRoute(
+  request: Request,
+  context: RouteContext,
+): Promise<Response> {
+  const viewer = await resolveViewer(request);
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handlePostProjectDocument(request, viewer.value, (await context.params).id);
+}
+
+export async function handlePutProjectDocumentContent(
+  request: Request,
+  viewer: Viewer,
+  projectId: string,
+  documentId: string,
+  store: BackendStore = demoBackendStore,
+): Promise<Response> {
+  const id = validatePathId(projectId, "invalid_body");
+  if (!id.ok) return failureResponse(id.failure);
+  const document = validatePathId(documentId, "invalid_body");
+  if (!document.ok) return failureResponse(document.failure);
+
+  const content = new Uint8Array(await request.arrayBuffer());
+  const result = await putProjectDocumentContent(
+    viewer,
+    projectId,
+    documentId,
+    content,
+    documentBlobClient(),
+    store,
+  );
+  return result.ok ? jsonResponse(result.value, 200) : failureResponse(result.failure);
+}
+
+export async function handleGetProjectDocumentContent(
+  viewer: Viewer,
+  projectId: string,
+  documentId: string,
+  store: BackendStore = demoBackendStore,
+): Promise<Response> {
+  const id = validatePathId(projectId, "invalid_body");
+  if (!id.ok) return failureResponse(id.failure);
+  const document = validatePathId(documentId, "invalid_body");
+  if (!document.ok) return failureResponse(document.failure);
+
+  const result = await getProjectDocumentContent(
+    viewer,
+    projectId,
+    documentId,
+    documentBlobClient(),
+    store,
+  );
+  if (!result.ok) return failureResponse(result.failure);
+  return documentContentResponse(result.value);
+}
+
+export async function putProjectDocumentContentRoute(
+  request: Request,
+  context: DocumentRouteContext,
+): Promise<Response> {
+  const params = await context.params;
+  const viewer = await resolveViewer(request);
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handlePutProjectDocumentContent(
+    request,
+    viewer.value,
+    params.id,
+    params.documentId,
+  );
+}
+
+export async function getProjectDocumentContentRoute(
+  request: Request,
+  context: DocumentRouteContext,
+): Promise<Response> {
+  const params = await context.params;
+  const viewer = await resolveViewer(request);
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetProjectDocumentContent(viewer.value, params.id, params.documentId);
 }
 
 export function parseDocumentCreate(body: JsonObject): Result<DocumentCreateInput> {

@@ -111,11 +111,17 @@ export {
   parseExportFormat,
 } from "./export";
 export {
+  getProjectDocumentContentRoute,
   getSiteDocumentContentRoute,
+  handleGetProjectDocumentContent,
   handleGetSiteDocumentContent,
+  handlePostProjectDocument,
   handlePostSiteDocument,
+  handlePutProjectDocumentContent,
   handlePutSiteDocumentContent,
   parseDocumentCreate,
+  postProjectDocumentRoute,
   postSiteDocumentRoute,
+  putProjectDocumentContentRoute,
   putSiteDocumentContentRoute,
 } from "./documents";
