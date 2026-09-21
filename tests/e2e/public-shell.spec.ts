@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { THEME_STORAGE_KEY } from "../../src/components/ui/theme/theme";
 
 const entryPaths = [
   { label: "I have a rooftop", href: "/join?start=i-have-roof" },
@@ -6,39 +7,41 @@ const entryPaths = [
   { label: "I want to fund projects", href: "/join?start=i-would-fund" },
 ];
 
-const roleLinks = [
-  { label: "Site Owner", href: "/dashboard/site-owner" },
-  { label: "Investor", href: "/dashboard/investor" },
-  { label: "Platform Operator", href: "/dashboard/operator" },
+const participationLinks = [
+  { label: "Site owner view", href: "/dashboard/site-owner" },
+  { label: "Investor profile preview", href: "/join?start=i-would-fund" },
+  { label: "Operator profile preview", href: "/join" },
 ];
 
 async function hasOverflow(page: Page) {
   return page.evaluate(
-    () =>
-      document.documentElement.scrollWidth >
-      document.documentElement.clientWidth,
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
   );
 }
 
 async function chooseOption(page: Page, name: RegExp) {
-  // Clicking the label is what a person actually does; the native input sits
-  // beneath it, so targeting the input directly is not a realistic interaction.
   await page.getByText(name).click();
   await expect(page.getByRole("radio", { name, checked: true })).toBeVisible();
 }
 
-async function completeSignIn(page: Page) {
-  await chooseOption(page, /email address and password/i);
-  await page.getByRole("textbox", { name: "Full name" }).fill("Ada Lovelace");
-  await page
-    .getByRole("textbox", { name: "Email address" })
-    .fill("ada@example.org");
-  await page.getByLabel("Password", { exact: true }).fill("Correct-Horse-9!");
+async function fillFictionalDetails(page: Page) {
+  await page.getByRole("textbox", { name: "Example name", exact: true }).fill("Alex Example");
+  await page.getByRole("textbox", { name: "Example email address", exact: true }).fill("alex@example.org");
 }
 
-test("landing offers every way to take part without horizontal overflow", async ({
-  page,
-}, testInfo) => {
+async function completeProfile(page: Page, participant: RegExp = /^property owner$/i) {
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await fillFictionalDetails(page);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await chooseOption(page, /^as myself$/i);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await chooseOption(page, participant);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("checkbox", { name: /not saved or sent/i }).check();
+  await page.getByRole("button", { name: /finish and review/i }).click();
+}
+
+test("landing keeps participation contexts distinct from the lower entry cards", async ({ page }, testInfo) => {
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -52,279 +55,189 @@ test("landing offers every way to take part without horizontal overflow", async 
     await expect(link).toHaveAttribute("href", path.href);
   }
 
-  const roleNavigation = page.getByRole("navigation", {
-    name: "Role workspaces",
-  });
-  for (const role of roleLinks) {
-    await expect(
-      roleNavigation.getByRole("link", { name: role.label, exact: true }),
-    ).toHaveAttribute("href", role.href);
+  const contexts = page.getByRole("navigation", { name: "Participation contexts" });
+  for (const item of participationLinks) {
+    await expect(contexts.getByRole("link", { name: item.label, exact: true }))
+      .toHaveAttribute("href", item.href);
   }
 
+  const primary = page.getByRole("navigation", { name: "Primary", exact: true });
+  for (const [name, href] of [
+    ["Need", "/need"], ["Opportunity", "/opportunity"], ["Impact", "/impact"],
+    ["About", "/#about"], ["FAQ", "/#faq"], ["Workspace", "/app"],
+  ] as const) {
+    await expect(primary.getByRole("link", { name, exact: true })).toHaveAttribute("href", href);
+  }
+  await expect(page.getByRole("link", { name: "Why local needs come first", exact: true })).toHaveAttribute("href", "/need");
   expect(await hasOverflow(page)).toBe(false);
-  await page.screenshot({
-    path: testInfo.outputPath("landing.png"),
-    fullPage: true,
-    animations: "disabled",
-  });
+  await page.screenshot({ path: testInfo.outputPath("landing.png"), fullPage: true, animations: "disabled" });
 });
 
-test("the create-profile flow opens on its first step", async ({
-  page,
-}, testInfo) => {
+for (const [route, title] of [
+  ["/need", "The Need Page"], ["/opportunity", "The Opportunity"], ["/impact", "The Impact"],
+] as const) {
+  test(`${route} has an authored story, optional VPP education and a return`, async ({ page }) => {
+    const response = await page.goto(route);
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("heading", { level: 1, name: title, exact: true })).toBeVisible();
+    await expect(page.getByRole("article")).toContainText("not a claim of current projects or guaranteed outcomes");
+    const learning = page.locator("details").filter({ hasText: "Learn how a virtual power plant works" });
+    await expect(learning).not.toHaveAttribute("open");
+    await learning.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    await expect(learning).toHaveAttribute("open");
+    await expect(learning.getByRole("term")).toHaveCount(5);
+    await expect(learning).toContainText("Grid-tied solar alone is not backup power");
+    expect(await hasOverflow(page)).toBe(false);
+    await expect(page.locator("audio, video, iframe")).toHaveCount(0);
+    await page.getByRole("link", { name: "Return to SunSum", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  });
+}
+
+test("the profile preview opens on its first step", async ({ page }, testInfo) => {
   const response = await page.goto("/join");
   expect(response?.status()).toBe(200);
-
-  await expect(
-    page.getByRole("heading", { level: 1, name: /create your sunsum profile/i }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { level: 2, name: /tell us about you/i }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Explore your participation" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Tell us about you" })).toBeVisible();
   await expect(page.getByText(/step 1 of 5/i).first()).toBeVisible();
   expect(await hasOverflow(page)).toBe(false);
-
-  await page.screenshot({
-    path: testInfo.outputPath("join-step-1.png"),
-    fullPage: true,
-    animations: "disabled",
-  });
+  await page.screenshot({ path: testInfo.outputPath("join-step-1.png"), fullPage: true, animations: "disabled" });
 });
 
-test("the site-owner dashboard renders its mock scenario without overflow", async ({
-  page,
-}, testInfo) => {
-  const response = await page.goto("/dashboard/site-owner");
-  expect(response?.status()).toBe(200);
-
-  await expect(
-    page.getByRole("heading", {
-      level: 1,
-      name: /explore a community solar scenario/i,
-    }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /run simulation/i }),
-  ).toBeEnabled();
-  await expect(page.getByText(/3 selected · maximum 5/i)).toBeVisible();
-  await expect(page.getByRole("checkbox")).toHaveCount(10);
-  await expect(
-    page
-      .getByRole("region", { name: /location comparison cards/i })
-      .getByRole("article"),
-  ).toHaveCount(10);
-
-  const pineMarker = page.getByRole("button", {
-    name: /select 789 pine lane/i,
+test("the dynamic owner alias enters read-only sites, never the static simulation", async ({ page }) => {
+  const apiRequests: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) apiRequests.push(request.url());
   });
-  await pineMarker.hover();
-  await expect(
-    page.getByRole("tooltip").filter({ hasText: "789 Pine Lane" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("tooltip").filter({ hasText: "789 Pine Lane" }),
-  ).toContainText("Mechanicsville");
-
-  await page
-    .getByRole("searchbox", {
-      name: /search address, neighborhood, or property type/i,
-    })
-    .fill("987 Solar Way");
-  await page.getByRole("button", { name: /add location/i }).click();
-  await expect(
-    page.getByRole("checkbox", { name: /987 solar way/i }),
-  ).toBeChecked();
-  await expect(page.getByText(/4 selected · maximum 5/i)).toBeVisible();
-
-  await page.getByRole("button", { name: /select 789 pine lane/i }).click();
-  await expect(page.getByText(/5 selected · maximum 5/i)).toBeVisible();
-  await expect(page.getByText(/location selections changed/i)).toBeVisible();
-  await page.getByRole("button", { name: /run simulation/i }).click();
-  await expect(page.getByText("$88,000", { exact: true })).toBeVisible();
-  await expect(page.getByText("$136,000", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText(/exclude 1 unvalidated draft location/i),
-  ).toBeVisible();
-  await expect(page.getByText(/location selections changed/i)).toHaveCount(0);
-
-  const comparison = page.getByRole("region", {
-    name: /location comparison cards/i,
-  });
-  await expect(
-    comparison.getByText("Included in latest simulation", { exact: true }),
-  ).toHaveCount(4);
-  await expect(
-    comparison.getByText(
-      "Pending validation — excluded from latest simulation",
-      { exact: true },
-    ),
-  ).toHaveCount(1);
-  await expect(
-    comparison
-      .getByRole("heading", { level: 3, name: "Pine Ln" })
-      .locator(".."),
-  ).toContainText("$18,000");
-
-  await page.getByTitle("Always use the light theme").click();
-  await expect(
-    page.getByRole("radio", { name: /^light$/i }),
-  ).toBeChecked();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByTitle("Always use the dark theme").click();
-  await expect(page.getByRole("radio", { name: /^dark$/i })).toBeChecked();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  expect(await hasOverflow(page)).toBe(false);
-
-  await page.screenshot({
-    path: testInfo.outputPath("site-owner-dashboard.png"),
-    fullPage: true,
-    animations: "disabled",
-  });
+  await page.goto("/dashboard/site-owner");
+  await expect(page).toHaveURL(/\/app\?view=sites$/);
+  await expect(page.getByRole("heading", { name: "Your service connection is out of reach right now" })).toBeVisible();
+  await expect(page.getByText("Live reads only", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /run simulation/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Refresh permitted reads", exact: true })).toBeDisabled();
+  expect(apiRequests).toEqual([]);
+  expect(await page.evaluate(() =>
+    Object.keys(localStorage).filter((key) => key.startsWith("sunsum-design-lab")),
+  )).toEqual([]);
 });
 
-test("a landing deep link pre-selects the matching answer and stays editable", async ({
-  page,
-}) => {
+test("a landing deep link pre-selects an editable answer without skipping a step", async ({ page }) => {
   await page.goto("/");
-  await page
-    .getByRole("link", { name: "Start with i have a rooftop", exact: true })
-    .click();
-
+  await page.getByRole("link", { name: "Start with i have a rooftop", exact: true }).click();
   await expect(page).toHaveURL(/\/join\?start=i-have-roof$/);
-
   const rooftop = page.getByRole("checkbox", { name: /a rooftop to offer/i });
   await expect(rooftop).toBeChecked();
-
-  // A starting value only: the person can clear it.
   await rooftop.uncheck();
   await expect(rooftop).not.toBeChecked();
-
-  // It must never stand in for a participant type or skip a step.
-  await expect(
-    page.getByRole("heading", { level: 2, name: /tell us about you/i }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Tell us about you" })).toBeVisible();
 });
 
-test("an unknown start parameter is ignored rather than breaking the page", async ({
-  page,
-}) => {
+test("an unknown start parameter is ignored rather than breaking the page", async ({ page }) => {
   const response = await page.goto("/join?start=not-a-real-option");
   expect(response?.status()).toBe(200);
-  await expect(
-    page.getByRole("heading", { level: 1, name: /create your sunsum profile/i }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Explore your participation" })).toBeVisible();
   await expect(page.getByRole("checkbox", { checked: true })).toHaveCount(0);
 });
 
-test("continuing with nothing filled in reports the problems and moves focus", async ({
-  page,
-}) => {
+test("missing fictional details report the problems and move focus", async ({ page }) => {
   await page.goto("/join");
-  await page.getByRole("button", { name: "Continue" }).click();
-  await expect(
-    page.getByRole("heading", { level: 2, name: /create your sign-in/i }),
-  ).toBeVisible();
-
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  // Next injects its own role="alert" route announcer, so scope to ours.
-  const summary = page
-    .getByRole("alert")
-    .filter({ hasText: /check these before you continue/i });
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  const summary = page.getByRole("alert").filter({ hasText: /check these before you continue/i });
   await expect(summary).toBeVisible();
   await expect(summary).toBeFocused();
   await expect(summary).toContainText(/enter an email address/i);
-
-  // It must not advance while the step is invalid.
-  await expect(
-    page.getByRole("heading", { level: 2, name: /create your sign-in/i }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Try fictional profile details" })).toBeVisible();
 });
 
-test("unavailable federated sign-in is disabled rather than pretending to work", async ({
-  page,
-}) => {
+test("the public flow offers no password, code or pretend identity-provider path", async ({ page }) => {
   await page.goto("/join");
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  for (const provider of [/microsoft/i, /google/i, /apple/i]) {
-    await expect(page.getByRole("radio", { name: provider })).toBeDisabled();
-  }
-  await expect(
-    page.getByRole("radio", { name: /email address and password/i }),
-  ).toBeEnabled();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.locator('input[type="password"], input[autocomplete="one-time-code"], input[autocomplete="new-password"], input[autocomplete="current-password"]')).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: /microsoft|google|apple|sign.in/i })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Example name", exact: true })).toHaveAttribute("autocomplete", "off");
+  await expect(page.getByRole("textbox", { name: "Example email address", exact: true })).toHaveAttribute("autocomplete", "off");
 });
 
-test("a person can complete the flow and is told nothing was saved", async ({
-  page,
-}, testInfo) => {
-  await page.goto("/join?start=i-have-roof");
-
-  await page.getByRole("button", { name: "Continue" }).click();
-  await completeSignIn(page);
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  await expect(
-    page.getByRole("heading", { level: 2, name: /taking part as/i }),
-  ).toBeVisible();
-  await chooseOption(page, /myself/i);
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  await expect(
-    page.getByRole("heading", { level: 2, name: /participant type/i }),
-  ).toBeVisible();
-  await chooseOption(page, /^property owner$/i);
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  await expect(
-    page.getByRole("heading", { level: 2, name: /review your profile/i }),
-  ).toBeVisible();
-  await expect(page.getByText("Ada Lovelace").first()).toBeVisible();
-  await page.getByRole("checkbox", { name: /not saved or sent/i }).check();
-  await page.getByRole("button", { name: /finish and review/i }).click();
-
-  await expect(
-    page.getByRole("heading", { level: 2, name: /assembled/i }),
-  ).toBeVisible();
-  await expect(page.getByText(/not saved/i).first()).toBeVisible();
-
-  // Nothing may imply an account exists.
-  await expect(page.getByText(/account created/i)).toHaveCount(0);
-  await expect(page.getByText(/welcome back/i)).toHaveCount(0);
-
-  // The credential must never be echoed back. Rendered text is not enough:
-  // it cannot see an input's value, a hidden subtree or an attribute, which is
-  // exactly where a leak would hide.
-  const rendered = await page.evaluate(() =>
-    [
-      document.documentElement.outerHTML,
-      ...[...document.querySelectorAll("input")].map((input) => input.value),
-    ]
-      .join("\n")
-      .toLowerCase(),
-  );
-  expect(rendered).not.toContain("correct-horse-9!");
-
-  await page.screenshot({
-    path: testInfo.outputPath("join-complete.png"),
-    fullPage: true,
-    animations: "disabled",
+test("a person can complete the fictional flow without saving or service requests", async ({ page }, testInfo) => {
+  const apiRequests: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) apiRequests.push(request.url());
   });
+  await page.goto("/join?start=i-have-roof");
+  await completeProfile(page);
+  await expect(page.getByRole("heading", { level: 2, name: "Your fictional profile is assembled" })).toBeVisible();
+  await expect(page.getByText("alex@example.org", { exact: true })).toBeVisible();
+  await expect(page.getByText(/no workspace access has been granted/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Explore workspace", exact: true })).toHaveAttribute("href", "/app");
+  await expect(page.locator('input[type="password"], input[autocomplete="one-time-code"]')).toHaveCount(0);
+  expect(apiRequests).toEqual([]);
+  expect(await page.evaluate((themeKey) =>
+    Object.keys(localStorage).filter((key) => key !== themeKey), THEME_STORAGE_KEY,
+  )).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("join-complete.png"), fullPage: true, animations: "disabled" });
 });
 
-test("going back keeps what was already entered", async ({ page }) => {
+test("going back keeps fictional answers", async ({ page }) => {
   await page.goto("/join");
-  await page.getByRole("button", { name: "Continue" }).click();
-  await completeSignIn(page);
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await fillFictionalDetails(page);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Example name", exact: true })).toHaveValue("Alex Example");
+  await expect(page.getByRole("textbox", { name: "Example email address", exact: true })).toHaveValue("alex@example.org");
+});
 
-  await page.getByRole("button", { name: "Back" }).click();
-  await expect(page.getByRole("textbox", { name: "Full name" })).toHaveValue(
-    "Ada Lovelace",
-  );
-  await expect(page.getByRole("textbox", { name: "Email address" })).toHaveValue(
-    "ada@example.org",
-  );
+test("keyboard learning and return preserve an unfinished profile", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/join?start=i-have-roof");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("textbox", { name: "Example name", exact: true }).fill("An unfinished example");
+  const summary = page.locator("summary").filter({ hasText: "Learning and help (optional)" });
+  await summary.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("region", { name: "Virtual power plant learning" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Human adoption support" })).toContainText("does not contact a project manager");
+  await page.getByRole("button", { name: "Return to profile preview", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "Try fictional profile details" })).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Example name", exact: true })).toHaveValue("An unfinished example");
+  await expect(page.getByRole("textbox", { name: "Example email address", exact: true })).toHaveValue("");
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: /a rooftop to offer/i })).toBeChecked();
+});
+
+for (const [label, participant] of [
+  ["researcher", /^student or researcher$/i],
+  ["workforce", /^workforce development participant$/i],
+  ["learning", /^just learning more$/i],
+] as const) {
+  test(`${label} completion leads to learning, not a fourth workspace`, async ({ page }) => {
+    await page.goto("/join");
+    await completeProfile(page, participant);
+    const next = page.getByRole("region", { name: "Where to explore next" });
+    await expect(next.getByRole("heading", { name: "Keep exploring through learning" })).toBeVisible();
+    await expect(next.getByRole("link", { name: /workspace/i })).toHaveCount(0);
+    await next.getByRole("button", { name: "Open learning and help", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Virtual power plant learning" })).toBeVisible();
+    await page.getByRole("button", { name: "Return to profile preview", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Your fictional profile is assembled" })).toBeFocused();
+  });
+}
+
+test("public appearance retains its Light, Dark and System choices", async ({ page }) => {
+  await page.goto("/");
+  const theme = page.getByRole("group", { name: /colour theme/i });
+  await expect(theme.getByRole("radio")).toHaveCount(3);
+  await page.getByTitle("Always use the light theme").click();
+  await expect(theme.getByRole("radio", { name: /^light$/i })).toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.getByTitle("Always use the dark theme").click();
+  await expect(theme.getByRole("radio", { name: /^dark$/i })).toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByTitle("Follow the theme this device is set to").click();
+  await expect(theme.getByRole("radio", { name: /^system$/i })).toBeChecked();
 });
 
 test("skip navigation works with a keyboard", async ({ page }) => {
@@ -337,9 +250,7 @@ test("skip navigation works with a keyboard", async ({ page }) => {
   await expect(page.locator("#main-content")).toBeFocused();
 });
 
-test("unknown addresses return not-found with a way onwards", async ({
-  page,
-}) => {
+test("unknown addresses return not-found with a way onwards", async ({ page }) => {
   const response = await page.goto("/nope");
   expect(response?.status()).toBe(404);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -347,31 +258,28 @@ test("unknown addresses return not-found with a way onwards", async ({
 });
 
 for (const rootPixels of [20, 32]) {
-  test(`supports enlarged root text at ${rootPixels}px without hiding overflow`, async ({
-    page,
-  }) => {
-    for (const path of ["/", "/join", "/dashboard/site-owner", "/nope"]) {
+  test(`supports enlarged root text at ${rootPixels}px with learning open`, async ({ page }) => {
+    for (const path of ["/", "/need", "/opportunity", "/impact", "/join", "/nope"]) {
       await page.goto(path);
-      await page.addStyleTag({
-        content: `:root { font-size: ${rootPixels}px !important; }`,
-      });
-      await expect(page.locator("html")).toHaveCSS(
-        "font-size",
-        `${rootPixels}px`,
-      );
+      await page.addStyleTag({ content: `:root { font-size: ${rootPixels}px !important; }` });
+      await expect(page.locator("html")).toHaveCSS("font-size", `${rootPixels}px`);
+      const learning = page.locator("summary").filter({ hasText: /Learning and help \(optional\)|Learn how a virtual power plant works/ });
+      if (await learning.count()) await learning.click();
       expect(await hasOverflow(page), `${path} at ${rootPixels}px`).toBe(false);
     }
   });
 }
 
-test("metadata describes a public preview independently of body copy", async ({
-  page,
-}) => {
-  for (const path of ["/", "/join", "/nope"]) {
+test("metadata distinguishes the fictional preview from connected reads independently of body copy", async ({ page }) => {
+  for (const path of ["/", "/need", "/opportunity", "/impact", "/join", "/nope"]) {
     await page.goto(path);
-    await expect(page.locator('meta[name="description"]')).toHaveAttribute(
-      "content",
-      /public|planned|provisional|no account/i,
-    );
+    const description = page.locator('meta[name="description"]');
+    if (path !== "/join") {
+      await expect(description).toHaveAttribute("content", /separate interactive demo uses fictional data/i);
+      await expect(description).toHaveAttribute("content", /connected workflow writes are not implemented/i);
+    } else {
+      await expect(description).toHaveAttribute("content", /no account is created/i);
+      await expect(description).toHaveAttribute("content", /nothing you enter is saved/i);
+    }
   }
 });

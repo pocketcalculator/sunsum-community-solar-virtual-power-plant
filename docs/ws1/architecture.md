@@ -2,14 +2,17 @@
 
 ## Scope and evidence
 
-This increment implements a public landing page and the **New User / Create
-Profile** workflow. It is a locally reviewable foundation, not the persisted,
-deployed three-role MVP.
+This release extends the original public foundation with the Sunroom demo
+and a separate existing-service read interface. It does not implement the
+connected business-workflow writes or establish a deployed three-role MVP.
+See the [connection index](connections.md) and
+[operator guide](connection-and-deployment-guide.md) for current entry paths.
 
 The revised MVP Team Charter, dated September 14, 2026, identifies Site Owner,
 Platform Operator, and Financier/Investor experiences and the seven project
-stages. Its Features A-G define the wider workflow; this contribution covers
-Feature A and the profile-creation half of the origination journey. The
+stages. Its Features A-G define the wider workflow. The original foundation
+covered the public introduction and fictional profile flow; this increment
+adds the separate demo workspace and selected existing-service reads. The
 project's VPP flow board supplies the guided landing dialogue, the sign-in
 sequence, the individual-versus-organisation split and the participant
 taxonomy. The earlier SolarEase dashboard informs visual hierarchy only, not
@@ -33,10 +36,13 @@ profile flow still saves nothing and requires no database credentials.
 ```text
 src/domain shared vocabulary  (no dependencies above it)
 app routes and layout
-  -> feature public interfaces (participation, onboarding)
+  -> public feature interfaces (participation, onboarding, community-context)
+  -> live-workspace -> live-read (existing authorized GET operations)
     -> src/domain shared vocabulary
     -> src/components/ui primitives
+    -> src/components/workspace controlled presentation
     -> feature-local components, model and scoped styles
+static entry -> design-lab (synthetic store) + public feature interfaces
 
 src/domain   roles, journey stages, participant taxonomy, guided intents
 src/styles   tokens + minimal app globals, not business policy
@@ -65,10 +71,9 @@ importable through the alias at all.
 - Participant type is a display and routing concept, not an authentication or
   authorization policy.
 
-**No credential enters the profile draft.** The password is validated in the
-sign-in step and held only in that component's state, so it cannot reach the
-draft, the review summary, anything serialised from it, or any log. It is
-discarded when the flow finishes.
+**No credential enters the profile draft.** The fictional public flow does
+not request a password or claim to create an account/code. Its no-save
+behavior is different from the synthetic workspace's explicit local storage.
 
 Both features' presentation and public entry points share the same static
 Node/server-import restrictions as shared UI. The complete `node:` namespace is
@@ -96,8 +101,8 @@ string; there is no second rule set or broken fixture on disk.
 ## Extension without coupling
 
 Add modules when accepted behavior needs them, not to fill a directory diagram.
-Before the first route needing different or authenticated chrome, move public
-shell selection into an app-owned public route-group layout. Do not add
+Public shell selection now lives in the app-owned `(public)` route-group
+layout; `/app` has its own workspace chrome. Do not add
 route-aware private/public conditionals to the participation shell. Preserve
 public URLs, not-found recovery, and one main/skip target during that change.
 
@@ -122,16 +127,42 @@ view models and local state belong inside their features. Do not put workflow
 rules into UI configuration, duplicate DTOs across roles, or accumulate unrelated
 helpers in a generic utilities file.
 
-The WS2 workflow boundary may be a separately owned in-process Next.js module or
-a separate service. That topology is not selected here. WS1 must not introduce
-competing persistence, authorization, solar calculations, or device controls.
+The selected WS2 boundary is the existing same-origin Next route handlers.
+WS1 introduces no competing persistence, authorization, solar calculation,
+device control or intermediary proxy.
+
+### Runtime mode boundary
+
+The Next `/app` entry reaches browser-safe read adapters and live presentation,
+never `design-lab/store`, its reducer, demo sign-in or the old fixture dashboard.
+The static entry reaches the synthetic feature, never the live transport or
+server modules. Both reuse pure role/collection presentation under
+`src/components/workspace`; those components do not own credentials, workflow
+state or services.
+
+`SUNSUM_PUBLIC_DATA_MODE=connected` admits only a configured attempt. The
+server projects safe eligibility flags after checking the existing store,
+demo-auth setting, session-configuration presence and explicit owner
+sign-in/mapping handoff. Service `GET /api/me` remains the authority. No
+browser role or configuration flag grants access.
+
+Live state is ephemeral and identity/project scoped. Canceled, malformed,
+unauthenticated or denied reads cannot seed the synthetic store. Profile
+drafts in the demo may be retained in memory across optional learning without
+introducing new durable storage. Existing synthetic v1/v2 migrations and
+corrupt-save recovery remain intact.
+
+The static build explicitly rejects connected configuration and injects only
+its synthetic constants. Runtime import-graph tests complement lint boundaries;
+neither is a claim of a sandbox against arbitrary future code.
 
 ## Visual baseline
 
-The shared visual direction is provisional until the UX handoff. It emphasizes
-readable dark surfaces, clear headings, compact explanations, consistent
-participation paths, and a visible next action. Illustration is decorative,
-not telemetry or a representation of a real pilot.
+The selected direction is the original SunSum styling with Sunroom structure:
+semantic light/dark surfaces, compact explanations and a visible next action.
+Operator work leads, with pipeline facts below. A full-width map area sits
+above the compact collection and adjacent desktop guidance. A fictional
+diagram is never telemetry or a representation of permitted live geography.
 
 Review keyboard/focus behavior, long text, narrow layouts, and reduced motion
 alongside screenshots. A working screenshot or automated smoke test is not
@@ -170,18 +201,21 @@ peer are explicitly aligned; do not bypass peer or engine checks when upgrading.
 `npm ci` is the reproducibility gate. The project registry is not hardcoded.
 
 ESLint configuration loading has a separate bounded test setup budget; individual
-boundary assertions remain fast and exercise the actual rules. Full service,
-identity, persistence, and document tests belong to later integrated work.
+boundary assertions remain fast and exercise the actual rules. Existing
+backend identity, persistence and document suites remain unchanged. Frontend
+mocked reads complement them; they do not certify a remote participant session.
 
 ## Delivery boundary
 
-Ordinary `next build` and `next start` remain the public application's hosting contract.
-WS3 has verified the existing application through source ZIP deployment and a
-remote build on Linux App Service F1. The
+Ordinary `next build` and `next start` remain the dynamic application's hosting
+contract. WS3 previously recorded source ZIP deployment and remote build on
+Linux App Service F1; this is historical evidence, not a deployment of this
+increment. The
 [infrastructure foundation](../../infrastructure/README.md) prepares separate
 server-only Drizzle connections and Bicep/Azure CLI code delivery.
-This does not provision a database or connect an identity provider. Full backend
-integration and production delivery remain separate from the public-preview smoke test.
+This UI release does not provision a database or connect an identity provider.
+The source package, synthetic Pages bundle, authorized reads and conditional
+cloud deployment have separate acceptance evidence.
 
 No credentials or private data belong in public runtime configuration. Future
 server-only exports must remain separate from client-safe public feature entries.

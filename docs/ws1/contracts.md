@@ -1,6 +1,19 @@
 # WS1 contract and evidence register
 
-**Status: proposal, not an accepted API specification.**
+**Status: source-backed read integration register.** This document is not a
+parallel API specification or certification of a deployed environment.
+
+The current frontend implements the selected WS2 **read** operations against
+the schemas/handlers pinned in [connections.md](connections.md). Legitimate
+participant sign-in, actual authorized records and remote deployment remain
+separate acceptance evidence. The reader does not use demo-switch or implement
+business-workflow writes. Conditional WS4/provider families stay out of reach
+until their existing authorization/linkage contracts are supplied.
+
+The broader historical gate register below records workstream responsibilities;
+it must not be interpreted as proof of current remote readiness or absence.
+Use the [connection/deployment guide](connection-and-deployment-guide.md)
+for this release's actual admission and delivery path.
 
 The public foundation needs no backend or credentials. The landing page and the
 create-profile flow are public descriptions and a local form, not authenticated
@@ -11,9 +24,10 @@ sends nothing.
 ## Selected local scope
 
 - Next.js App Router and TypeScript, using the existing root npm/CI layout.
-- Public landing, three participation paths, project-journey explanation, FAQ,
-  and a create-profile flow that saves nothing.
-- Provisional semantic UI and scoped styles, with no data/control operations.
+- Public landing/story pages, participation, education and a no-save
+  fictional profile flow without password capture.
+- Separate synthetic Sunroom and ephemeral, permission-scoped service reads;
+  no connected workflow-write commands.
 - Ordinary local production build/start; WS3 owns Azure delivery and service configuration.
 
 The revised September 14, 2026 charter remains the MVP scope authority.
@@ -29,26 +43,23 @@ services, or make them dependencies of the current browser-only profile flow.
 
 | Gate                     | Owner                  | Required evidence                                                             | Status                     |
 | ------------------------ | ---------------------- | ----------------------------------------------------------------------------- | -------------------------- |
-| Wire contract            | WS2 with WS4           | Versioned machine-readable inputs/outputs/errors and ownership                | Published, awaiting WS1 acceptance |
-| Screening                | WS4                    | Units, range shapes, rules/assumptions/version, and three outcome examples    | Pending handoff            |
-| Demo data                | WS2/WS4                | Approved synthetic Atlanta examples and repeatable seed mechanism             | Published, awaiting WS1 acceptance |
-| Identity and permissions | WS2/WS3                | Actor/session semantics, object ownership, investor scope and document access | Published, awaiting WS1 acceptance |
-| Azure delivery           | WS3                    | Service/artifact/startup, access, configuration and budget                    | App Service F1 preview verified; backend integration pending |
-| UX                       | WS5                    | Shared design decision and review disposition                                 | Provisional local baseline |
-| Core acceptance          | WS6 and service owners | Actual persisted/deployed three-role journey and adverse cases                | Blocked on integration     |
+| Wire contract            | WS2 with WS4           | Versioned machine-readable inputs/outputs/errors and ownership                | Source-pinned selected reads; remote revision not confirmed |
+| Screening                | WS4                    | Units, range shapes, rules/assumptions/version, and three outcome examples    | Stored authorized results only; separate candidate not admitted |
+| Demo data                | WS2/WS4                | Approved synthetic examples and repeatable seed mechanism                    | Separate 50-record frontend demo; no backend seed action |
+| Identity and permissions | WS2/WS3                | Actor/session semantics, object ownership, investor scope and document access | Signed-session source accepted; legitimate participant handoff required |
+| Azure delivery           | WS3                    | Service/artifact/startup, access, configuration and budget                    | Historical F1 delivery; this release is package-first |
+| UX                       | WS5                    | Shared design decision and review disposition                                 | Selected original styling with Sunroom structure |
+| Core acceptance          | WS6 and service owners | Actual persisted/deployed three-role journey and adverse cases                | Beyond this frontend's live-read-only scope |
 
-Pending means no accepted artifact is present in this contribution. It does not
-assert that another contributor has done no work.
-
-"Published, awaiting WS1 acceptance" means WS2 has produced the artifact named
-below and it is reviewable in this repository. WS2 cannot mark a gate accepted
-on WS1's behalf; flipping these rows to accepted is WS1's call.
+An unavailable handoff does not assert that another contributor has done no
+work. Source acceptance, configuration, actual authorized reads and deployment
+are independent facts; one must not silently mark the others complete.
 
 ### WS2 artifacts offered against these gates
 
 | Gate                     | Artifact                                                           | Version |
 | ------------------------ | ------------------------------------------------------------------ | ------- |
-| Wire contract            | `docs/api/openapi.yaml` (27 operations) with `docs/api/README.md`   | 0.1.1   |
+| Wire contract            | `docs/api/openapi.yaml` with `docs/api/README.md`   | Labels differ; pin source commit and schemas |
 | Demo data                | `src/backend/core/store` seed — five Atlanta/Chattanooga pilot sites, deterministic on process start | 0.1.0   |
 | Identity and permissions | `src/backend/README.md` role/disclosure model; `src/backend/handlers/identity` session resolution | 0.1.0   |
 | Export                   | `GET /export` — role-aware JSON or CSV download, composed from the reads each role already has | 0.1.1   |
@@ -68,8 +79,8 @@ carrying into the canonical contract rather than rediscovering later:
 - **Documents are a manifest, not bytes.** `content_url` is null whenever the
   caller has no route to the content, which is *always* for an investor —
   tier-1 content delivery is the §7.6 short-lived-SAS design and is not built.
-  This also keeps the export working while object storage is unreachable, which
-  it currently is on the deployed environment.
+  This also lets the export describe metadata without reading Blob bytes.
+  Current remote storage availability must be observed separately.
 
 Known limitation carried by the identity gate: every *protected* route now
 requires a signed `sunsum_session` cookie and answers `401 unauthenticated`
@@ -97,13 +108,13 @@ them travels on the wire as a raw token:
   something on the ribbon carries `journey_stage_id` in WS1's own kebab-case
   ids, alongside the raw `submission_status` / `project_stage`. Render from
   `journey_stage_id`; no adapter call is needed.
-- **Roles are not.** `Role` appears in exactly one payload field — `User.role`,
-  reached as `contact.role` on `GET /me/sites` — and it carries the wire token.
-  `isParticipantRoleId("investor")` is `false` by WS1's own test, so a consumer
-  must call `toDomainRole`, exported from `@/backend`, rather than passing that
-  value into a charter-typed slot. `tests/unit/backend/vocabulary.test.ts`
-  asserts the adapter's output satisfies `isParticipantRoleId` for every wire
-  role, so the two sides cannot drift apart silently.
+- **Roles are not.** `GET /api/me` returns the service role, and composed
+  user/contact records may also carry a wire role. The browser-safe read
+  adapter translates `site_owner` to the workspace's `site-owner`; investor
+  remains `investor` within that workspace. The public charter's `financier`
+  intent is a different vocabulary, not a grant. Browser presentation must
+  not import `@/backend` to perform a translation. Existing backend vocabulary
+  tests still cover its independent public-charter adapter.
 
 ## The viability service boundary
 
@@ -167,9 +178,9 @@ numbers for every site, and is not a screening.
 Do not fill these gaps with invented tariffs, eligibility thresholds, source-data
 defaults, or a UI-only policy.
 
-## Adoption and retirement
+## Wider workflow adoption
 
-When WS2/WS4 publish the canonical artifact:
+For future changes beyond the source-pinned reads in this release:
 
 1. Record its location, version and accepting owners here.
 2. Agree shared import, generated types, or runtime conformance checks.
@@ -178,10 +189,10 @@ When WS2/WS4 publish the canonical artifact:
    as proof of service behavior.
 4. Keep wire schemas/errors in the agreed contract boundary; keep feature state
    and derived view models within the owning modules.
-5. Prove one persisted record across owner submission, screening, operator
+5. Under separate write authority, prove one persisted record across owner submission, screening, operator
    acceptance, owner status and a permitted investor detail, including a denial
    or error path, before completing broad feature lanes.
 
-This register deliberately declares no speculative endpoint URLs, JSON schema,
+This register declares no speculative endpoint URLs, JSON schema,
 identity vendor, database migration, or fallback service. Missing services must
 remain visibly unavailable rather than returning fake success.

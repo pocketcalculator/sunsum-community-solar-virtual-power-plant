@@ -1,0 +1,236 @@
+.page {
+  composes: container from "../../../styles/layout.module.css";
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-7);
+  padding-block: var(--space-5) var(--space-7);
+  overflow-wrap: anywhere;
+}
+
+.storyNav,
+.linkList,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.storyNav {
+  justify-content: space-between;
+}
+
+.linkList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.textLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding-block: var(--space-2);
+}
+
+.textLink[aria-current="page"] {
+  font-weight: 700;
+  color: var(--text-primary);
+  text-decoration-thickness: 0.15em;
+}
+
+.story {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  max-width: 72ch;
+  width: 100%;
+  margin-inline: auto;
+}
+
+.storyHeader,
+.prose,
+.storySection,
+.education,
+.disclosureBody,
+.continueNav {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.eyebrow {
+  composes: eyebrow from "../../../styles/layout.module.css";
+}
+
+.title {
+  font-size: var(--text-h1);
+  letter-spacing: -0.02em;
+}
+
+.sectionTitle {
+  font-size: var(--text-h2);
+}
+
+.itemTitle {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-h3);
+}
+
+.prose,
+.storySection > p,
+.mechanisms p,
+.education,
+.disclosureBody {
+  color: var(--text-secondary);
+}
+
+.scopeNote,
+.boundary {
+  padding-inline-start: var(--space-4);
+  border-inline-start: 2px solid var(--border-accent);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.mechanisms,
+.orientation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  padding-inline-start: var(--space-5);
+}
+
+.mechanisms li,
+.orientation li {
+  padding-inline-start: var(--space-2);
+}
+
+.mechanisms li::marker {
+  font-weight: 700;
+  color: var(--text-accent);
+}
+
+.closing {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-lead);
+}
+
+.disclosure {
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  overflow-wrap: anywhere;
+}
+
+.disclosure[open] {
+  border-color: var(--border-strong);
+}
+
+.summary {
+  min-height: var(--target-min);
+  padding: var(--space-4) var(--space-5);
+  border-radius: inherit;
+  font-weight: 650;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.summary:hover {
+  color: var(--text-accent);
+}
+
+.disclosureBody {
+  gap: var(--space-6);
+  padding: var(--space-2) var(--space-5) var(--space-5);
+}
+
+.education {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.education .sectionTitle,
+.storySection .sectionTitle,
+.itemTitle {
+  color: var(--text-primary);
+}
+
+.relationships {
+  margin: 0;
+  min-width: 0;
+}
+
+.diagramCaption {
+  padding-bottom: var(--space-3);
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.relationshipList {
+  margin: 0;
+}
+
+.relationship {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  padding-block: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.relationship dt {
+  font-weight: 700;
+  color: var(--text-accent);
+}
+
+.relationship dd {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.direction {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.returnButton {
+  justify-self: start;
+  min-height: var(--target-min);
+  max-width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--surface-raised-strong);
+  cursor: pointer;
+  transition: transform var(--motion-base) var(--easing-standard);
+}
+
+.returnButton:hover {
+  border-color: var(--border-interactive-hover);
+}
+
+.returnButton:active {
+  transform: translateY(1px);
+}
+
+@media (min-width: 48rem) {
+  .relationship {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+    gap: var(--space-5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .returnButton {
+    transition: none;
+    transform: none;
+  }
+}

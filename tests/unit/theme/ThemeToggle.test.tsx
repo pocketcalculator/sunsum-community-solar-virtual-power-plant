@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DARK_THEME,
@@ -50,6 +50,44 @@ afterEach(() => {
 });
 
 describe("the theme toggle", () => {
+  it("updates the compact state when the device changes until a preference is chosen", () => {
+    let light = true;
+    let changed = () => {};
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
+      get matches() { return query === LIGHT_SCHEME_QUERY && light; },
+      media: query,
+      addEventListener: (_event: string, listener: () => void) => { changed = listener; },
+      removeEventListener: vi.fn(),
+    })));
+    render(<ThemeToggle compact />);
+    const toggle = screen.getByRole("switch", { name: "Dark appearance" });
+    expect(toggle).not.toBeChecked();
+    act(() => { light = false; changed(); });
+    expect(toggle).toBeChecked();
+    expect(paintedTheme()).toBe(DARK_THEME);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    act(() => { light = true; changed(); light = false; changed(); });
+    expect(toggle).not.toBeChecked();
+    expect(paintedTheme()).toBe(LIGHT_THEME);
+  });
+
+  it("offers a compact binary switch initialized from the device without saving a default", () => {
+    stubDevice(true);
+    render(<ThemeToggle compact />);
+    const toggle = screen.getByRole("switch", { name: "Dark appearance" });
+    expect(toggle).not.toBeChecked();
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle).toBeChecked();
+    expect(paintedTheme()).toBe(DARK_THEME);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(DARK_THEME);
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(paintedTheme()).toBe(LIGHT_THEME);
+  });
+
   it("presents the three choices as one named group of radios", () => {
     render(<ThemeToggle />);
 

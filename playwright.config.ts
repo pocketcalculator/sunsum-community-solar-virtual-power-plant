@@ -10,6 +10,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  testIgnore: ["design-lab.spec.ts", "sunroom-preview.spec.ts", "vibehub.spec.ts", "connected-workspace.spec.ts"],
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
@@ -17,6 +18,7 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL,
+    ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -39,6 +41,13 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: false,
     timeout: 90_000,
-    env: { NEXT_TELEMETRY_DISABLED: "1" },
+    env: {
+      NEXT_TELEMETRY_DISABLED: "1",
+      SUNSUM_PUBLIC_DATA_MODE: "",
+      SUNSUM_PUBLIC_API_BASE_URL: "",
+      SUNSUM_LIVE_READ_AUTH_APPROVED: "",
+      SUNSUM_LIVE_EXPORT_APPROVED: "",
+      SUNSUM_LIVE_DOCUMENTS_APPROVED: "",
+    },
   },
 });

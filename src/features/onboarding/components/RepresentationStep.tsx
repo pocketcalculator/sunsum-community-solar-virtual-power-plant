@@ -57,9 +57,9 @@ export function RepresentationStep({
 
       {representation === "organisation" ? (
         <TextField
-          autoComplete="organization"
+          autoComplete="off"
           error={messageFor(issues, "organisationName")}
-          hint="The name people would recognise on an agreement."
+          hint="Use an invented organisation for this preview, not a real agreement."
           id={FIELD_ANCHOR.organisationName}
           label="Organisation name"
           onValueChange={onOrganisationNameChange}
