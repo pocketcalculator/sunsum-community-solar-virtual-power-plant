@@ -123,14 +123,18 @@ jobs:
         if: always()
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          # Best effort: this step also runs after a failure, so it must never
+          # mask the real cause with a reporting error.
+          web_app="$(jq -r '.webAppName' "$DEPLOYMENT_CONFIG" 2>/dev/null || echo unknown)"
+          resource_group="$(jq -r '.resourceGroupName' "$DEPLOYMENT_CONFIG" 2>/dev/null || echo unknown)"
           {
             echo "### Application code deployment"
             echo ""
             echo "| Field | Value |"
             echo "| --- | --- |"
-            echo "| Web app | \`$(jq -r '.webAppName' "$DEPLOYMENT_CONFIG")\` |"
-            echo "| Resource group | \`$(jq -r '.resourceGroupName' "$DEPLOYMENT_CONFIG")\` |"
+            echo "| Web app | \`${web_app:-unknown}\` |"
+            echo "| Resource group | \`${resource_group:-unknown}\` |"
             echo "| Commit | \`$GITHUB_SHA\` |"
             echo "| Result | ${{ job.status }} |"
             echo ""
