@@ -77,8 +77,13 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          normalized_sha256="${PARAMETERS_SHA256,,}"
+          if ! [[ "$normalized_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::AZURE_RESOURCES_PARAMETERS_SHA256/parameters_sha256 must be a 64-character hexadecimal SHA-256 digest." >&2
+            exit 1
+          fi
           printf '%s' "$PARAMETERS_JSON" > "$RUNNER_TEMP/resources.parameters.json"
-          printf '%s  %s\n' "${PARAMETERS_SHA256,,}" "$RUNNER_TEMP/resources.parameters.json" | sha256sum --check -
+          printf '%s  %s\n' "$normalized_sha256" "$RUNNER_TEMP/resources.parameters.json" | sha256sum --check -
           echo "PARAMETER_FILE=$RUNNER_TEMP/resources.parameters.json" >> "$GITHUB_ENV"
 
       - name: Azure Login
@@ -169,10 +174,20 @@ jobs:
             exit 1
           fi
           umask 077
+          normalized_parameters_sha256="${PARAMETERS_SHA256,,}"
+          normalized_approval_sha256="${APPROVAL_SHA256,,}"
+          if ! [[ "$normalized_parameters_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::parameters_sha256 must be a 64-character hexadecimal SHA-256 digest." >&2
+            exit 1
+          fi
+          if ! [[ "$normalized_approval_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::approval_sha256 must be a 64-character hexadecimal SHA-256 digest." >&2
+            exit 1
+          fi
           printf '%s' "$PARAMETERS_JSON" > "$RUNNER_TEMP/resources.parameters.json"
           printf '%s' "$APPROVAL_JSON" > "$RUNNER_TEMP/provision-approval.json"
-          printf '%s  %s\n' "${PARAMETERS_SHA256,,}" "$RUNNER_TEMP/resources.parameters.json" | sha256sum --check -
-          printf '%s  %s\n' "${APPROVAL_SHA256,,}" "$RUNNER_TEMP/provision-approval.json" | sha256sum --check -
+          printf '%s  %s\n' "$normalized_parameters_sha256" "$RUNNER_TEMP/resources.parameters.json" | sha256sum --check -
+          printf '%s  %s\n' "$normalized_approval_sha256" "$RUNNER_TEMP/provision-approval.json" | sha256sum --check -
           echo "PARAMETER_FILE=$RUNNER_TEMP/resources.parameters.json" >> "$GITHUB_ENV"
           echo "APPROVAL_FILE=$RUNNER_TEMP/provision-approval.json" >> "$GITHUB_ENV"
 
