@@ -15,11 +15,18 @@ demo seam.
 
 > [!WARNING]
 > **Requests are authenticated; sign-in is not.** Every implemented route
-> except `POST /auth/demo-switch` and `POST /auth/logout` resolves its caller
+> except `POST /auth/demo-switch`, `POST /auth/logout` and `POST /profiles`
+> resolves its caller
 > from a signed, `HttpOnly` `sunsum_session` cookie and answers
 > `401 unauthenticated` without one. Writes are additionally checked against
 > `Sec-Fetch-Site`, falling back to `Origin`, and a cross-site write is refused
 > `403 forbidden_origin`.
+>
+> `POST /profiles` is the `/join` sign-up form and is open by design — the
+> caller has no account yet, which is the point. It makes the cross-site check
+> itself rather than inheriting it from an identity step, accepts no
+> credential, and writes a `participant_profiles` row that grants no access and
+> that nothing in the authorization path reads.
 >
 > What is not production-ready is the sign-in endpoint. `POST /auth/demo-switch`
 > hands out one of three **seeded** identities and verifies no credential, so
@@ -84,7 +91,12 @@ it is misplaced.
 | **S-DOC**   | `documents/`   | `/sites/{id}/documents`, `/sites/{id}/acknowledgements`                      | partial |
 | **S-ACT**   | `activity/`    | `/projects/{id}/activity`                                                    | partial |
 | **S-VIEW**  | `views/`       | Composed reads: the site-owner dashboard, `/projects/{id}/deal-room`         | partial |
+| —           | `participants/`| `/profiles`                                                                  | done    |
 | —           | `export/`      | `/export`                                                                    | done    |
+
+`participants/` is not one of the design document's services either. It serves
+the `/join` sign-up form, which happens before a participant has any role, so
+it sits outside the role-scoped services rather than inside one of them.
 
 `export/` is not one of the design document's services. It is a composed read
 like `views/`, but it belongs to every role rather than to one, so giving it a

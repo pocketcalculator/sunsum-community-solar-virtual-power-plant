@@ -50,6 +50,7 @@ export {
   patchProjectVisibilityRoute,
   postEngagementRoute,
   postAssessmentOverrideRoute,
+  postParticipantProfileRoute,
   postProjectStageRoute,
   postSiteRoute,
   postSubmissionDecisionRoute,

@@ -2,8 +2,14 @@
 
 The database schema for the eleven tables in
 [section 5.2](../../../docs/sunsum_technical_design_doc.md) of the technical
-design, a store implementation that reads them, and the tooling to run the whole
-thing on a laptop.
+design plus `participant_profiles`, a store implementation that reads them, and
+the tooling to run the whole thing on a laptop.
+
+`participant_profiles` is the one table with no section behind it. It holds a
+completed `/join` sign-up form, which is a pre-account record: nobody is
+authenticated when it is written, nothing in it is verified, and nothing reads
+it to make an authorization decision. It is kept apart from `users` so that
+distinction cannot blur — see the header of `migrations/0005_participant_profiles.sql`.
 
 Read [ADR 0001](../../../infrastructure/docs/adr-0001-database-and-persistence.md)
 first. The choices here that look arbitrary are not, and the reasoning is
@@ -113,7 +119,7 @@ handed to core as an argument. Core stays callable with a fixture.
 
 | File                     | What it is                                                             |
 | ------------------------ | ---------------------------------------------------------------------- |
-| `schema.ts`              | The eleven tables, their constraints and their indexes                  |
+| `schema.ts`              | The eleven tables plus `participant_profiles`, their constraints and their indexes |
 | `enums.ts`               | The section 5.3 enumerations that no service directory owns yet         |
 | `client.ts`              | The connection pool, created lazily and cached across dev reloads       |
 | `entra.ts`               | Microsoft Entra tokens, used as the password against Azure              |
