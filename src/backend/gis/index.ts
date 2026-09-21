@@ -571,7 +571,8 @@ export class ArcGisCandidateParcelReader implements CandidateParcelReader {
     }
 
     const text = await response.text();
-    if (text.length > MAX_RESPONSE_BYTES) {
+    const bytes = new TextEncoder().encode(text).byteLength;
+    if (bytes > MAX_RESPONSE_BYTES) {
       throw new Error(`ArcGIS response exceeded ${MAX_RESPONSE_BYTES} bytes.`);
     }
     return text;
