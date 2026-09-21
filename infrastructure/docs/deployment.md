@@ -49,9 +49,9 @@ operations in the [operating guide](app-service-postgres.md).
 The legacy `deploy-azure.yml` deployment job is explicitly blocked before checkout
 or Azure login: `Provision-Infrastructure.ps1` still has incompatible first-time/F1
 and parameter assumptions. Its push validation/what-if path remains read-only.
-The newer `deploy-azure2.yaml` workflow remains manual-only with main's existing
-parameter contract; it is not dispatched by this change. Routine reviewed local
-deployment continues to use `Deploy-Infrastructure.ps1`.
+The newer `deploy-azure2.yaml` workflow is manual-only and accepts `main` or the
+exact `feature/infra-blob-rbac-test` branch. Routine reviewed local deployment
+continues to use `Deploy-Infrastructure.ps1`.
 
 B1 is a paid tier explicitly selected for this dev experiment after Azure rejected
 Linux F1 creation in the target resource group (`FreeLinuxSkuNotAllowedInResourceGroup`).
@@ -68,6 +68,25 @@ Contributor-only operators leave `deployRbac=false`; role-assignment writes need
 separate authorization. Invalid approvals fail before Azure calls, and permission
 errors are not silently skipped. False preserves existing grants in Incremental
 mode; it does not revoke them or prove access. SQL grants and bootstrap stay separate.
+
+On the RA test branch, workflow2 sets `deployRbac=true` in its generated parameters;
+the template default remains false. Manual dispatch requires
+`approved_web_principal_id` (the reviewed target app's system-assigned object ID)
+and `approval_reference` (approval for Contributor on both document containers).
+The workflow verifies its Azure subscription against the tracked dev config and
+the current app principal against the supplied UUID before deploying. The grant
+template checks the identity again during deployment. No real identity is stored
+in the workflow, and no new GitHub secret is required for these inputs.
+
+The Actions Azure identity needs role-assignment write permission at those scopes;
+Contributor alone cannot issue the grants. Environment restrictions and OIDC trust
+still apply. A missing identity, permission failure or policy denial stops the run;
+do not switch accounts or broaden permissions automatically. This existing-app
+trial is not a first-time identity-creation path. Selecting the feature branch
+still runs the **full infrastructure deployment** against the same dev-test resources,
+not an isolated copy or a role-only operation. It may update app settings/restart
+the site. Validation and what-if are followed by apply without a manual pause.
+Application code deployment and the legacy workflow remain unchanged.
 
 ### Test targets
 

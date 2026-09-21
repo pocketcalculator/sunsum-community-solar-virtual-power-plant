@@ -223,8 +223,11 @@ describe("the bounded Azure preparation contract", () => {
         return [key, value] as const;
       }),
     );
-    const redacted = new Set(["tenantId", "postgresAdminObjectId", "postgresAdminPrincipalName", "postgresAdminPrincipalType", "postgresAdministrators"]);
-    expect(workflowValues.size).toBe(26);
+    const redacted = new Set(["tenantId", "postgresAdminObjectId", "postgresAdminPrincipalName", "postgresAdminPrincipalType", "postgresAdministrators", "deployRbac", "approvedWebPrincipalId", "blobRoleApprovalReference"]);
+    expect(workflowValues.size).toBe(29);
+    expect(workflowValues.get("deployRbac")).toBe("true");
+    expect(workflowValues.get("approvedWebPrincipalId")).toBe("$approvedWebPrincipalId");
+    expect(workflowValues.get("blobRoleApprovalReference")).toBe("$blobRoleApprovalReference");
     expect([...parameterValues.keys()].filter((key) => !redacted.has(key)).sort())
       .toEqual([...workflowValues.keys()].filter((key) => !redacted.has(key)).sort());
     expect(workflowValues.get("postgresAdminObjectId")).toBe("$postgresAdminObjectId");
@@ -268,12 +271,13 @@ describe("the bounded Azure preparation contract", () => {
     }
   });
 
-  it("binds the approval-free workflow to main and its immutable OIDC subject", () => {
+  it("binds manual infrastructure deployment to main or the RA test branch and its immutable OIDC subject", () => {
     const workflow = read(".github/workflows/deploy-azure2.yaml");
     const credential = JSON.parse(
       read("infrastructure/config/github-actions-azure-infrastructure.federated-credential.json"),
     );
-    expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
+    expect(workflow).toContain("if: github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/infra-blob-rbac-test')");
+    expect(workflow).not.toMatch(/startsWith\(github.ref|\n\s+push:/u);
     expect(workflow).toContain("environment: azure-infrastructure");
     expect(credential).toMatchObject({
       issuer: "https://token.actions.githubusercontent.com",
@@ -281,6 +285,25 @@ describe("the bounded Azure preparation contract", () => {
         "repo:pocketcalculator@34637263/sunsum-community-solar-virtual-power-plant@1370296682:environment:azure-infrastructure",
       audiences: ["api://AzureADTokenExchange"],
     });
+  });
+
+  it("requires approved scoped Blob grants and verifies the identity before deploying", () => {
+    const workflow = read(".github/workflows/deploy-azure2.yaml");
+    for (const name of ["approved_web_principal_id", "approval_reference"]) {
+      expect(workflow).toMatch(new RegExp(`${name}:\\n\\s+description: [^\\n]+\\n\\s+required: true\\n\\s+type: string`, "u"));
+    }
+    expect(workflow).toContain("APPROVED_WEB_PRINCIPAL_ID: ${{ inputs.approved_web_principal_id }}");
+    expect(workflow).toContain("APPROVAL_REFERENCE: ${{ inputs.approval_reference }}");
+    expect(workflow).toContain("${actual_subscription,,}\" != \"${expected_subscription,,}");
+    expect(workflow).toContain("${actual_principal,,}\" != \"${APPROVED_WEB_PRINCIPAL_ID,,}");
+    expect(workflow).toContain("--arg approvedWebPrincipalId \"$APPROVED_WEB_PRINCIPAL_ID\"");
+    expect(workflow).toContain("--arg blobRoleApprovalReference \"$APPROVAL_REFERENCE\"");
+    const preflight = workflow.slice(workflow.indexOf("- name: Verify approved Blob grant target"), workflow.indexOf("- name: Build Bicep"));
+    expect(preflight).toContain("az webapp identity show");
+    expect(preflight).toContain("exit 1");
+    expect(preflight).not.toMatch(/az (?:role assignment create|webapp identity assign)/u);
+    expect(workflow.indexOf("- name: Verify approved Blob grant target")).toBeLessThan(workflow.indexOf("- name: Deploy test infrastructure"));
+    expect(read("infrastructure/templates/resources.bicep")).toContain("param deployRbac bool = false");
   });
 
   it("declares a fixture-only web host with database configuration kept in operator outputs", () => {

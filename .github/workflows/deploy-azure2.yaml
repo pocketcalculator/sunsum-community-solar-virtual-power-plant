@@ -6,6 +6,15 @@ name: Deploy SunSum Test Infrastructure (No Approval Artifacts)
 # disposable dev-test target. The final step creates billable Azure resources.
 on:
   workflow_dispatch:
+    inputs:
+      approved_web_principal_id:
+        description: "Reviewed system-assigned principal ID of app-sunsum-dev-test-centralus"
+        required: true
+        type: string
+      approval_reference:
+        description: "Review reference approving Blob Contributor (including delete) on both document containers"
+        required: true
+        type: string
 
 permissions:
   id-token: write
@@ -24,7 +33,7 @@ env:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/infra-blob-rbac-test')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: azure-infrastructure
@@ -39,6 +48,36 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify approved Blob grant target
+        shell: bash
+        env:
+          APPROVED_WEB_PRINCIPAL_ID: ${{ inputs.approved_web_principal_id }}
+          APPROVAL_REFERENCE: ${{ inputs.approval_reference }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$APPROVED_WEB_PRINCIPAL_ID" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]] ||
+             [ "$APPROVED_WEB_PRINCIPAL_ID" = "00000000-0000-0000-0000-000000000000" ]; then
+            echo "::error::Supply the reviewed nonzero app principal UUID."
+            exit 1
+          fi
+          if ! jq -en --arg reference "$APPROVAL_REFERENCE" \
+            '$reference | length >= 1 and length <= 200 and test("[^[:space:]]") and (test("[[:cntrl:]<>]") | not)' > /dev/null; then
+            echo "::error::Supply a nonempty review reference without placeholders or control characters (maximum 200 characters)."
+            exit 1
+          fi
+          expected_subscription="$(jq -er '.subscriptionId' infrastructure/config/dev.json)"
+          actual_subscription="$(az account show --query id --output tsv)"
+          if [ "${actual_subscription,,}" != "${expected_subscription,,}" ]; then
+            echo "::error::Azure login subscription differs from the reviewed dev target."
+            exit 1
+          fi
+          actual_principal="$(az webapp identity show --resource-group "$RESOURCE_GROUP_NAME" \
+            --name app-sunsum-dev-test-centralus --query principalId --output tsv)"
+          if [ "${actual_principal,,}" != "${APPROVED_WEB_PRINCIPAL_ID,,}" ]; then
+            echo "::error::The app identity is absent or differs from the approved principal. No deployment attempted."
+            exit 1
+          fi
 
       - name: Build Bicep
         shell: bash
@@ -86,6 +125,8 @@ jobs:
           TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
           POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
+          APPROVED_WEB_PRINCIPAL_ID: ${{ inputs.approved_web_principal_id }}
+          APPROVAL_REFERENCE: ${{ inputs.approval_reference }}
         run: |
           set -euo pipefail
           # The runner context is not available to workflow-level env, so the
@@ -99,6 +140,8 @@ jobs:
             --arg tenantId "$TENANT_ID" \
             --arg postgresAdminObjectId "$POSTGRES_ADMIN_OBJECT_ID" \
             --arg postgresAdminPrincipalName "$POSTGRES_ADMIN_PRINCIPAL_NAME" \
+            --arg approvedWebPrincipalId "$APPROVED_WEB_PRINCIPAL_ID" \
+            --arg blobRoleApprovalReference "$APPROVAL_REFERENCE" \
             '{
               "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
               contentVersion: "1.0.0.0",
@@ -111,6 +154,9 @@ jobs:
                 postgresServerName: { value: "db-sunsum-dev-test-centralus" },
                 databaseName: { value: "sunsum_test" },
                 runtimeRoleName: { value: "sunsum_runtime" },
+                deployRbac: { value: true },
+                approvedWebPrincipalId: { value: $approvedWebPrincipalId },
+                blobRoleApprovalReference: { value: $blobRoleApprovalReference },
                 tenantId: { value: $tenantId },
                 postgresAdminObjectId: { value: $postgresAdminObjectId },
                 postgresAdminPrincipalName: { value: $postgresAdminPrincipalName },
