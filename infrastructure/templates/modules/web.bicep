@@ -27,6 +27,41 @@ var telemetrySettings = empty(telemetryComponentName)
       }
     ]
 
+var baseAppSettings = [
+  {
+    name: 'NODE_ENV'
+    value: 'production'
+  }
+  {
+    name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+    value: 'true'
+  }
+  {
+    name: 'CUSTOM_BUILD_COMMAND'
+    value: 'npm ci --include=dev && npm run build'
+  }
+  {
+    name: 'NPM_CONFIG_ENGINE_STRICT'
+    value: 'true'
+  }
+  {
+    name: 'SUNSUM_STORE'
+    value: 'mock'
+  }
+  {
+    name: 'AZURE_STORAGE_BLOB_ENDPOINT'
+    value: blobEndpoint
+  }
+  {
+    name: 'SITE_DOCUMENTS_CONTAINER'
+    value: 'site-documents'
+  }
+  {
+    name: 'PROJECT_DOCUMENTS_CONTAINER'
+    value: 'project-documents'
+  }
+]
+
 resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {
   name: planName
   location: location
@@ -62,40 +97,7 @@ resource web 'Microsoft.Web/sites@2024-04-01' = {
       minTlsVersion: '1.2'
       scmMinTlsVersion: '1.2'
       http20Enabled: true
-      appSettings: concat([
-        {
-          name: 'NODE_ENV'
-          value: 'production'
-        }
-        {
-          name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
-          value: 'true'
-        }
-        {
-          name: 'CUSTOM_BUILD_COMMAND'
-          value: 'npm ci --include=dev && npm run build'
-        }
-        {
-          name: 'NPM_CONFIG_ENGINE_STRICT'
-          value: 'true'
-        }
-        {
-          name: 'SUNSUM_STORE'
-          value: 'mock'
-        }
-        {
-          name: 'AZURE_STORAGE_BLOB_ENDPOINT'
-          value: blobEndpoint
-        }
-        {
-          name: 'SITE_DOCUMENTS_CONTAINER'
-          value: 'site-documents'
-        }
-        {
-          name: 'PROJECT_DOCUMENTS_CONTAINER'
-          value: 'project-documents'
-        }
-      ], telemetrySettings)
+      appSettings: concat(baseAppSettings, telemetrySettings)
     }
   }
 }
