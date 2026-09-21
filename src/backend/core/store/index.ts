@@ -8,6 +8,7 @@ import {
 } from "../projects";
 import { isFailedResult } from "../shared";
 import type { InvestorProfile } from "../identity";
+import type { ParticipantProfileRecord } from "../participants";
 import type {
   AcknowledgementRecord,
   AssessmentRecord,
@@ -55,6 +56,8 @@ export interface BackendStore extends ProjectStore {
   getUser(id: string): Promise<UserRecord | null>;
   getInvestorProfileByUserId(userId: string): Promise<InvestorProfile | null>;
   upsertInvestorProfile(profile: InvestorProfile): Promise<void>;
+  addParticipantProfile(profile: ParticipantProfileRecord): Promise<void>;
+  listParticipantProfiles(): Promise<readonly ParticipantProfileRecord[]>;
   transaction<T>(operation: (store: BackendStore) => Promise<T>): Promise<T>;
   nextId(prefix: string): string;
 }
@@ -70,6 +73,7 @@ interface StoreState {
   acknowledgements: AcknowledgementRecord[];
   users: UserRecord[];
   investorProfiles: InvestorProfile[];
+  participantProfiles: ParticipantProfileRecord[];
 }
 
 export interface MemoryStoreOptions {
@@ -256,6 +260,12 @@ function demoState(seedDemoProjects: boolean): StoreState {
           },
         ]
       : [],
+    /**
+     * Never seeded. These rows come only from someone completing the `/join`
+     * form, so a fixture here would invent participants who never signed up
+     * and make an empty demo look like it had traffic.
+     */
+    participantProfiles: [],
     /**
      * The same six people as `db/seed.sql`, with the same ids, names, emails
      * and roles.
@@ -559,6 +569,19 @@ class MemoryBackendStore implements BackendStore {
         this.state.investorProfiles.push(profile);
       }
     });
+  }
+
+  /**
+   * Append-only: a repeat submission from the same address is another row, not
+   * an overwrite. The PostgreSQL store has no unique constraint on the email
+   * either, and the two must stay indistinguishable.
+   */
+  addParticipantProfile(profile: ParticipantProfileRecord): Promise<void> {
+    return this.mutate(() => this.state.participantProfiles.push(profile));
+  }
+
+  listParticipantProfiles(): Promise<readonly ParticipantProfileRecord[]> {
+    return Promise.resolve([...this.state.participantProfiles]);
   }
 
   async transaction<T>(

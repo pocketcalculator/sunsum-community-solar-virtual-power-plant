@@ -700,6 +700,11 @@ try {
     $global:AzureCodeBuildSettings = @()
     $global:AzureCodeKind = 'app,linux'
     $global:AzureCodeHelp = '--track-status --clean'
+    $global:AzureCodeDeployExitCode = 1
+    $global:AzureCodeDeployResponseId = 'current-deployment'
+    $global:AzureCodeDeploymentRecords = @()
+    $global:AzureCodeDeploymentStatus = 4
+    $global:AzureCodeDeploymentStatusReads = 0
     $global:AzureCodeChange = $false
     $global:AzureCodeChanged = $false
     $global:AzureCodePlanId = $global:AzurePlanId
@@ -742,9 +747,21 @@ try {
             if ($args[2] -ceq 'show') { return ($global:AzureCodeRuntime | ConvertTo-Json) }
             return (ConvertTo-Json -InputObject $global:AzureCodeBuildSettings -Depth 5)
         }
+        if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'log' -and $args[2] -ceq 'deployment' -and $args[3] -ceq 'show') {
+            $global:AzureCodeDeploymentStatusReads++
+            $record = if ($global:AzureCodeDeploymentRecords.Count -ge $global:AzureCodeDeploymentStatusReads) {
+                $global:AzureCodeDeploymentRecords[$global:AzureCodeDeploymentStatusReads - 1]
+            } else {
+                @{ id = $global:AzureCodeDeployResponseId; status = $global:AzureCodeDeploymentStatus; received_time = [DateTimeOffset]::UtcNow.ToString('o') }
+            }
+            return ($record | ConvertTo-Json)
+        }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'deploy') {
             if ($args -notcontains '--clean' -or $args[[array]::IndexOf($args, '--clean') + 1] -cne 'true') {
                 throw 'Source ZIP upload must explicitly request target cleanup.'
+            }
+            if ($args -notcontains '--async' -or $args[[array]::IndexOf($args, '--async') + 1] -cne 'true') {
+                throw 'Source ZIP upload must use asynchronous Kudu processing.'
             }
             $global:AzureCodeSnapshotPath = [string]$args[[array]::IndexOf($args, '--src-path') + 1]
             if ($global:AzureCodeSnapshotPath -ceq $global:AzureCodeOriginalPath -or
@@ -757,8 +774,8 @@ try {
                 }
             }
             $global:AzureCodeWrites++
-            $global:LASTEXITCODE = 1
-            return
+            $global:LASTEXITCODE = $global:AzureCodeDeployExitCode
+            return (@{ id = $global:AzureCodeDeployResponseId } | ConvertTo-Json)
         }
         throw 'Unexpected code deployment command.'
     }
@@ -800,6 +817,51 @@ try {
             throw "Unsafe source-build scenario $scenario reached deployment."
         }
     }
+    $global:AzureCodeKind = 'app,linux'
+    $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = '1.2'; scmMinTlsVersion = '1.2'; ftpsState = 'Disabled' }
+    $global:AzureCodeBuildSettings = @(
+        @{ name = 'SCM_DO_BUILD_DURING_DEPLOYMENT'; value = 'true' },
+        @{ name = 'CUSTOM_BUILD_COMMAND'; value = 'npm ci --include=dev && npm run build' }
+    )
+    $global:AzureCodeDeployExitCode = 0
+    $global:AzureCodeDeploymentStatus = 3
+    $global:AzureCodeDeploymentStatusReads = 0
+    $global:AzureCodeWrites = 0
+    $message = ''
+    try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+    if ($global:AzureCodeWrites -ne 1 -or $global:AzureCodeDeploymentStatusReads -ne 1 -or $message -notlike 'Remote App Service deployment failed*') {
+        throw 'A failed asynchronous Kudu deployment status must fail before the homepage probe.'
+    }
+    $global:AzureCodeDeployResponseId = ''
+    $global:AzureCodeDeploymentStatusReads = 0
+    $global:AzureCodeWrites = 0
+    $message = ''
+    try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+    if ($global:AzureCodeWrites -ne 1 -or $global:AzureCodeDeploymentStatusReads -ne 0 -or $message -notlike 'Azure CLI did not return an async deployment id*') {
+        throw 'An async deployment without an id must fail before status polling.'
+    }
+    $global:AzureCodeDeployResponseId = 'new-deployment'
+    $global:AzureCodeDeploymentRecords = @(
+        @{ id = 'previous-deployment'; status = 4; received_time = [DateTimeOffset]::UtcNow.AddMinutes(-10).ToString('o') },
+        @{ id = 'new-deployment'; status = 3; received_time = [DateTimeOffset]::UtcNow.ToString('o') }
+    )
+    $global:AzureCodeDeploymentStatusReads = 0
+    $global:AzureCodeWrites = 0
+    $global:AzureCodeSleepSeconds = 0
+    function global:Start-Sleep { param([int] $Seconds) $global:AzureCodeSleepSeconds += $Seconds }
+    $message = ''
+    try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+    finally {
+        Remove-Item Function:\Start-Sleep -Force
+    }
+    if ($global:AzureCodeWrites -ne 1 -or $global:AzureCodeDeploymentStatusReads -ne 2 -or
+        $global:AzureCodeSleepSeconds -ne 15 -or $message -notlike 'Remote App Service deployment failed*') {
+        throw 'A stale successful deployment record must not satisfy the asynchronous status check.'
+    }
+    $global:AzureCodeDeployExitCode = 1
+    $global:AzureCodeDeployResponseId = 'current-deployment'
+    $global:AzureCodeDeploymentRecords = @()
+    $global:AzureCodeDeploymentStatus = 4
     foreach ($property in @('minTlsVersion', 'scmMinTlsVersion')) {
         foreach ($value in @('1.0', '1.1', $null, '', 'TLS1_2', 'unknown', 1.2, 'missing')) {
             $global:AzureCodeRuntime = @{ linuxFxVersion = 'NODE|22-lts'; appCommandLine = 'npm run start -- --hostname 0.0.0.0'; minTlsVersion = '1.2'; scmMinTlsVersion = '1.2'; ftpsState = 'Disabled' }
@@ -895,7 +957,16 @@ try {
                     $planReference -cnotin $webResource[0].dependsOn -or $webResource[0].properties.siteConfig.alwaysOn -ne $false) {
                     throw 'The web module must create one Linux B1/Basic plan and link the web app to it with Always On disabled.'
                 }
-                $settings = @($webResource[0].properties.siteConfig.appSettings)
+                $appSettings = $webResource[0].properties.siteConfig.appSettings
+                if ($appSettings -isnot [string] -or -not $appSettings.StartsWith("[concat(variables('baseAppSettings'), ")) {
+                    throw 'Web app settings must extend the reviewed base list instead of replacing it.'
+                }
+                $appended = $appSettings.Substring("[concat(variables('baseAppSettings'), ".Length)
+                if ($appended -cnotmatch "'APPLICATIONINSIGHTS_CONNECTION_STRING'" -or
+                    $appended -cmatch "'(PG[A-Z]*|SUNSUM_DATABASE_AUTH|DATABASE_URL|SUNSUM_DB_AUTH)'") {
+                    throw 'Only the telemetry connection string may be appended to the web app settings.'
+                }
+                $settings = @($compiled.variables.baseAppSettings)
                 $store = @($settings | Where-Object { $_.name -ceq 'SUNSUM_STORE' })
                 if ($store.Count -ne 1 -or $store[0].value -cne 'mock' -or
                     @($settings | Where-Object { $_.name -cmatch '^(PG|SUNSUM_DATABASE_AUTH$|DATABASE_URL$|SUNSUM_DB_AUTH$)' }).Count -ne 0) {
@@ -906,11 +977,34 @@ try {
                 }
                 continue
             }
-            $modules = @($compiled.resources | Where-Object { $_.type -ceq 'Microsoft.Resources/deployments' })
-            $postgresModule = @($modules | Where-Object { $_.properties.parameters.Contains('serverName') })
-            if ($modules.Count -ne 3 -or $postgresModule.Count -ne 1) { throw 'The root must deploy web, Storage and PostgreSQL modules.' }
+            $rootResources = if ($compiled.resources -is [System.Collections.IDictionary]) { @($compiled.resources.Values) } else { @($compiled.resources) }
+            $modules = @($rootResources | Where-Object { $_.type -ceq 'Microsoft.Resources/deployments' })
+            $requiredModules = @($modules | Where-Object { -not $_.Contains('condition') })
+            $optionalModules = @($modules | Where-Object { $_.Contains('condition') })
+            $postgresModule = @($requiredModules | Where-Object { $_.properties.parameters.Contains('serverName') })
+            if ($requiredModules.Count -ne 3 -or $postgresModule.Count -ne 1) { throw 'The root must deploy web, Storage and PostgreSQL modules.' }
+            foreach ($optional in $optionalModules) {
+                if ($optional.condition -cnotin @("[parameters('enableObservability')]", "[parameters('enablePrivateNetworking')]", "[parameters('deployRbac')]")) {
+                    throw 'Optional root modules must stay gated behind their explicit switches.'
+                }
+            }
+            $blobRoles = @($optionalModules | Where-Object { $_.properties.parameters.Contains('blobDataAccess') })
+            if ($blobRoles.Count -ne 1 -or $compiled.parameters.deployRbac.defaultValue -ne $false -or
+                $blobRoles[0].condition -cne "[parameters('deployRbac')]" -or
+                $blobRoles[0].properties.parameters.blobDataAccess.value -cne 'Contributor' -or
+                $blobRoles[0].properties.parameters.approvedWebPrincipalId.value -cne "[parameters('approvedWebPrincipalId')]" -or
+                $blobRoles[0].properties.parameters.approvalReference.value -cne "[parameters('blobRoleApprovalReference')]") {
+                throw 'Blob grants must remain optional and bound to the approved web identity and review reference.'
+            }
             $postgresInputs = $postgresModule[0].properties.parameters
-            foreach ($binding in @{ serverName='postgresServerName'; databaseName='databaseName'; tenantId='tenantId'; adminObjectId='postgresAdminObjectId'; adminPrincipalName='postgresAdminPrincipalName'; adminPrincipalType='postgresAdminPrincipalType' }.GetEnumerator()) {
+            if ($compiled.parameters.postgresAdministrators.minLength -ne 1 -or
+                $compiled.parameters.postgresAdministrators.defaultValue.Count -ne 1 -or
+                $compiled.parameters.postgresAdministrators.defaultValue[0].objectId -cne "[parameters('postgresAdminObjectId')]" -or
+                $compiled.parameters.postgresAdministrators.defaultValue[0].principalName -cne "[parameters('postgresAdminPrincipalName')]" -or
+                $compiled.parameters.postgresAdministrators.defaultValue[0].principalType -cne "[parameters('postgresAdminPrincipalType')]") {
+                throw 'The root must accept a nonempty administrator list and retain the exact single-admin fallback.'
+            }
+            foreach ($binding in @{ serverName='postgresServerName'; databaseName='databaseName'; tenantId='tenantId'; administrators='postgresAdministrators' }.GetEnumerator()) {
                 if ($postgresInputs[$binding.Key].value -cne "[parameters('$($binding.Value)')]") { throw "PostgreSQL input is not bound to the root: $($binding.Key)" }
             }
             $postgresResources = $postgresModule[0].properties.template.resources
@@ -968,6 +1062,17 @@ try {
                 throw "PostgreSQL child writes must be serialized: $($dependency.Key) must depend on $($dependency.Value)."
             }
         }
+        if ($compiled.resources.entraAdmin.copy.mode -cne 'serial' -or $compiled.resources.entraAdmin.copy.batchSize -ne 1 -or
+            $compiled.resources.entraAdmin.copy.count -cne "[length(variables('validatedAdministrators'))]" -or
+            $compiled.resources.entraAdmin.properties.tenantId -cne "[parameters('tenantId')]" -or
+            $compiled.resources.entraAdmin.name -notlike '*validatedAdministrators*copyIndex()*objectId*' -or
+            $compiled.resources.entraAdmin.properties.principalName -notlike '*validatedAdministrators*copyIndex()*principalName*' -or
+            $compiled.resources.entraAdmin.properties.principalType -notlike '*validatedAdministrators*copyIndex()*principalType*' -or
+            $compiled.variables.validatedAdministrators -cne "[__bicep.validateAdministrators(parameters('administrators'))]" -or
+            $compiled.parameters.administrators.minLength -ne 1 -or $compiled.parameters.administrators.defaultValue.Count -ne 1 -or
+            $compiled.parameters.administrators.defaultValue[0].objectId -cne "[parameters('adminObjectId')]") {
+            throw 'PostgreSQL administrators must use validated, same-tenant, serialized list entries and preserve the single-admin fallback.'
+        }
         if ($compiled.variables.validatedDatabaseName -cne "[__bicep.validateDatabaseName(parameters('databaseName'))]" -or
             -not $compiled.resources.database.name.Contains("variables('validatedDatabaseName')") -or
             $compiled.parameters.databaseName.defaultValue -cne 'sunsum') {
@@ -975,6 +1080,57 @@ try {
         }
         $policy = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\postgres-database-name-policy.json') -Raw | ConvertFrom-Json -AsHashtable
         $relativeDatabaseTemplate = [System.IO.Path]::GetRelativePath($fixture, $databaseTemplate).Replace('\', '/')
+        $firstAdmin=@{objectId='aaaaaaaa-1111-4111-8111-111111111111';principalName='synthetic-admin';principalType='User'}
+        $secondAdmin=@{objectId='bbbbbbbb-2222-4222-8222-222222222222';principalName='synthetic-admin-group';principalType='Group'}
+        $thirdAdmin=@{objectId='cccccccc-3333-4333-8333-333333333333';principalName='synthetic-admin-service';principalType='ServicePrincipal'}
+        $adminCases=[System.Collections.Generic.List[object]]::new()
+        $adminCases.Add(@{allowed=$true;value=@($firstAdmin)})
+        $adminCases.Add(@{allowed=$true;value=@($firstAdmin,$secondAdmin,$thirdAdmin)})
+        $adminCases.Add(@{allowed=$false;value=@()})
+        $adminCases.Add(@{allowed=$false;value=@($firstAdmin,$firstAdmin)})
+        $uppercase=$firstAdmin.Clone()
+        $uppercase.objectId=$firstAdmin.objectId.ToUpperInvariant()
+        $adminCases.Add(@{allowed=$true;value=@($uppercase)})
+        $adminCases.Add(@{allowed=$false;value=@($firstAdmin,$uppercase)})
+        foreach ($entry in @(
+            @{field='objectId';value='00000000-0000-0000-0000-000000000000'},
+            @{field='objectId';value='gggggggg-1111-4111-8111-111111111111'},
+            @{field='objectId';value='aaaaaaaa1111-4111-8111-111111111111-'},
+            @{field='objectId';value='short'},
+            @{field='principalName';value=''},
+            @{field='principalName';value=' '},
+            @{field='principalName';value='<redacted>'},
+            @{field='principalName';value="invalid`nname"},
+            @{field='principalType';value='user'},
+            @{field='principalType';value='ManagedIdentity'}
+        )) {
+            $changed=$firstAdmin.Clone()
+            $changed[$entry.field]=$entry.value
+            $adminCases.Add(@{allowed=$false;value=@($changed)})
+        }
+        foreach ($case in $adminCases) {
+            $encoded=(ConvertTo-Json -InputObject $case.value -Depth 5 -Compress).Replace('\', '\\').Replace("'", "\'")
+            $inputPath=Join-Path $fixture "admin-list-$([guid]::NewGuid().ToString('N')).bicepparam"
+            $outputPath=[System.IO.Path]::ChangeExtension($inputPath, '.json')
+            $lines=@(
+                "using '$relativeDatabaseTemplate'",
+                "import { validateAdministrators } from '$relativeDatabaseTemplate'",
+                "param location = 'centralus'",
+                "param serverName = 'sample-postgres'",
+                "param tenantId = '22222222-2222-4222-8222-222222222222'",
+                "param administrators = validateAdministrators(json('$encoded'))"
+            )
+            Set-Content -LiteralPath $inputPath -Value $lines -Encoding utf8NoBOM
+            $diagnostics=& $BicepPath build-params $inputPath --no-restore --outfile $outputPath 2>&1
+            if ($case.allowed) {
+                if ($LASTEXITCODE -ne 0) { throw "Valid administrator list failed: $diagnostics" }
+                $actual=Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json -AsHashtable
+                if ($actual.parameters.administrators.value.Count -ne $case.value.Count) { throw 'Administrator list changed during compilation.' }
+            } elseif ($LASTEXITCODE -eq 0 -or (Test-Path -LiteralPath $outputPath)) {
+                throw 'Invalid administrator list passed Bicep evaluation.'
+            }
+        }
+        Write-Output "PostgreSQL administrator list guard passed: $($adminCases.Count) evaluations, single-admin fallback and serialized resource wiring."
         $databaseNames = @('a', 'sunsum', 'sunsum_prod', 'app123', ('a' * 63),
             'postgres', 'public', 'template0', 'template1', 'pg_custom', 'azure_custom', 'SunSum', '_sunsum', '1sunsum',
             'sunsum-prod', 'sunsum.prod', 'sunsum prod', ('a' * 64), ('db' + [char]0xe9), '', ' sunsum', 'sunsum ',
