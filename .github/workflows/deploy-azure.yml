@@ -135,8 +135,19 @@ jobs:
         env:
           PARAMETERS_JSON: ${{ secrets.AZURE_RESOURCES_PARAMETERS_JSON }}
           APPROVAL_JSON: ${{ secrets.AZURE_PROVISION_APPROVAL_JSON }}
+          PARAMETERS_SHA256: ${{ inputs.parameters_sha256 }}
+          APPROVAL_SHA256: ${{ inputs.approval_sha256 }}
         run: |
           set -euo pipefail
+          sha256_pattern='^[a-fA-F0-9]{64}$'
+          if [[ ! "$PARAMETERS_SHA256" =~ $sha256_pattern ]]; then
+            echo "::error::parameters_sha256 must be the 64-character hexadecimal SHA-256 digest of AZURE_RESOURCES_PARAMETERS_JSON, not an approval reference or label."
+            exit 1
+          fi
+          if [[ ! "$APPROVAL_SHA256" =~ $sha256_pattern ]]; then
+            echo "::error::approval_sha256 must be the 64-character hexadecimal SHA-256 digest of AZURE_PROVISION_APPROVAL_JSON, not an approval reference or label."
+            exit 1
+          fi
           missing_artifacts=""
           if [ -z "${PARAMETERS_JSON:-}" ]; then
             missing_artifacts="AZURE_RESOURCES_PARAMETERS_JSON"
