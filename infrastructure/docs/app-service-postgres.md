@@ -1177,7 +1177,7 @@ deployed component; it is never written to a deployment output.
 Cost and network assumptions to confirm before deploying:
 
 - Log Analytics ingestion and retention are billed. The workspace is created
-  with a 1 GiB daily cap (`logAnalyticsDailyQuotaGb`) and 30-day retention
+  with a 1 GB daily cap (`logAnalyticsDailyQuotaGb`) and 30-day retention
   (`logAnalyticsRetentionDays`). The cap stops ingestion for the rest of the
   UTC day; it is a cost guard, not a quality-of-service setting.
 - `10.30.0.0/16` is used for the dev-test network so it does not overlap the

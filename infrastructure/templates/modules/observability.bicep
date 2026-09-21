@@ -28,7 +28,7 @@ param applicationInsightsName string
 @minValue(30)
 @maxValue(730)
 param retentionInDays int = 30
-@description('Explicit daily ingestion cap in GiB. Ingestion stops for the rest of the UTC day once the cap is reached; it is a cost guard, not a quality-of-service guarantee.')
+@description('Explicit daily ingestion cap in GB. Ingestion stops for the rest of the UTC day once the cap is reached; it is a cost guard, not a quality-of-service guarantee.')
 @minValue(1)
 @maxValue(100)
 param dailyQuotaGb int = 1

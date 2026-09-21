@@ -105,6 +105,22 @@ resource privateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLin
   }
 }
 
+/*
+  Named references rather than positions in the inline subnet array, so
+  inserting or reordering a subnet cannot silently repoint the private endpoint
+  at the delegated App Service subnet. Only resource ids are read, so these add
+  no deployment-time read while still ordering consumers after the network.
+*/
+resource appSubnet 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' existing = {
+  parent: virtualNetwork
+  name: appSubnetName
+}
+
+resource privateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' existing = {
+  parent: virtualNetwork
+  name: privateEndpointSubnetName
+}
+
 resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' existing = {
   name: storageAccountName
 }
@@ -115,7 +131,7 @@ resource blobPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-11-01' = {
   tags: tags
   properties: {
     subnet: {
-      id: virtualNetwork.properties.subnets[1].id
+      id: privateEndpointSubnet.id
     }
     privateLinkServiceConnections: [
       {
@@ -148,8 +164,8 @@ resource blobPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZ
 }
 
 output virtualNetworkName string = virtualNetwork.name
-output appSubnetId string = virtualNetwork.properties.subnets[0].id
-output privateEndpointSubnetId string = virtualNetwork.properties.subnets[1].id
+output appSubnetId string = appSubnet.id
+output privateEndpointSubnetId string = privateEndpointSubnet.id
 output privateDnsZoneName string = privateDnsZone.name
 output privateDnsZoneLinkName string = privateDnsZoneLink.name
 output blobPrivateEndpointName string = blobPrivateEndpoint.name

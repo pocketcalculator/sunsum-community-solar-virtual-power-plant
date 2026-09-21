@@ -60,7 +60,7 @@ param applicationInsightsName string = 'appi-sunsum-${environmentName}-${locatio
 @minValue(30)
 @maxValue(730)
 param logAnalyticsRetentionDays int = 30
-@description('Explicit daily Log Analytics ingestion cap in GiB. A cost guard, not a service guarantee.')
+@description('Explicit daily Log Analytics ingestion cap in GB. A cost guard, not a service guarantee.')
 @minValue(1)
 @maxValue(100)
 param logAnalyticsDailyQuotaGb int = 1

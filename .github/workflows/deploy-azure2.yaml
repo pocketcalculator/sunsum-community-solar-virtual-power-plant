@@ -192,7 +192,7 @@ jobs:
             echo ""
             echo "| Resource | Name | Portal |"
             echo "| --- | --- | --- |"
-            while read -r label provider output_name; do
+            while IFS='|' read -r label provider output_name; do
               value="$(echo "$outputs" | jq -r --arg key "$output_name" '.[$key].value // ""')"
               if [ -z "$value" ] || [ "$value" = "null" ]; then
                 echo "| $label | not deployed | n/a |"
@@ -200,11 +200,11 @@ jobs:
                 echo "| $label | \`$value\` | [$value]($group_url/providers/$provider/$value) |"
               fi
             done <<'RESOURCES'
-          Log-Analytics-workspace Microsoft.OperationalInsights/workspaces AZURE_LOG_ANALYTICS_WORKSPACE_NAME
-          Application-Insights Microsoft.Insights/components AZURE_APPLICATION_INSIGHTS_NAME
-          Virtual-network Microsoft.Network/virtualNetworks AZURE_VIRTUAL_NETWORK_NAME
-          Blob-private-endpoint Microsoft.Network/privateEndpoints AZURE_BLOB_PRIVATE_ENDPOINT_NAME
-          Private-DNS-zone Microsoft.Network/privateDnsZones AZURE_BLOB_PRIVATE_DNS_ZONE_NAME
+          Log Analytics workspace|Microsoft.OperationalInsights/workspaces|AZURE_LOG_ANALYTICS_WORKSPACE_NAME
+          Application Insights|Microsoft.Insights/components|AZURE_APPLICATION_INSIGHTS_NAME
+          Virtual network|Microsoft.Network/virtualNetworks|AZURE_VIRTUAL_NETWORK_NAME
+          Blob private endpoint|Microsoft.Network/privateEndpoints|AZURE_BLOB_PRIVATE_ENDPOINT_NAME
+          Private DNS zone|Microsoft.Network/privateDnsZones|AZURE_BLOB_PRIVATE_DNS_ZONE_NAME
           RESOURCES
             echo ""
             echo "Private DNS virtual-network link: \`$(echo "$outputs" | jq -r '.AZURE_PRIVATE_DNS_ZONE_LINK_NAME.value // "not deployed"')\`"
