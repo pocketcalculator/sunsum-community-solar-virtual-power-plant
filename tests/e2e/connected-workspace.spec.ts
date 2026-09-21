@@ -16,14 +16,14 @@ import {
 
 const audits = new WeakMap<Page, SyntheticBrowserAudit>();
 const test = base.extend<{ audit: SyntheticBrowserAudit }>({
-  storageState: async ({ baseURL }, use) => {
-    await use(syntheticStorageState(syntheticLocalOrigin(baseURL)));
+  storageState: async ({ baseURL }, provide) => {
+    await provide(syntheticStorageState(syntheticLocalOrigin(baseURL)));
   },
-  audit: [async ({ page, baseURL }, use) => {
+  audit: [async ({ page, baseURL }, provide) => {
     const audit = await installSyntheticBrowserAudit(page, syntheticLocalOrigin(baseURL));
     audits.set(page, audit);
     try {
-      await use(audit);
+      await provide(audit);
     } finally {
       const storage = await audit.storageSnapshot();
       expect({
