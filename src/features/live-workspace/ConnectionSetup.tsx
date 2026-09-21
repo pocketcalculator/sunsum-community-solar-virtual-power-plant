@@ -17,7 +17,7 @@ export function ConnectionSetup({ configuration }: { configuration: LiveReadConf
       </ol>
       <div className={styles.actions}>
         <a className={`${styles.button} ${styles.primary}`}
-          href="https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/blob/feature/sunsum-live-read-ui-20260921/docs/ws1/connection-and-deployment-guide.md"
+          href="https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/blob/faccb47e7ba625f52ef6266fe7e7216b8adca59d/docs/ws1/connection-and-deployment-guide.md"
           target="_blank" rel="noreferrer">Open the connection guide</a>
         <a className={styles.button} href="https://nicolassalazar-pro.github.io/sunsum-ui-demo/"
           target="_blank" rel="noreferrer">Explore the separate fictional demo</a>
