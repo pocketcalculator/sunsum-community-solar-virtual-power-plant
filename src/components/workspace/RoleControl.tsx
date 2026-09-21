@@ -99,7 +99,6 @@ export function RoleControl({ value, allowedRoles, mode, onChange }: RoleControl
             aria-describedby={disabled ? `${id}-${role.value}-unavailable` : undefined}
             onChange={() => choose(role.value)} onKeyDown={(event) => keyboard(event, role.value)} />
           <span>{role.label}</span>
-          {disabled && <small id={`${id}-${role.value}-unavailable`} className={s.unavailable} aria-hidden="true">
             {mode === "live" ? "Not granted" : "Unavailable"}
           </small>}
         </label>;
