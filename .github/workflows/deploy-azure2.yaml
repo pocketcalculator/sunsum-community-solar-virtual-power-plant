@@ -46,6 +46,32 @@ jobs:
           set -euo pipefail
           az bicep build --file "$TEMPLATE_FILE"
 
+      # Fail loudly with a clear message instead of letting the Azure CLI
+      # steps below fail with an opaque ARM template validation error when
+      # these repository secrets have not been provisioned.
+      - name: Check required secrets
+        shell: bash
+        env:
+          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          POSTGRES_ADMIN_OBJECT_ID: ${{ secrets.POSTGRES_ADMIN_OBJECT_ID }}
+          POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ secrets.POSTGRES_ADMIN_PRINCIPAL_NAME }}
+        run: |
+          set -euo pipefail
+          missing_secrets=""
+          if [ -z "${TENANT_ID:-}" ]; then
+            missing_secrets="AZURE_TENANT_ID"
+          fi
+          if [ -z "${POSTGRES_ADMIN_OBJECT_ID:-}" ]; then
+            missing_secrets="${missing_secrets}${missing_secrets:+, }POSTGRES_ADMIN_OBJECT_ID"
+          fi
+          if [ -z "${POSTGRES_ADMIN_PRINCIPAL_NAME:-}" ]; then
+            missing_secrets="${missing_secrets}${missing_secrets:+, }POSTGRES_ADMIN_PRINCIPAL_NAME"
+          fi
+          if [ -n "$missing_secrets" ]; then
+            echo "::error::Missing required repository secrets: $missing_secrets. Provision these secrets before dispatching this workflow."
+            exit 1
+          fi
+
       - name: Validate deployment
         shell: bash
         env:
