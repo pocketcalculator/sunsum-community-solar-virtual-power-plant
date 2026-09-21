@@ -1,18 +1,24 @@
 import { isIntentOptionId } from "@/domain/intents";
 import { isUserTypeId } from "@/domain/userTypes";
 
+import type { Viewer } from "../../core/identity";
 import {
   createParticipantProfile,
+  DEFAULT_PROFILE_LIMIT,
   isAccountMethod,
   isRepresentation,
+  listParticipantProfiles,
   MAX_EMAIL_LENGTH,
   MAX_FULL_NAME_LENGTH,
   MAX_INTENT_OPTIONS,
   MAX_ORGANISATION_NAME_LENGTH,
+  MAX_PROFILE_LIMIT,
   type ParticipantProfileInput,
+  type ParticipantProfileQuery,
 } from "../../core/participants";
 import { failure, ok, type Result } from "../../core/shared";
 import { demoBackendStore, type BackendStore } from "../../core/store";
+import { requireRole } from "../identity";
 import {
   failureResponse,
   jsonResponse,
@@ -81,6 +87,66 @@ export async function postParticipantProfileRoute(request: Request): Promise<Res
   const crossSite = rejectCrossSiteRequest(request);
   if (crossSite !== null) return failureResponse(crossSite);
   return handlePostParticipantProfile(request, demoBackendStore);
+}
+
+/**
+ * The operator read of the sign-up list.
+ *
+ * The write is open to the world, so the read is the half that needs a role.
+ * These rows are names, email addresses and stated intentions that nobody has
+ * verified, collected from people who have no account and therefore cannot
+ * themselves come back and read them; the only caller with a reason to see the
+ * list is the operator reconciling it.
+ */
+export async function handleGetParticipantProfiles(
+  request: Request,
+  viewer: Viewer,
+  store: BackendStore = demoBackendStore,
+): Promise<Response> {
+  const query = parseParticipantProfileQuery(new URL(request.url).searchParams);
+  if (!query.ok) return failureResponse(query.failure);
+  const result = await listParticipantProfiles(viewer, query.value, store);
+  return result.ok ? jsonResponse(result.value) : failureResponse(result.failure);
+}
+
+export async function getParticipantProfilesRoute(request: Request): Promise<Response> {
+  const viewer = await requireRole(request, "operator");
+  if (!viewer.ok) return failureResponse(viewer.failure);
+  return handleGetParticipantProfiles(request, viewer.value);
+}
+
+export function parseParticipantProfileQuery(
+  params: URLSearchParams,
+): Result<ParticipantProfileQuery> {
+  const unknown = [...params.keys()].find((key) => key !== "limit");
+  if (unknown !== undefined) {
+    return failure("invalid_query", "Unknown query parameter.", { parameter: unknown });
+  }
+
+  const raw = params.get("limit");
+  if (raw === null) return ok({ limit: DEFAULT_PROFILE_LIMIT });
+
+  /**
+   * Matched as digits rather than passed to `Number`, which accepts `1e3`,
+   * `0x10`, ` 5 ` and `Infinity` — all of which would read as a limit the
+   * caller did not write.
+   */
+  if (!/^\d+$/.test(raw)) {
+    return failure("invalid_query", "Expected a positive integer.", {
+      parameter: "limit",
+      value: raw,
+    });
+  }
+
+  const limit = Number(raw);
+  if (limit < 1 || limit > MAX_PROFILE_LIMIT) {
+    return failure("invalid_query", "Limit is out of range.", {
+      parameter: "limit",
+      limit: MAX_PROFILE_LIMIT,
+    });
+  }
+
+  return ok({ limit });
 }
 
 export function parseParticipantProfile(

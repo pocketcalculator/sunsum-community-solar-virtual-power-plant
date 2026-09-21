@@ -62,7 +62,8 @@ coverage without verifiable evidence.
   Inject stores at the composition boundary; core, handlers, and browser code
   must not construct clients. `/join` posts to `POST /api/profiles`, which
   appends a `participant_profiles` row; that row is a pre-account record and
-  grants nothing. Endpoint identities remain fixed demo principals, not
+  grants nothing, and `GET /api/profiles` reads the list for operators only.
+  Endpoint identities remain fixed demo principals, not
   authenticated participants.
 - Application persistence uses `DATABASE_URL` and `SUNSUM_DB_AUTH`; the separate
   connection/migration tooling uses `PG*` and `SUNSUM_DATABASE_AUTH`. Supplying

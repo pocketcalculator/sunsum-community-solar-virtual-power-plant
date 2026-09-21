@@ -1,1 +1,4 @@
-export { postParticipantProfileRoute as POST } from "@/backend";
+export {
+  getParticipantProfilesRoute as GET,
+  postParticipantProfileRoute as POST,
+} from "@/backend";

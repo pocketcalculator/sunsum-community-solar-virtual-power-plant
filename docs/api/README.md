@@ -15,6 +15,7 @@ the proposed internal S-VIA contract.
 | Operator | `GET /submissions`, `GET /submissions/{id}`, `POST /submissions/{id}/decision` |
 | Operator | `GET /pipeline`, `PATCH /projects/{id}`, `POST /projects/{id}/stage`, `PATCH /projects/{id}/visibility` |
 | Operator | `GET /projects/{id}/engagements` |
+| Operator | `GET /profiles` |
 | Investor | `GET /investors/me/profile`, `POST /investors/me/profile`, `GET /portfolio` |
 | Investor | `POST /projects/{id}/engagements`, `GET /me/engagements`, `GET /projects/{id}/funding-needs`, `GET /projects/{id}/deal-room` |
 | Anonymous | `POST /auth/demo-switch`, `POST /auth/logout`, `POST /profiles` |
@@ -38,7 +39,9 @@ rules.
 > definition is used by someone who has no account, so it authenticates nobody
 > and instead checks `Sec-Fetch-Site`/`Origin` directly. What it writes is a
 > `participant_profiles` row — a pre-account record that grants no access, is
-> never read by the authorization path, and carries no credential. The role is
+> never read by the authorization path, and carries no credential. `GET
+> /profiles` on the same path is operator-only: the write is open, so the read
+> is where the role check lives. The role is
 > read from the user row on each request, not from
 > the token, so a caller cannot select their own role and a role changed in the
 > database takes effect immediately.

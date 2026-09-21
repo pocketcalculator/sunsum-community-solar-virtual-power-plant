@@ -191,6 +191,43 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ValidationError" }
+    get:
+      tags: [Participants]
+      operationId: listParticipantProfiles
+      summary: Operator read of the sign-up list
+      description: |
+        Operator-only. The write half of this path is open to the world, so the
+        read half is where the role check lives: these rows are names, email
+        addresses and stated intentions that nobody has verified, collected
+        from people who have no account and cannot come back and read them
+        themselves.
+
+        Returned newest first. The page is taken from the most recent end, so
+        a capped read shows today's sign-ups rather than the oldest rows.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            How many of the most recent profiles to return. Written as digits;
+            `1e3` and similar are refused rather than coerced.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
+      responses:
+        "200":
+          description: The most recent profiles, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ParticipantProfile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
   /me:
     get:
       tags: [Identity]
