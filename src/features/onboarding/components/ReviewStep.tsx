@@ -1,9 +1,8 @@
 import { CheckboxField } from "@/components/ui/form/CheckboxField";
-import type { FieldIssue } from "../model/profile";
+import type { FieldIssue, ProfileDraft } from "../model/profile";
 import {
   PROFILE_STEP_LIST,
   validateStep,
-  type ProfileFlowState,
   type ProfileStepId,
 } from "../model/steps";
 import { buildProfileSummary } from "../model/validation";
@@ -13,7 +12,7 @@ import buttons from "./buttons.module.css";
 import styles from "./ReviewStep.module.css";
 
 interface ReviewStepProps {
-  state: ProfileFlowState;
+  draft: ProfileDraft;
   issues: readonly FieldIssue[];
   onConsentChange: (accepted: boolean) => void;
   onEditStep: (step: ProfileStepId) => void;
@@ -27,16 +26,15 @@ interface ReviewStepProps {
  * stays a separate gate, checked when the step is submitted.
  */
 export function ReviewStep({
-  state,
+  draft,
   issues,
   onConsentChange,
   onEditStep,
 }: ReviewStepProps) {
-  const { draft } = state;
   const summary = buildProfileSummary({ ...draft, consentAccepted: true });
 
   const outstanding = PROFILE_STEP_LIST.filter((step) => step.id !== "review")
-    .map((step) => ({ step, stepIssues: validateStep(step.id, state) }))
+    .map((step) => ({ step, stepIssues: validateStep(step.id, draft) }))
     .filter((entry) => entry.stepIssues.length > 0);
 
   // Earliest unfinished step: every step before it already passes, so it is
@@ -87,7 +85,7 @@ export function ReviewStep({
       <CheckboxField
         checked={draft.consentAccepted}
         error={messageFor(issues, "consentAccepted")}
-        hint="Sunsum cannot store this profile yet. Finishing only shows your answers back to you."
+        hint="This public preview only displays your fictional answers. It does not create an account or request a code."
         id={FIELD_ANCHOR.consentAccepted}
         label="I understand that these details are not saved or sent anywhere today."
         onCheckedChange={onConsentChange}

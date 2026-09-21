@@ -1,3 +1,14 @@
+.about {
+  max-width: 70ch;
+  color: var(--text-secondary);
+}
+
+.storyLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 .prerequisites {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));

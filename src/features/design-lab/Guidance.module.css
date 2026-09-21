@@ -1,0 +1,61 @@
+.welcome { max-width: 1100px; margin: 24px auto 0; text-align: center; }
+.learning { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); text-align: left; }
+.learning p { color: var(--lab-muted); line-height: var(--line-normal); margin-block: var(--space-3); }
+.revisit { min-height: var(--target-min); padding: var(--space-3) var(--space-4); border: 1px solid var(--lab-line); border-radius: var(--radius-sm); background: var(--lab-surface-alt); color: var(--lab-text); }
+.revisit:focus-visible { outline: var(--focus-ring-width) solid var(--lab-focus); outline-offset: var(--focus-ring-offset); }
+.welcome > h1 { margin: 22px 0 18px; font-family: var(--lab-font-display); font-size: clamp(44px, 5.2vw, 70px); font-weight: 400; line-height: 1.05; letter-spacing: -.045em; }
+.welcome > h1 em { color: var(--lab-accent-ink); font-weight: 400; }
+.intro { max-width: 480px; margin: 0 auto 35px; color: var(--lab-muted); font-size: 15px; line-height: 1.7; }
+.paths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; text-align: left; margin-bottom: 24px; }
+.path { position: relative; padding: 30px 25px 22px; border: 1px solid var(--lab-line); border-radius: 18px; background: var(--lab-surface); color: var(--lab-text); text-align: left; overflow: hidden; transition: transform 220ms, background 220ms; }
+.path:hover { transform: translateY(-5px); background: var(--lab-hero); }
+.pathNumber { position: absolute; top: 25px; right: 25px; color: var(--lab-muted); font-family: var(--font-mono); font-size: 11px; }
+.pathIcon { display: grid; grid-template-columns: 1fr; place-items: center; width: 76px; height: 76px; background: var(--lab-hero); color: var(--lab-accent-ink); border-radius: 50%; margin-bottom: 30px; }
+.path h2 { font-size: 23px; margin-bottom: 12px; }
+.path p { font-size: 13px; color: var(--lab-muted); min-height: 42px; }
+.pathAction { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--lab-line); padding-top: 19px; margin-top: 26px; font-size: 12px; color: var(--lab-accent-ink); }
+.welcomeActions { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px; margin: 24px 0; }
+.boundary { display: flex; justify-content: center; align-items: center; gap: 7px; margin: 35px 0 15px; font-size: 11px; color: var(--lab-muted); }
+.helpActions { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+.companion { min-width: 0; padding: var(--space-4); border: 1px solid var(--lab-line); border-radius: var(--lab-radius); background: var(--lab-surface); text-align: left; }
+.companionHeading { display: flex; align-items: start; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+.companionHeading h2 { font-size: var(--text-h3); }
+.assistant { display: flex; flex-direction: column; min-height: 0; }
+.support { margin-top: var(--space-3); font-size: var(--text-sm); color: var(--lab-muted); }
+.support summary { cursor: pointer; min-height: var(--target-min); padding-block: var(--space-2); color: var(--lab-text); }
+.support p { margin-top: var(--space-2); line-height: var(--line-normal); }
+.quickPaths { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+.quickPaths button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--lab-line); padding: 8px 10px; font-size: 11px; border-radius: 8px; background: var(--lab-bg); color: var(--lab-text); }
+.messages { flex: 1; overflow: auto; min-height: 100px; max-height: 23rem; padding-right: 5px; display: flex; flex-direction: column; gap: 20px; padding-bottom: 25px; overscroll-behavior: contain; }
+.assistantMessage { display: flex; align-items: start; gap: 9px; }
+.messageAvatar { display: grid; grid-template-columns: 1fr; place-items: center; width: 27px; height: 27px; border-radius: 50%; background: var(--lab-hero); color: var(--lab-accent-ink); flex-shrink: 0; }
+.assistantMessage p { font-size: 13px; line-height: 1.85; color: var(--lab-text); }
+.userMessage { align-self: end; max-width: 90%; background: var(--lab-hero); color: var(--lab-hero-ink); border-radius: 12px 12px 3px 12px; padding: 13px 16px; font-size: 13px; }
+.composer { padding: 12px; border: 1px solid var(--lab-line); border-radius: 12px; background: var(--lab-bg); margin-top: auto; }
+.composer textarea { width: 100%; resize: vertical; min-height: 70px; background: none; color: var(--lab-text); border: none; outline: none; font-size: 13px; }
+.composerActions { display: flex; align-items: center; gap: 5px; }
+.composerActions > button:last-child { margin-left: auto; }
+.assistantDisclaimer { font-size: 10px; line-height: 1.6; color: var(--lab-muted); margin-top: 12px; }
+.scope { color: var(--lab-muted); font-size: 13px; margin-top: 12px; }
+.typedOnly { color: var(--lab-muted); font-size: 12px; }
+.quickPaths button { min-height: 44px; }
+.composer textarea:focus-visible { outline: 2px solid var(--lab-focus); outline-offset: 4px; }
+@media (max-width: 1000px) { .paths { gap: 13px; } .path { padding: 25px 18px 20px; } .path h2 { font-size: 20px; } .pathNumber { right: 18px; } }
+@media (max-width: 720px) {
+  .welcome { margin-top: 20px; }
+  .welcome > h1 { font-size: 45px; }
+  .intro { font-size: 14px; margin-bottom: 25px; }
+  .paths { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .path { padding: 24px; }
+  .pathIcon { width: 54px; height: 54px; margin-bottom: 20px; }
+  .path p { min-height: 0; font-size: 14px; }
+  .pathAction { font-size: 13px; margin-top: 19px; }
+  .boundary { font-size: 12px; align-items: start; text-align: left; }
+  .boundary svg { flex-shrink: 0; margin-top: 3px; }
+  .assistant { min-height: 0; height: auto; max-height: none; }
+  .assistantMessage p, .userMessage, .composer textarea { font-size: 14px; }
+  .composer textarea { font-size: 16px; }
+  .quickPaths button { font-size: 12px; min-height: 44px; }
+  .assistantDisclaimer { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) { .path { transition: none; } .path:hover { transform: none; } }

@@ -10,10 +10,8 @@ import type { FieldIssue, ProfileField } from "../model/profile";
  */
 export const FIELD_ANCHOR = {
   intentOptionIds: "profile-intent",
-  accountMethodId: "profile-account-method",
   fullName: "profile-full-name",
   email: "profile-email",
-  password: "profile-password",
   representation: "profile-representation",
   organisationName: "profile-organisation-name",
   userTypeId: "profile-user-type",

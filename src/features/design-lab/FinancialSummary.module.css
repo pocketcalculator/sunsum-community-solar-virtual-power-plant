@@ -1,0 +1,87 @@
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.scope {
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.measures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0;
+}
+
+.measures > div {
+  min-width: 0;
+}
+
+.measures dt,
+.actuals dt {
+  color: var(--lab-text);
+  font-weight: 600;
+}
+
+.measures dd {
+  margin: 8px 0;
+}
+
+.measures dd > strong {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.measures dd > p {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.measures p,
+.measures small,
+.provenance,
+.actuals small {
+  color: var(--lab-muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.measures small,
+.actuals small {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.provenance {
+  margin-top: 24px;
+  font-size: 13px;
+}
+
+.provenance p + p {
+  margin-top: 8px;
+}
+
+.actuals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0;
+}
+
+.actuals dd {
+  margin: 8px 0 0;
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .measures,
+  .actuals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

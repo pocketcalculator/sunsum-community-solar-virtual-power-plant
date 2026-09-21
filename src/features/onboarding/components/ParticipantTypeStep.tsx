@@ -13,6 +13,7 @@ import {
   type UserTypeId,
 } from "@/domain/userTypes";
 import { FIELD_ANCHOR } from "./fieldIssues";
+import { previewRoleFor } from "../model/profile";
 import styles from "./ParticipantTypeStep.module.css";
 
 interface ParticipantTypeStepProps {
@@ -26,13 +27,14 @@ interface ParticipantTypeStepProps {
 const SUGGESTION_TAG = "Suggested for you";
 
 function ChosenTypeNote({ type }: { type: UserType }) {
-  if (type.role === null) {
+  const previewRole = previewRoleFor(type);
+  if (previewRole === null) {
     return (
-      <Callout title="No workspace for this one yet" tone="info">
+      <Callout title="Continue with learning and help" tone="info">
         <p>
-          There is no workspace planned for {type.label}. You can still choose
-          it, and you will not be dropped into a workspace that does not fit.
-          Nothing is stored today, so it does not sign you up for updates.
+          For {type.label}, this preview leads to learning and help, not a
+          separate workspace or an operator role. Nothing is saved, and choosing
+          this type does not sign you up for updates or a programme.
         </p>
       </Callout>
     );
@@ -40,8 +42,8 @@ function ChosenTypeNote({ type }: { type: UserType }) {
 
   return (
     <p className={styles.chosen}>
-      {type.label} maps to the {getParticipantRole(type.role).label} workspace,
-      which is what you would eventually use.
+      {type.label} gives you a {getParticipantRole(previewRole).label} context to
+      explore. It does not grant workspace access or choose your real role.
     </p>
   );
 }
@@ -104,7 +106,7 @@ export function ParticipantTypeStep({
               // Each group is announced separately, so the single-answer rule
               // is repeated in every group's description rather than stated
               // once in a lead paragraph a screen reader may never reach.
-              hint={`${group.summary} One answer across all ${USER_TYPE_GROUPS.length} groups.`}
+              hint={`${group.id === "interest" ? "Learning and help without a workspace assignment." : group.summary} One answer across all ${USER_TYPE_GROUPS.length} groups.`}
               id={
                 index === 0
                   ? FIELD_ANCHOR.userTypeId

@@ -49,6 +49,11 @@ describe("the actual module-boundary configuration", () => {
     ["src/components/ui/probe.tsx", "fs/promises"],
     ["src/components/ui/probe.tsx", "server-only"],
     ["src/components/ui/probe.tsx", "next/headers"],
+    ["src/components/workspace/probe.tsx", "@/features/design-lab"],
+    ["src/components/workspace/probe.tsx", "@/features/live-read"],
+    ["src/components/workspace/probe.tsx", "@/backend"],
+    ["src/components/workspace/probe.tsx", "next/headers"],
+    ["src/components/workspace/probe.tsx", "node:fs"],
     ["src/features/participation/probe.tsx", "../../app/page"],
     ["src/features/participation/probe.tsx", "@/features/onboarding"],
     [
@@ -182,6 +187,17 @@ describe("the actual module-boundary configuration", () => {
     ["src/features/operator-pipeline/probe.tsx", "../../backend"],
     ["src/features/operator-pipeline/probe.tsx", "next/headers"],
     ["src/features/operator-pipeline/probe.tsx", "pg"],
+    /**
+     * The workspace and the static demo each compose one named dependency set;
+     * every other feature stays out of reach, including a live reader reached
+     * from the synthetic entry.
+     */
+    ["src/features/live-workspace/probe.tsx", "@/features/investor-portfolio"],
+    ["src/features/live-workspace/probe.tsx", "@/features/design-lab"],
+    ["src/features/live-workspace/probe.tsx", "@/backend"],
+    ["src/features/design-lab/probe.tsx", "@/features/live-read"],
+    ["src/features/design-lab/probe.tsx", "@/features/live-workspace"],
+    ["src/features/design-lab/probe.tsx", "@/backend"],
   ])(
     "rejects %s importing %s",
     async (file, dependency) => {
@@ -250,6 +266,14 @@ describe("the actual module-boundary configuration", () => {
     /** A route composes a feature with the backend, which is its job. */
     ["app/dashboard/investor/probe.tsx", "@/features/investor-portfolio"],
     ["app/dashboard/operator/probe.tsx", "@/features/operator-pipeline"],
+    /** The two compositions the sibling rule names, and nothing else. */
+    ["src/features/live-workspace/probe.tsx", "@/features/live-read"],
+    ["src/features/live-workspace/probe.tsx", "@/features/community-context"],
+    ["src/features/design-lab/probe.tsx", "@/features/community-context"],
+    [
+      "src/features/design-lab/probe.tsx",
+      "@/features/site-owner-dashboard/model/mockDashboard",
+    ],
   ])(
     "permits %s importing %s",
     async (file, dependency) => {

@@ -95,7 +95,7 @@ test("the choice carries across pages without being chosen again", async ({
   await page.goto("/");
   await chooseTheme(page, /^light$/i);
 
-  await page.getByRole("link", { name: /create your profile/i }).first().click();
+  await page.getByRole("link", { name: "Explore participation", exact: true }).click();
   await expect(page).toHaveURL(/\/join$/);
 
   expect(await paintedTheme(page)).toBe("light");
