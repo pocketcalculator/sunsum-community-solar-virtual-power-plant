@@ -126,9 +126,32 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Check reviewed deployment artifacts availability
+        id: deployment-artifacts
+        shell: bash
+        env:
+          PARAMETERS_JSON: ${{ secrets.AZURE_RESOURCES_PARAMETERS_JSON }}
+          APPROVAL_JSON: ${{ secrets.AZURE_PROVISION_APPROVAL_JSON }}
+        run: |
+          set -euo pipefail
+          missing_artifacts=""
+          if [ -z "${PARAMETERS_JSON:-}" ]; then
+            missing_artifacts="AZURE_RESOURCES_PARAMETERS_JSON"
+          fi
+          if [ -z "${APPROVAL_JSON:-}" ]; then
+            missing_artifacts="${missing_artifacts}${missing_artifacts:+, }AZURE_PROVISION_APPROVAL_JSON"
+          fi
+          if [ -n "$missing_artifacts" ]; then
+            echo "::notice::Missing reviewed deployment artifact secrets: $missing_artifacts; skipping Azure deployment until an operator provisions them."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
       # Both reviewed artifacts are supplied as secrets and verified against the
       # digests recorded in the infrastructure review before any Azure write.
       - name: Materialize reviewed parameter and approval records
+        if: steps.deployment-artifacts.outputs.configured == 'true'
         shell: bash
         env:
           PARAMETERS_JSON: ${{ secrets.AZURE_RESOURCES_PARAMETERS_JSON }}
@@ -150,6 +173,7 @@ jobs:
           echo "APPROVAL_FILE=$RUNNER_TEMP/provision-approval.json" >> "$GITHUB_ENV"
 
       - name: Azure Login
+        if: steps.deployment-artifacts.outputs.configured == 'true'
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -157,6 +181,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Provision Infrastructure
+        if: steps.deployment-artifacts.outputs.configured == 'true'
         shell: pwsh
         env:
           SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
