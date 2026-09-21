@@ -143,6 +143,7 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
     window.addEventListener("popstate", back);
     return () => window.removeEventListener("popstate", back);
   }, [cancelNavigationReads]);
+  // Native history listeners may commit context and cancellation separately.
   useEffect(() => {
     const destination = historyDestination.current;
     if (!destination || contextHref(destination) !== contextHref(context)) return;
@@ -156,7 +157,7 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
     const selected = Array.from(root?.querySelectorAll<HTMLButtonElement>("[data-project-open]") ?? [])
       .find((button) => button.dataset.projectOpen === targetId);
     (retained ?? selected ?? document.getElementById("workspace-content"))?.focus();
-  }, [context, detailOpen, isCollection, targetId]);
+  }, [context, detailOpen, isCollection, targetId, navigation.generation]);
 
   const scheduleFocus = (focus: () => void) => {
     focusFrame.current = requestAnimationFrame(() => {

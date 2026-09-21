@@ -138,7 +138,9 @@ collection; they do not add business writes or assert remote service access.
   collection control or the historical selected record. Superseded navigation
   focus frames are canceled alongside reads. Mounted regressions reproduce the
   original focus loss, cover a different more recently opened record, and
-  distinguish an explicit identity refresh from another history return.
+  distinguish an explicit identity refresh from another history return. The
+  native-browser case also covers separate context/cancellation commits and
+  passes at desktop, tablet and mobile sizes without changing its focus oracle.
 
 The controller suite now exercises these cases together with mounted
 identity/role replacement, visibility retirement, bounded focus refresh and
@@ -183,7 +185,7 @@ authorization changes or proposals to rewrite stakeholder copy.
 
 ## Testing [TEST]
 
-> Last reviewed: 2026-09-21 | Open: 4
+> Last reviewed: 2026-09-21 | Open: 0
 
 Coverage findings are not assertions of production transport vulnerabilities.
 All service scenarios remain intercepted or mocked; none certifies real sign-in
@@ -192,10 +194,12 @@ or cloud deployment.
 ### TEST-1 - Browser I/O guards did not enforce origin and role operations
 
 - Severity: HIGH
-- Status: IN PROGRESS
+- Status: RESOLVED
 - File: `tests/e2e/connected-workspace.spec.ts`
-- Scope: Independently record foreign, unknown, role-inappropriate and mutation
-  traffic, then require no unexpected requests even in error scenarios.
+- Resolution: An independent context observer and exact origin/role/operation
+  allowlist cover every positive and negative scenario. Forbidden traffic cannot
+  be hidden by a successful response override. All 75 connected browser cases
+  pass with zero unexpected requests; harness regressions exercise violations.
 
 ### TEST-2 - Retirement was not exercised in a mounted workspace
 
@@ -210,18 +214,22 @@ or cloud deployment.
 ### TEST-3 - Identical manifests could hide stale export bytes
 
 - Severity: HIGH
-- Status: IN PROGRESS
+- Status: RESOLVED
 - File: `tests/e2e/connected-workspace.spec.ts`
-- Scope: Distinct preview/release manifests and unsuccessful rereads must prove
-  the saved bytes are fresh or no file is saved.
+- Resolution: Actual downloaded JSON and CSV contain release B identities and
+  names, with no preview A values. Both formats refuse denied, expired,
+  malformed and changed-identity rereads without saving or retaining preview A.
+  These cases pass in all three browser viewports.
 
 ### TEST-4 - Store sentinels missed deletion and caught access
 
 - Severity: MEDIUM
-- Status: IN PROGRESS
+- Status: RESOLVED
 - Files: `tests/e2e/{connected-workspace,unconfigured-workspace}.spec.ts`
-- Scope: Observe reads/writes/removals/clears independently of thrown errors and
-  require retained v1/v2 save canaries to remain byte-identical.
+- Resolution: Captured native storage methods and cross-document observations
+  detect caught reads/writes/removals/clears without repairing state. Both
+  seeded canaries remain byte-identical across 75 connected and 15 unconfigured/
+  alias browser cases. Unit regressions include successful destructive calls.
 
 ### TEST-5 - Entry isolation omitted framework-composed layouts
 
@@ -245,10 +253,13 @@ or cloud deployment.
 ### TEST-7 - Continuity never covered a filtered second-page selection
 
 - Severity: MEDIUM
-- Status: IN PROGRESS
+- Status: RESOLVED
 - File: `tests/e2e/connected-workspace.spec.ts`
-- Scope: A larger coherent wire fixture must retain actual controls, visible IDs,
-  selection and focus through detail, Documents, Reports and history return.
+- Resolution: A coherent 65-row fixture narrows through counts 62, 61 and 60.
+  The selected fourth record on the second 50-row page retains every filter,
+  sort, layout, visible ID, selected state, URL context and open-button focus
+  through detail, Documents, Reports and both return paths in all three
+  viewports. The exposed history-focus defect is resolved as RELY-6 above.
 
 ### TEST-8 - Delivered demo and operator contents were not inspected
 
