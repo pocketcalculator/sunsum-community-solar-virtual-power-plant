@@ -15,6 +15,24 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'DeploymentSafety.psm1') -Force
+function Test-SubmittedDeploymentRecord {
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary] $Deployment,
+        [AllowNull()][string] $DeploymentId,
+        [Parameter(Mandatory)][DateTimeOffset] $SubmittedAt
+    )
+    if (-not [string]::IsNullOrWhiteSpace($DeploymentId)) {
+        return $Deployment.Contains('id') -and $Deployment.id -is [string] -and $Deployment.id -ceq $DeploymentId
+    }
+    foreach ($field in @('received_time', 'start_time', 'end_time')) {
+        if (-not $Deployment.Contains($field) -or $Deployment[$field] -isnot [string]) { continue }
+        $timestamp = [DateTimeOffset]::MinValue
+        if ([DateTimeOffset]::TryParse($Deployment[$field], [ref]$timestamp) -and $timestamp -ge $SubmittedAt.AddSeconds(-5)) {
+            return $true
+        }
+    }
+    return $false
+}
 if ($SubscriptionId -eq [guid]::Empty -or [string]::IsNullOrWhiteSpace($ApprovalReference)) {
     throw 'An explicit subscription and code-deployment review reference are required.'
 }
@@ -78,11 +96,21 @@ try {
     }
     Assert-DeploymentSnapshot $snapshot
     Assert-DeploymentSnapshot $approvalSnapshot
-    & az webapp deploy --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
+    $deploymentSubmittedAt = [DateTimeOffset]::UtcNow
+    $deployRaw = & az webapp deploy --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
         --src-path $artifact.Path --type zip --clean true --async true --track-status false `
-        --only-show-errors --output none
+        --only-show-errors --output json
     if ($LASTEXITCODE -ne 0) {
         throw 'Deployment did not report success. It may still finish remotely: inspect deployment logs before retrying; do not change the web tier.'
+    }
+    $deploymentId = $null
+    try {
+        $deployResponse = ($deployRaw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
+        if ($deployResponse -is [System.Collections.IDictionary] -and $deployResponse.Contains('id') -and $deployResponse.id -is [string]) {
+            $deploymentId = $deployResponse.id
+        }
+    } catch {
+        $deploymentId = $null
     }
     $kuduDeploymentFailedStatus = '3'
     $kuduDeploymentSuccessStatus = '4'
@@ -92,7 +120,8 @@ try {
             --output json --only-show-errors
         if ($LASTEXITCODE -eq 0) {
             $deployment = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
-            if ($deployment -is [System.Collections.IDictionary] -and $deployment.Contains('status')) {
+            if ($deployment -is [System.Collections.IDictionary] -and $deployment.Contains('status') -and
+                (Test-SubmittedDeploymentRecord -Deployment $deployment -DeploymentId $deploymentId -SubmittedAt $deploymentSubmittedAt)) {
                 $status = [string]$deployment.status
                 if ($status -ceq $kuduDeploymentSuccessStatus) {
                     $deploymentSucceeded = $true

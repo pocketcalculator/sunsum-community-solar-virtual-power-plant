@@ -701,6 +701,8 @@ try {
     $global:AzureCodeKind = 'app,linux'
     $global:AzureCodeHelp = '--track-status --clean'
     $global:AzureCodeDeployExitCode = 1
+    $global:AzureCodeDeployResponseId = 'current-deployment'
+    $global:AzureCodeDeploymentRecords = @()
     $global:AzureCodeDeploymentStatus = 4
     $global:AzureCodeDeploymentStatusReads = 0
     $global:AzureCodeChange = $false
@@ -747,7 +749,12 @@ try {
         }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'log' -and $args[2] -ceq 'deployment' -and $args[3] -ceq 'show') {
             $global:AzureCodeDeploymentStatusReads++
-            return (@{ status = $global:AzureCodeDeploymentStatus } | ConvertTo-Json)
+            $record = if ($global:AzureCodeDeploymentRecords.Count -ge $global:AzureCodeDeploymentStatusReads) {
+                $global:AzureCodeDeploymentRecords[$global:AzureCodeDeploymentStatusReads - 1]
+            } else {
+                @{ id = $global:AzureCodeDeployResponseId; status = $global:AzureCodeDeploymentStatus; received_time = [DateTimeOffset]::UtcNow.ToString('o') }
+            }
+            return ($record | ConvertTo-Json)
         }
         if ($args[0] -ceq 'webapp' -and $args[1] -ceq 'deploy') {
             if ($args -notcontains '--clean' -or $args[[array]::IndexOf($args, '--clean') + 1] -cne 'true') {
@@ -768,7 +775,7 @@ try {
             }
             $global:AzureCodeWrites++
             $global:LASTEXITCODE = $global:AzureCodeDeployExitCode
-            return
+            return (@{ id = $global:AzureCodeDeployResponseId } | ConvertTo-Json)
         }
         throw 'Unexpected code deployment command.'
     }
@@ -825,7 +832,27 @@ try {
     if ($global:AzureCodeWrites -ne 1 -or $global:AzureCodeDeploymentStatusReads -ne 1 -or $message -notlike 'Remote App Service deployment failed*') {
         throw 'A failed asynchronous Kudu deployment status must fail before the homepage probe.'
     }
+    $global:AzureCodeDeployResponseId = 'new-deployment'
+    $global:AzureCodeDeploymentRecords = @(
+        @{ id = 'previous-deployment'; status = 4; received_time = [DateTimeOffset]::UtcNow.AddMinutes(-10).ToString('o') },
+        @{ id = 'new-deployment'; status = 3; received_time = [DateTimeOffset]::UtcNow.ToString('o') }
+    )
+    $global:AzureCodeDeploymentStatusReads = 0
+    $global:AzureCodeWrites = 0
+    $global:AzureCodeSleepSeconds = 0
+    function global:Start-Sleep { param([int] $Seconds) $global:AzureCodeSleepSeconds += $Seconds }
+    $message = ''
+    try { & (Join-Path $PSScriptRoot '..\Deploy-AppServiceCode.ps1') @deploy -Apply | Out-Null } catch { $message = $_.Exception.Message }
+    finally {
+        Remove-Item Function:\Start-Sleep -Force
+    }
+    if ($global:AzureCodeWrites -ne 1 -or $global:AzureCodeDeploymentStatusReads -ne 2 -or
+        $global:AzureCodeSleepSeconds -ne 15 -or $message -notlike 'Remote App Service deployment failed*') {
+        throw 'A stale successful deployment record must not satisfy the asynchronous status check.'
+    }
     $global:AzureCodeDeployExitCode = 1
+    $global:AzureCodeDeployResponseId = 'current-deployment'
+    $global:AzureCodeDeploymentRecords = @()
     $global:AzureCodeDeploymentStatus = 4
     foreach ($property in @('minTlsVersion', 'scmMinTlsVersion')) {
         foreach ($value in @('1.0', '1.1', $null, '', 'TLS1_2', 'unknown', 1.2, 'missing')) {
