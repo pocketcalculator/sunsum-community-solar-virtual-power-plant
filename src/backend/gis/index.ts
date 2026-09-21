@@ -254,7 +254,7 @@ function toPosition(value: readonly number[]): CandidateParcelPosition {
   return [value[0] as number, value[1] as number];
 }
 
-/** A linear ring needs four positions to close; fewer is not an area. */
+/** A linear ring needs four positions to enclose an area, and must be closed. */
 function toRing(value: unknown): CandidateParcelRing | null {
   if (!Array.isArray(value) || value.length < 4) return null;
   const ring: CandidateParcelPosition[] = [];
@@ -262,6 +262,9 @@ function toRing(value: unknown): CandidateParcelRing | null {
     if (!isPosition(position)) return null;
     ring.push(toPosition(position));
   }
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) ring.push(first);
   return ring;
 }
 
