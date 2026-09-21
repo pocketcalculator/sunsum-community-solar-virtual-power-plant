@@ -197,10 +197,12 @@ describe("the bounded Azure preparation contract", () => {
     expect(validateJob).toContain("az deployment group validate");
     expect(validateJob).toContain("az deployment group what-if");
     expect(validateJob).not.toContain("az deployment group create");
+    expect(validateJob).toContain("secrets.AZURE_VALIDATION_CLIENT_ID");
     expect(deployJob).toContain("needs: validate");
     expect(deployJob).toContain("environment: azure-infrastructure");
     expect(deployJob).not.toContain("github.event_name == 'workflow_dispatch'");
     expect(deployJob).toContain("az deployment group create");
+    expect(deployJob).toContain("secrets.AZURE_CLIENT_ID");
     expect(workflow.match(/az deployment group create/gu)).toHaveLength(1);
     expect(workflow.match(/uses: \.\/\.github\/actions\/compose-infrastructure-parameters/gu)).toHaveLength(2);
     expect(workflow.match(/rm -f "\$\{PARAMETERS_FILE:-\}"/gu)).toHaveLength(2);
