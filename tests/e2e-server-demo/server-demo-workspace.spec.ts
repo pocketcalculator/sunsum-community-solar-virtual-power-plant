@@ -177,15 +177,34 @@ async function expectSelectedDemoRole(page: Page, role: DemoRole) {
   await expect(group.locator('button[aria-current="true"]')).toHaveCount(1);
 }
 
+function observeDemoSwitch(page: Page, role: DemoRole) {
+  let postObserved = false;
+  const posted = page.waitForResponse((response) => {
+    const matches = new URL(response.url()).pathname === "/api/auth/demo-switch" &&
+      response.request().method() === "POST";
+    if (matches) postObserved = true;
+    return matches;
+  });
+  const confirmed = page.waitForResponse(async (response) => {
+    if (!postObserved || new URL(response.url()).pathname !== "/api/me" ||
+      response.request().method() !== "GET" || response.status() !== 200) return false;
+    const identity: unknown = await response.json();
+    return typeof identity === "object" && identity !== null &&
+      "user_id" in identity && identity.user_id === roleUser[role] &&
+      "role" in identity && identity.role === role;
+  });
+  return Promise.all([posted, confirmed]);
+}
+
 async function switchRole(page: Page, demo: DemoAudit, role: DemoRole) {
   demo.armRole(role);
-  const received = page.waitForResponse((response) =>
-    new URL(response.url()).pathname === "/api/auth/demo-switch" && response.request().method() === "POST");
+  const received = observeDemoSwitch(page, role);
   await demoRoleGroup(page).getByRole("button", { name: roleLabel[role], exact: true }).click();
-  const response = await received;
+  const [response, identity] = await received;
   expect(response.status()).toBe(200);
   expect(response.request().postData()).toBe(JSON.stringify({ role }));
-  expect(await response.json()).toMatchObject({ user_id: roleUser[role], role });
+  // The UI's fresh identity read proves the issued session; the unused POST body is not its authority.
+  expect(await identity.json()).toMatchObject({ user_id: roleUser[role], role });
   demo.clearWrites();
 }
 
@@ -254,8 +273,7 @@ test("a deliberate mock role switch retires an older real read before its late r
     const investor = demoRoleGroup(page).getByRole("button", { name: "Financier", exact: true });
     await expect(investor).toBeEnabled();
     demo.armRole("investor");
-    const switched = page.waitForResponse((response) =>
-      new URL(response.url()).pathname === "/api/auth/demo-switch" && response.request().method() === "POST");
+    const switched = observeDemoSwitch(page, "investor");
     await investor.click();
     await switching.started;
     const roles = demoRoleGroup(page);
@@ -272,10 +290,10 @@ test("a deliberate mock role switch retires an older real read before its late r
     expect(demo.calls.filter((call) => call.path === "/api/me")).toHaveLength(readsDuringSwitch);
     await expect(page.getByRole("region", { name: "Stored record detail", exact: true })).toHaveCount(0);
     switching.release();
-    const switchedResponse = await switched;
+    const [switchedResponse, identity] = await switched;
     expect(switchedResponse.status()).toBe(200);
     expect(switchedResponse.request().postData()).toBe('{"role":"investor"}');
-    expect(await switchedResponse.json()).toMatchObject({ user_id: DEMO_INVESTOR_USER_ID, role: "investor" });
+    expect(await identity.json()).toMatchObject({ user_id: DEMO_INVESTOR_USER_ID, role: "investor" });
     demo.clearWrites();
     await expect(page.getByRole("heading", { name: roleTitle.investor, exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "Stored record detail", exact: true })).toHaveCount(0);

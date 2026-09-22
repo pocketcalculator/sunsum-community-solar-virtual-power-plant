@@ -100,7 +100,7 @@ describe("separate runtime entry graphs", () => {
 
   it("tracks JSON as validated data without interpreting its string values as imports", () => {
     const graph = runtimeGraph(["static/main.tsx"], {
-      "static/main.tsx": 'import audio from "@/features/participation/content/pageAudioAssets.json"; export { audio };',
+      "static/main.tsx": 'import audio from "@/features/participation/content/pageAudioAssets.json" with { type: "json" }; export { audio };',
       "src/features/participation/content/pageAudioAssets.json": JSON.stringify({ note: 'import("@/backend")' }),
     });
     expect(graph).toEqual(["static/main.tsx", "src/features/participation/content/pageAudioAssets.json"]);

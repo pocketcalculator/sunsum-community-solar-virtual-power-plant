@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { expect, type Page } from "@playwright/test";
-import assets from "../../src/features/participation/content/pageAudioAssets.json";
+import assets from "../../src/features/participation/content/pageAudioAssets.json" with { type: "json" };
 
 type Topic = keyof typeof assets.tracks;
 

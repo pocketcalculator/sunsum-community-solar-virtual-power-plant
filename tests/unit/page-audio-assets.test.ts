@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import assets from "../../src/features/participation/content/pageAudioAssets.json";
+import assets from "../../src/features/participation/content/pageAudioAssets.json" with { type: "json" };
 
 describe("approved public audio manifest", () => {
   it("contains only the three measured topic mappings and no private correspondence", () => {

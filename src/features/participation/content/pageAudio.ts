@@ -1,4 +1,4 @@
-import assets from "./pageAudioAssets.json";
+import assets from "./pageAudioAssets.json" with { type: "json" };
 
 export type PageAudioTopic = "need" | "opportunity" | "impact";
 export interface PageAudioConfiguration {

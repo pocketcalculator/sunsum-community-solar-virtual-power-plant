@@ -190,7 +190,17 @@ jobs:
         run: npm run build
 
       - name: Exercise isolated fictional sessions and interest
-        run: npm run test:e2e -- --config=tests/e2e-server-demo/playwright.config.ts --workers=1 --retries=0
+        run: npm run test:e2e -- --config=tests/e2e-server-demo/playwright.config.ts --workers=1 --retries=0 --max-failures=1
+
+      - name: Retain failed fictional workspace diagnostics without session traces
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sunsum-server-demo-diagnostics-${{ env.ACCEPTANCE_SOURCE_SHA }}
+          path: |
+            test-results/server-demo/**/error-context.md
+            test-results/server-demo/**/test-failed-*.png
+          if-no-files-found: warn
 
   synthetic-demo-release:
     name: Synthetic demo and source package
