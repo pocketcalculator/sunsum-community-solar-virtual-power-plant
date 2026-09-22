@@ -1,4 +1,4 @@
-import { expect, test as base, type Page, type Request } from "@playwright/test";
+import { expect, test as base, type APIResponse, type Page, type Request } from "@playwright/test";
 import { MOCK_PROJECTS } from "../../src/backend/core/projects/mock-store";
 import {
   DEMO_INVESTOR_ID, DEMO_INVESTOR_USER_ID, DEMO_OPERATOR_USER_ID, DEMO_SITE_OWNER_USER_ID,
@@ -19,6 +19,7 @@ interface DemoCall {
 interface HeldResponse {
   readonly started: Promise<void>;
   readonly settled: Promise<void>;
+  readonly response: Promise<APIResponse>;
   release(): void;
 }
 interface DemoAudit {
@@ -30,9 +31,9 @@ interface DemoAudit {
   holdNextResponse(path: string, method?: "GET" | "POST"): HeldResponse;
 }
 
-function signal() {
-  let release = () => {};
-  const promise = new Promise<void>((resolve) => { release = resolve; });
+function signal<T = void>() {
+  let release: (value: T) => void = () => {};
+  const promise = new Promise<T>((resolve) => { release = resolve; });
   return { promise, release };
 }
 
@@ -67,7 +68,8 @@ const test = base.extend<{ demo: DemoAudit }>({
       const started = signal();
       const release = signal();
       const settled = signal();
-      return { started, release, settled };
+      const response = signal<APIResponse>();
+      return { started, release, settled, response };
     }
     function observe(request: Request): DemoCall {
       const url = new URL(request.url());
@@ -111,6 +113,7 @@ const test = base.extend<{ demo: DemoAudit }>({
       held.delete(key);
       // Reach the actual local handler with the browser-issued cookie; delay only delivery.
       const response = await route.fetch({ maxRetries: 0, maxRedirects: 0 });
+      pending.response.release(response);
       pending.started.release();
       try {
         await pending.release.promise;
@@ -135,7 +138,10 @@ const test = base.extend<{ demo: DemoAudit }>({
         if (held.has(key)) throw new Error("This isolated response is already held.");
         held.set(key, pending);
         allHeld.push(pending);
-        return { started: pending.started.promise, settled: pending.settled.promise, release: pending.release.release };
+        return {
+          started: pending.started.promise, settled: pending.settled.promise,
+          response: pending.response.promise, release: pending.release.release,
+        };
       },
     };
     try {
@@ -343,7 +349,10 @@ test("actual mock interest uses {} once, preserves its pending lifetime, then re
     await pending.settled;
     const response = await received;
     expect(response.status()).toBe(201);
-    expect(await response.json()).toMatchObject({
+    // The routed backend body remains available even after the browser retires its fetch.
+    const backendResponse = await pending.response;
+    expect(backendResponse.status()).toBe(201);
+    expect(await backendResponse.json()).toMatchObject({
       investor_id: DEMO_INVESTOR_ID, project_id: project.id,
       funding_need_id: null, state: "interested", is_binding: false,
     });

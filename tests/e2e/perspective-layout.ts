@@ -33,11 +33,23 @@ export async function expectCompactPerspectiveRow(page: Page, name: string) {
     const label = element.getBoundingClientRect();
     const target = element.parentElement?.getBoundingClientRect();
     const lineHeight = parseFloat(getComputedStyle(element).lineHeight);
-    return Boolean(target && Number.isFinite(lineHeight) && label.height <= lineHeight + 1 &&
-      label.left >= target.left - 1 && label.right <= target.right + 1);
+    return {
+      text: element.textContent, height: label.height, lineHeight,
+      left: label.left, right: label.right,
+      targetLeft: target?.left ?? null, targetRight: target?.right ?? null,
+    };
   }));
   expect(labels).toHaveLength(3);
-  expect(labels.every(Boolean)).toBe(true);
+  for (const label of labels) {
+    const diagnostic = JSON.stringify(label);
+    expect(Number.isFinite(label.lineHeight), diagnostic).toBe(true);
+    expect(label.height, diagnostic).toBeLessThanOrEqual(label.lineHeight + 1);
+    expect(label.targetLeft, diagnostic).not.toBeNull();
+    expect(label.targetRight, diagnostic).not.toBeNull();
+    if (label.targetLeft === null || label.targetRight === null) throw new Error(diagnostic);
+    expect(label.left, diagnostic).toBeGreaterThanOrEqual(label.targetLeft - 1);
+    expect(label.right, diagnostic).toBeLessThanOrEqual(label.targetRight + 1);
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
 }
 
