@@ -906,7 +906,7 @@ test("expected 409 reconciles the existing binding state without claiming anothe
   expectOnlyScopedInterest(audit.calls, fixtures.ids.projectId, 1);
 });
 
-test("page-two interest refreshes only engagements and retains filters, selection and return focus", async ({ page }) => {
+test("page-two interest checks fresh membership, then refreshes only engagements and retains collection context", async ({ page }) => {
   const catalogue = createSyntheticLiveReadFixtures("investor", { collectionScenario: "page-two" });
   const selected = catalogue.records.find((record) => record.name === "Continuity record 054");
   if (!selected) throw new Error("The interest continuity case requires a nonfirst page-two project.");
@@ -930,13 +930,21 @@ test("page-two interest refreshes only engagements and retains filters, selectio
   await results.getByRole("button", { name: `Select ${selected.name}`, exact: true }).click();
   await open.click();
   await expect(page.getByRole("heading", { level: 1, name: selected.name, exact: true })).toBeVisible();
-  const reads = endpointCalls(audit.calls, ["/api/portfolio"]).length;
+  const priorPortfolio = endpointCalls(audit.calls, ["/api/portfolio"]);
+  expect(priorPortfolio.length).toBeGreaterThan(0);
   audit.armInterest(selected.id);
   await page.getByRole("button", { name: "Register nonbinding interest", exact: true }).click();
   await expect(page.locator("main")).toContainText(CREATED_INTEREST);
   await expect(page.getByRole("button", { name: "Refresh interest status", exact: true })).toBeEnabled();
   audit.disarmInterest();
-  expect(endpointCalls(audit.calls, ["/api/portfolio"])).toHaveLength(reads);
+  const portfolio = endpointCalls(audit.calls, ["/api/portfolio"]);
+  expect(portfolio).toHaveLength(priorPortfolio.length + 1);
+  expect(portfolio.at(-1)?.path).toBe(priorPortfolio.at(-1)?.path);
+  const commandIndex = audit.calls.findIndex((call) => call.method === "POST");
+  expect(commandIndex).toBeGreaterThan(0);
+  expect(audit.calls.slice(0, commandIndex).filter((call) => new URL(call.url).pathname === "/api/portfolio"))
+    .toHaveLength(portfolio.length);
+  expect(endpointCalls(audit.calls.slice(commandIndex + 1), ["/api/portfolio"])).toEqual([]);
   await page.getByRole("button", { name: "Back to collection", exact: true }).click();
   await expect(collection.getByRole("textbox", { name: "Search permitted records", exact: true })).toHaveValue("Continuity");
   await expect(collection.getByRole("combobox", { name: "Lifecycle stage", exact: true })).toHaveValue("pre-development");
@@ -949,20 +957,36 @@ test("page-two interest refreshes only engagements and retains filters, selectio
   expectOnlyScopedInterest(audit.calls, selected.id, 1);
 });
 
-for (const code of [
-  "unauthenticated", "forbidden_role", "forbidden_tier", "forbidden_origin", "not_found", "invalid_body",
-] satisfies readonly SyntheticInterestRefusal[]) {
+const interestRefusals = [
+  ["unauthenticated", 401, "Your existing service sign-in is needed"],
+  ["forbidden_role", 403, "This information is outside your current access"],
+  ["forbidden_tier", 403, "This information is outside your current access"],
+  ["forbidden_origin", 403, "This information is outside your current access"],
+  ["not_found", 404, "This project is no longer available for interest."],
+  ["invalid_body", 400, "This request cannot use the accepted service contract"],
+] as const satisfies readonly (readonly [SyntheticInterestRefusal, number, string])[];
+
+for (const [code, status, message] of interestRefusals) {
   test(`explicit interest ${code} is a refusal, never fictional creation or automatic recovery`, async ({ page }) => {
     const fixtures = interestFixtures({ kind: "refused", code });
-    const audit = await intercept(page, fixtures);
+    const refusals: SyntheticLiveReadResponse[] = [];
+    const audit = await intercept(page, fixtures, (_path, response, request) => {
+      if (request.method === "POST") refusals.push(response);
+      return response;
+    });
     await openLockedProject(page, fixtures);
     audit.armInterest(fixtures.ids.projectId);
     await page.getByRole("button", { name: "Register nonbinding interest", exact: true }).click();
-    await expect(page.locator("main")).toContainText(code);
+    await expect(page.locator("main")).toContainText(message);
+    expect(refusals).toHaveLength(1);
+    const refusal = refusals[0];
+    if (!refusal) throw new Error("The explicit interest refusal was not observed.");
+    expect(refusal.status).toBe(status);
+    expect(JSON.parse(refusal.body)).toMatchObject({ code });
     await expect(page.locator("main")).not.toContainText(CREATED_INTEREST);
     expect(JSON.parse(fixtures.responseFor("/api/me/engagements").body)).toEqual([]);
     expect(audit.calls.some((call) => call.path.endsWith("/deal-room"))).toBe(false);
-    if (code === "unauthenticated" || code === "forbidden_role" || code === "forbidden_tier") {
+    if (status === 401 || status === 403) {
       await expect(page.getByRole("region", { name: "Stored record detail", exact: true })).toHaveCount(0);
       await expect(page.getByRole("region", { name: "Permitted record collection", exact: true })).toHaveCount(0);
     }
@@ -1096,7 +1120,8 @@ test("a 201 receipt does not unlock a deal room without fresh authoritative enga
   audit.armInterest(fixtures.ids.projectId);
   await page.getByRole("button", { name: "Register nonbinding interest", exact: true }).click();
   await expect(page.locator("main")).toContainText(CREATED_INTEREST);
-  await expect(page.getByRole("button", { name: "Open permitted deal room", exact: true })).not.toBeEnabled();
+  await expect(page.getByRole("button", { name: "Open permitted deal room", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Stored record detail", exact: true })).toContainText(/locked|tier[- ]zero|tier 0/i);
   expect(audit.calls.some((call) => call.path.endsWith("/deal-room"))).toBe(false);
   expectOnlyScopedInterest(audit.calls, fixtures.ids.projectId, 1);
 });

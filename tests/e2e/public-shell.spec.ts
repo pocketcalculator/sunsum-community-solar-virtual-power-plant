@@ -126,6 +126,11 @@ test("the service workspace keeps a thin role capsule next to theme without head
   await expect(page.getByRole("group", { name: "Workspace role", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("compact-workspace-role-theme.png"), fullPage: false, animations: "disabled" });
   await expectCompactPerspectiveRow(page, "Workspace role");
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error("The header case requires a configured viewport.");
+  await page.setViewportSize({ ...viewport, width: 320 });
+  await page.screenshot({ path: testInfo.outputPath("compact-workspace-role-theme-320.png"), animations: "disabled" });
+  await expectCompactPerspectiveRow(page, "Workspace role");
 });
 
 test("the profile preview opens on its first step", async ({ page }, testInfo) => {

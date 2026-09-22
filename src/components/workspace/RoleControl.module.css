@@ -90,6 +90,9 @@
 .group[data-variant="pill"] .indicator[data-role-state="preview"] { border-style: dashed; }
 .group[data-variant="pill"] .segment[data-selected="true"] { font-weight: 700; }
 .group[data-variant="pill"] .segment[data-disabled="true"] { color: var(--text-muted); }
+@media (max-width: 26rem) {
+  .group[data-variant="pill"] .lock { display: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .segment, .indicator { transition: none; }
   .segment[data-preview="true"] { transform: none; }

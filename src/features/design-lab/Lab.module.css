@@ -306,6 +306,9 @@
   .breadcrumb { display: flex; grid-column: 2; grid-row: 1; }
   .sidebar { overflow-y: auto; }
 }
+@media (max-width: 22rem) {
+  .topbar { padding-inline: 8px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .lab *, .lab *::before, .lab *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .siteCard:hover, .button:hover:not(:disabled) { transform: none; }

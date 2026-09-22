@@ -40,6 +40,14 @@ test("bare and explicit public roots show the original landing with a deliberate
     expect(await role.evaluate((element) => element.closest("header") !== null)).toBe(true);
     await expectCompactPerspectiveRow(page, "Demo role");
     await page.screenshot({ path: testInfo.outputPath(`compact-synthetic-header-${hash ? "hash" : "bare"}.png`), animations: "disabled" });
+    if (!hash) {
+      const viewport = page.viewportSize();
+      if (!viewport) throw new Error("The header case requires a configured viewport.");
+      await page.setViewportSize({ ...viewport, width: 320 });
+      await page.screenshot({ path: testInfo.outputPath("compact-synthetic-header-320.png"), animations: "disabled" });
+      await expectCompactPerspectiveRow(page, "Demo role");
+      await page.setViewportSize(viewport);
+    }
     await page.getByRole("link", { name: "Skip to content", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(page.locator("#lab-content")).toBeFocused();
