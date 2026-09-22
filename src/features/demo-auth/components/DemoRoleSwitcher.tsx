@@ -21,6 +21,14 @@ const WIRE_ROLES: Record<WorkspaceRole, string> = {
 };
 const ROLES: readonly WorkspaceRole[] = ["site-owner", "operator", "investor"];
 
+interface IdentityObservation {
+  generation: number;
+  signal: AbortSignal;
+  timedOut: boolean;
+  role: WorkspaceRole | null;
+  error: string | null;
+}
+
 function readRole(value: unknown): WorkspaceRole | null {
   return value === "site_owner" ? "site-owner" :
     value === "operator" || value === "investor" ? value : null;
@@ -45,52 +53,60 @@ export function DemoRoleSwitcher({
     mounted.current = true;
     return () => {
       mounted.current = false;
-      identityGeneration.current++;
+      identityGeneration.current += 1;
       identityRequest.current?.abort();
     };
   }, []);
 
-  const observeIdentity = useCallback(async () => {
+  const requestIdentity = useCallback(async (): Promise<IdentityObservation | null> => {
     identityRequest.current?.abort();
     const controller = new AbortController();
     identityRequest.current = controller;
     const generation = ++identityGeneration.current;
-    const current = () => mounted.current && generation === identityGeneration.current && !controller.signal.aborted;
-    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    const current = () => mounted.current && generation === identityGeneration.current;
+    let timedOut = false;
+    const observed = (role: WorkspaceRole | null, error: string | null): IdentityObservation => ({
+      generation, signal: controller.signal, timedOut, role, error,
+    });
+    const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 15_000);
     try {
       const response = await fetch("/api/me", {
         signal: controller.signal, headers: { accept: "application/json" }, cache: "no-store",
       });
-      if (!current()) return;
-      if (response.status === 401) { setDiscoveredRole(null); return; }
+      if (!current()) return null;
+      controller.signal.throwIfAborted();
+      if (response.status === 401) return observed(null, null);
       if (!response.ok) {
-        setDiscoveredRole(null);
-        setError(`Could not confirm the demo session (HTTP ${response.status}). Refresh before continuing.`);
-        return;
+        return observed(null, `Could not confirm the demo session (HTTP ${response.status}). Refresh before continuing.`);
       }
       const identity: unknown = await response.json();
-      if (!current()) return;
+      if (!current()) return null;
+      controller.signal.throwIfAborted();
       const role = typeof identity === "object" && identity !== null && "role" in identity
         ? readRole(identity.role) : null;
-      setDiscoveredRole(role);
-      if (!role) setError("The server did not confirm a recognized demo role. Refresh before continuing.");
+      return observed(role, role ? null : "The server did not confirm a recognized demo role. Refresh before continuing.");
     } catch {
-      if (mounted.current && generation === identityGeneration.current) {
-        setDiscoveredRole(null);
-        setError("Could not confirm the demo session. Check your connection and refresh.");
-      }
+      if (!current() || (controller.signal.aborted && !timedOut)) return null;
+      return observed(null, "Could not confirm the demo session. Check your connection and refresh.");
     } finally {
       window.clearTimeout(timeout);
     }
   }, []);
 
+  const publishIdentity = useCallback((observation: IdentityObservation | null) => {
+    if (!observation || !mounted.current || observation.generation !== identityGeneration.current ||
+      (observation.signal.aborted && !observation.timedOut)) return;
+    setDiscoveredRole(observation.role);
+    if (observation.error) setError(observation.error);
+  }, []);
+
   useEffect(() => {
-    if (resolveOwnRole && !controlled) void observeIdentity();
+    if (resolveOwnRole && !controlled) void requestIdentity().then(publishIdentity);
     return () => {
-      identityGeneration.current++;
+      identityGeneration.current += 1;
       identityRequest.current?.abort();
     };
-  }, [resolveOwnRole, controlled, observeIdentity]);
+  }, [resolveOwnRole, controlled, requestIdentity, publishIdentity]);
 
   async function signInAs(role: WorkspaceRole) {
     if (disabled || inFlight.current) return;
@@ -126,7 +142,7 @@ export function DemoRoleSwitcher({
       }
       if (mounted.current) {
         router.refresh();
-        if (!controlled) await observeIdentity();
+        if (!controlled) await requestIdentity().then(publishIdentity);
       }
     } finally {
       window.clearTimeout(timeout);

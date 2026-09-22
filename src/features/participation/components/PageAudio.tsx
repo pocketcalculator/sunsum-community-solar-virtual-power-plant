@@ -77,7 +77,7 @@ function ClipPlayer({ audio }: PageAudioPlayerProps) {
     const element = elementRef.current;
     return () => {
       mounted.current = false;
-      generation.current++;
+      generation.current += 1;
       requested.current = false;
       coordinator.release(id);
       element?.pause();

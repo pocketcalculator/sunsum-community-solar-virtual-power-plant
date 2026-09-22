@@ -108,6 +108,7 @@ export function useWorkspaceReads(configuration: LiveReadConfiguration, onRetire
     ? createWorkspaceClient(configuration) : null, [configuration, ready]);
   const client = clientResult?.ok ? clientResult.data : null;
   const [state, dispatch] = useReducer(reducer, initialState);
+  const owner = useRef<{ client: WorkspaceClient | null } | null>(null);
   const snapshotRef = useRef<LiveSnapshot | null>(null);
   const version = useRef(0);
   const detailVersion = useRef(0);
@@ -120,21 +121,25 @@ export function useWorkspaceReads(configuration: LiveReadConfiguration, onRetire
   const [sessionSwitching, setSessionSwitching] = useState(false);
 
   const clear = useCallback((keepActor = false) => {
+    const current = owner.current;
+    if (!current) return;
     version.current += 1;
     detailVersion.current += 1;
     snapshotAbort.current?.abort();
     detailAbort.current?.abort();
     snapshotRef.current = null;
-    client?.invalidate();
+    current.client?.invalidate();
     if (!keepActor) {
       if (actor.current !== null) onRetireActor();
       actor.current = null;
       query.current = {};
     }
     dispatch({ type: "clear", keepActor });
-  }, [client, onRetireActor]);
+  }, [onRetireActor]);
 
   const refresh = useCallback(async (requestedQuery?: SnapshotQuery) => {
+    const requestOwner = owner.current;
+    const client = requestOwner?.client;
     if (!client || switching.current) return;
     const requested = requestedQuery === undefined ? copyWorkspaceQuery(query.current) : copyWorkspaceQuery(requestedQuery);
     version.current += 1;
@@ -150,7 +155,7 @@ export function useWorkspaceReads(configuration: LiveReadConfiguration, onRetire
     query.current = requested;
     dispatch({ type: "loading", client, preserve: requestedQuery !== undefined, query: requested });
     const identity = await client.readIdentity({ signal: controller.signal });
-    if (controller.signal.aborted || current !== version.current) return;
+    if (requestOwner !== owner.current || controller.signal.aborted || current !== version.current) return;
     if (!identity.ok) {
       if (accessLost(identity.error)) {
         if (actor.current !== null) onRetireActor();
@@ -169,14 +174,14 @@ export function useWorkspaceReads(configuration: LiveReadConfiguration, onRetire
     const result = await client.readSnapshot({
       signal: controller.signal, query: nextQuery, scope: identity.data.scope,
     });
-    if (controller.signal.aborted || current !== version.current) return;
+    if (requestOwner !== owner.current || controller.signal.aborted || current !== version.current) return;
     snapshotRef.current = result.ok ? result.data : null;
     if (!result.ok && accessLost(result.error)) {
       onRetireActor();
       actor.current = null;
     }
     dispatch({ type: "snapshot", client, result });
-  }, [client, onRetireActor]);
+  }, [onRetireActor]);
 
   const handleScopedFailure = useCallback((error: ReadError, expectedScope?: ReadScope) => {
     const current = snapshotRef.current?.scope;
@@ -201,12 +206,14 @@ export function useWorkspaceReads(configuration: LiveReadConfiguration, onRetire
   }, []);
 
   const startSessionSwitch = useCallback(() => {
+    if (!owner.current) return;
     switching.current = true;
     setSessionSwitching(true);
     clear();
   }, [clear]);
 
   const settleSessionSwitch = useCallback(() => {
+    if (!owner.current) return;
     switching.current = false;
     setSessionSwitching(false);
     void refresh();
@@ -237,9 +244,7 @@ export function useWorkspaceReads(configuration: LiveReadConfiguration, onRetire
   }, [client, closeDetail, handleScopedFailure]);
 
   useEffect(() => {
-    if (!client) return;
-    clear();
-    void refresh();
+    owner.current = { client };
     const visibility = () => {
       if (document.visibilityState === "hidden") clear(true);
       else void refresh();
@@ -247,9 +252,14 @@ export function useWorkspaceReads(configuration: LiveReadConfiguration, onRetire
     const focus = () => {
       if (document.visibilityState === "visible" && Date.now() - lastAttempt.current >= 15_000) void refresh();
     };
-    document.addEventListener("visibilitychange", visibility);
-    window.addEventListener("focus", focus);
+    if (client) {
+      clear();
+      void refresh();
+      document.addEventListener("visibilitychange", visibility);
+      window.addEventListener("focus", focus);
+    }
     return () => {
+      owner.current = null;
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("focus", focus);
       version.current += 1;
@@ -257,7 +267,7 @@ export function useWorkspaceReads(configuration: LiveReadConfiguration, onRetire
       snapshotAbort.current?.abort();
       detailAbort.current?.abort();
       snapshotRef.current = null;
-      client.invalidate();
+      client?.invalidate();
     };
   }, [client, refresh, clear]);
 

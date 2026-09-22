@@ -166,6 +166,38 @@ describe("shared controlled role presentation", () => {
     expect(owner).toBeChecked();
     expect(container.querySelector<HTMLElement>("[data-role-hit-track]")?.style.getPropertyValue("--role-index")).toBe("0");
   });
+
+  describe.each(["demo", "server-demo"] as const)("%s unmoved pointer presses", (mode) => {
+    it.each(["value", "disable/re-enable", "pointercancel", "lostpointercapture"] as const)(
+      "suppresses the retired click after %s but accepts a fresh press",
+      (retirement) => {
+        const change = vi.fn();
+        const { container, rerender } = render(
+          <RoleControl value="site-owner" allowedRoles={roles} mode={mode} onChange={change} />,
+        );
+        container.querySelectorAll<HTMLElement>("[data-role]").forEach((target, index) =>
+          vi.spyOn(target, "getBoundingClientRect").mockReturnValue(new DOMRect(index * 100, 0, 100, 44)));
+        const operator = screen.getByRole(mode === "server-demo" ? "button" : "radio", { name: "Operator" });
+        const press = { pointerId: 21, button: 0, clientX: 150, clientY: 20 };
+        fireEvent.pointerDown(operator, press);
+        if (retirement === "value") {
+          rerender(<RoleControl value="investor" allowedRoles={roles} mode={mode} onChange={change} />);
+        } else if (retirement === "disable/re-enable") {
+          rerender(<RoleControl value="site-owner" allowedRoles={roles} mode={mode} onChange={change} disabled />);
+          rerender(<RoleControl value="site-owner" allowedRoles={roles} mode={mode} onChange={change} />);
+        } else if (retirement === "pointercancel") fireEvent.pointerCancel(operator, press);
+        else fireEvent.lostPointerCapture(operator, press);
+        fireEvent.pointerUp(operator, press);
+        fireEvent.click(operator, { detail: 1 });
+        expect(change).not.toHaveBeenCalled();
+        const fresh = { ...press, pointerId: 22 };
+        fireEvent.pointerDown(operator, fresh);
+        fireEvent.pointerUp(operator, fresh);
+        fireEvent.click(operator, { detail: 1 });
+        expect(change).toHaveBeenCalledExactlyOnceWith("operator");
+      },
+    );
+  });
 });
 
 describe("shared permitted collection presentation", () => {

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WS2_CONTRACT_REVISION } from "@/domain/connections";
@@ -8,6 +8,7 @@ import type { InterestReceipt, InvestorSnapshot, LiveExportManifest, LiveReadCli
 import { LiveWorkspace } from "@/features/live-workspace";
 import { workspaceContext } from "@/features/live-workspace/navigation";
 import { compareSourceTimes, INITIAL_COLLECTION, selectReadRecords } from "@/features/live-workspace/presentation";
+import { useWorkspaceReads } from "@/features/live-workspace/useWorkspaceReads";
 
 const mocks = vi.hoisted(() => ({
   factory: vi.fn(),
@@ -142,9 +143,8 @@ function useInvestor(value = investorSnapshot()) {
   return value;
 }
 
-function operatorSnapshot(): OperatorSnapshot {
+function operatorSnapshot(rows = Array.from({ length: 50 }, (_, index) => record(index))): OperatorSnapshot {
   const operatorScope = { userId: "fixture-operator", role: "operator", generation: 1 } as const;
-  const rows = Array.from({ length: 50 }, (_, index) => record(index));
   return {
     role: "operator", identity: { ...identity, role: "operator", userId: operatorScope.userId, scope: operatorScope },
     scope: operatorScope, provenance, completeness: "complete", records: rows, submissions: rows,
@@ -285,6 +285,56 @@ describe("mocked frontend read workspace (not real service access)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Open Contract roof 01" })).toHaveFocus());
   });
 
+  it("snapshots the unprimed first entry before navigation and restores its query, selection and focus on Back", async () => {
+    const other = record(1, { siteType: "land" });
+    const original = operatorSnapshot([record(0), other]);
+    const filtered = operatorSnapshot([other]);
+    mocks.identity.mockResolvedValue({ ok: true, data: original.identity });
+    mocks.snapshot.mockImplementation(async (options) => ({
+      ok: true, data: options?.query?.siteType === "land" ? filtered : original,
+    }));
+    const initialHref = "/app?view=pipeline&scope=fixture-site-0";
+    const frameworkState = { fixtureFrameworkState: { route: "pipeline", scroll: [0, 80] } };
+    window.history.replaceState(frameworkState, "", initialHref);
+    render(<LiveWorkspace configuration={configuration} initialHref={initialHref} />);
+    expect(await screen.findByRole("button", { name: "Select Contract roof 00" }))
+      .toHaveAttribute("aria-pressed", "true");
+    const originalOpen = screen.getByRole("button", { name: "Open Contract roof 00" });
+    originalOpen.focus();
+    expect(window.history.state).toEqual(frameworkState);
+    const replace = vi.spyOn(window.history, "replaceState");
+    const push = vi.spyOn(window.history, "pushState");
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Connected workspace" }))
+      .getByRole("button", { name: "Action Center" }));
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(replace.mock.invocationCallOrder[0]).toBeLessThan(push.mock.invocationCallOrder[0]!);
+    const originalState: unknown = replace.mock.calls[0]?.[0];
+    expect(originalState).toEqual({
+      ...frameworkState, sunsumCollectionView: null, sunsumCollectionState: expect.any(String),
+    });
+    expect(JSON.stringify(originalState)).not.toContain("fixture-site-0");
+    await screen.findByRole("heading", { level: 1, name: "Your Action Center" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Service site type" }), { target: { value: "land" } });
+    await screen.findByRole("button", { name: "Select Contract roof 01" });
+    expect(screen.queryByRole("button", { name: "Select Contract roof 00" })).not.toBeInTheDocument();
+    expect(mocks.snapshot).toHaveBeenLastCalledWith(expect.objectContaining({ query: { siteType: "land" } }));
+    expect(JSON.stringify(window.history.state)).not.toContain("land");
+    expect(window.location.search).not.toContain("type");
+    act(() => { window.history.back(); });
+    expect(await screen.findByRole("button", { name: "Select Contract roof 00" }))
+      .toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("combobox", { name: "Service site type" })).toHaveValue("");
+    expect(mocks.snapshot).toHaveBeenLastCalledWith(expect.objectContaining({ query: {} }));
+    expect(mocks.snapshot).toHaveBeenCalledTimes(3);
+    expect(window.history.state).toEqual(originalState);
+    expect(`${window.location.pathname}${window.location.search}`).toBe(initialHref);
+    const restoredOpen = screen.getByRole("button", { name: "Open Contract roof 00" });
+    expect(restoredOpen).not.toBe(originalOpen);
+    await waitFor(() => expect(restoredOpen).toHaveFocus());
+    expect(mocks.interest).not.toHaveBeenCalled();
+  });
+
   it("keeps a deep-linked record selected across documents, activity and collection return", async () => {
     mocks.detail.mockResolvedValue({ ok: true, data: detailWithOriginal() });
     render(<LiveWorkspace configuration={configuration} initialHref="/app?view=sites&project=fixture-site-0" />);
@@ -330,6 +380,30 @@ describe("mocked frontend read workspace (not real service access)", () => {
     expect(signal?.aborted).toBe(true);
     await act(async () => { finish?.({ ok: true, data: snapshot([record(0)]) }); });
     expect(screen.queryByText("Contract roof 00")).not.toBeInTheDocument();
+  });
+
+  it("ignores retained refresh and switch callbacks after the read owner unmounts", async () => {
+    const retire = vi.fn();
+    const { result, unmount } = renderHook(() => useWorkspaceReads(configuration, retire));
+    await waitFor(() => expect(result.current.snapshot).not.toBeNull());
+    const retained = result.current;
+    const identities = mocks.identity.mock.calls.length;
+    const snapshots = mocks.snapshot.mock.calls.length;
+    unmount();
+    const invalidations = mocks.invalidate.mock.calls.length;
+    mocks.identity.mockResolvedValue({ ok: false, error: {
+      kind: "unauthenticated", message: "Session expired after leaving.", status: 401,
+      code: "unauthenticated", connectionId: null,
+    } });
+    await act(async () => {
+      await retained.refresh();
+      retained.startSessionSwitch();
+      retained.settleSessionSwitch();
+    });
+    expect(mocks.identity).toHaveBeenCalledTimes(identities);
+    expect(mocks.snapshot).toHaveBeenCalledTimes(snapshots);
+    expect(mocks.invalidate).toHaveBeenCalledTimes(invalidations);
+    expect(retire).not.toHaveBeenCalled();
   });
 
   it("keeps only the new identity and role when an old snapshot resolves after a mounted refresh", async () => {
@@ -777,7 +851,7 @@ describe("read collection phase order", () => {
       expect(screen.queryByText("Forbidden demo adapter")).not.toBeInTheDocument();
     });
 
-    it("retires the old actor before a server-demo switch settles and reads identity again", async () => {
+    it("keeps the shell and injected control mounted while retiring old actor data and reading identity again", async () => {
       let settle: (() => void) | undefined;
       render(<LiveWorkspace configuration={{ ...configuration, mode: "server-demo", source: "mock-configured" }}
         initialHref="/app" renderRoleControl={({ disabled, onSwitchStart, onSwitchSettled }) =>
@@ -787,8 +861,13 @@ describe("read collection phase order", () => {
           }}>Switch isolated demo session</button>} />);
       await screen.findByText("Contract roof 00");
       expect(screen.getByText("Developer/demo mode", { exact: true })).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Switch isolated demo session" }));
+      const control = screen.getByRole("button", { name: "Switch isolated demo session" });
+      const shellMain = screen.getByRole("main");
+      fireEvent.click(control);
       expect(screen.queryByText("Contract roof 00")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Switch isolated demo session" })).toBe(control);
+      expect(control).toBeDisabled();
+      expect(screen.getByRole("main")).toBe(shellMain);
       const nextScope = { ...scope, userId: "fixture-next-owner", generation: 2 };
       const nextIdentity = { ...identity, userId: nextScope.userId, scope: nextScope };
       const next = { ...snapshot([record(1, { name: "New mock owner project" })]), identity: nextIdentity, scope: nextScope };
@@ -796,6 +875,9 @@ describe("read collection phase order", () => {
       mocks.snapshot.mockResolvedValue({ ok: true, data: next });
       await act(async () => { settle?.(); });
       await screen.findByText("New mock owner project");
+      expect(screen.getByRole("button", { name: "Switch isolated demo session" })).toBe(control);
+      expect(screen.getByRole("main")).toBe(shellMain);
+      expect(control).toBeEnabled();
       expect(screen.queryByText("Contract roof 00")).not.toBeInTheDocument();
       expect(mocks.identity).toHaveBeenCalledTimes(2);
       expect(mocks.interest).not.toHaveBeenCalled();

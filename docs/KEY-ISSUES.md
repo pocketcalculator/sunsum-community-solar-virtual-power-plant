@@ -178,49 +178,54 @@ the real object-URL hook's navigation/unmount cleanup.
 ### RELY-7 - Session control remounts during read retirement
 
 - Severity: MEDIUM
-- Status: OPEN
+- Status: FIXED, awaiting current-revision CI
 - Confidence: HIGH
 - Files: `src/features/live-workspace/LiveWorkspace.tsx`,
   `src/features/demo-auth/components/DemoRoleSwitcher.tsx`
 - Problem: Starting a switch clears the snapshot and unmounts the initiating
   adapter. Its refusal disappears, and the sliding indicator is replaced.
-- Required correction: Keep the shell and adapter mounted while scoped content
-  retires. Cover pending/refused switching with the actual composed adapter,
-  immediate record removal and persistent indicator node identity.
+- Correction: The persistent shell owns the adapter; only actor-scoped content
+  retires. The actual composed-adapter regression covers immediate record
+  removal, the same indicator node and refusal surviving reconciliation.
 
 ### RELY-8 - Late settlement restarts a disposed workspace
 
 - Severity: MEDIUM
-- Status: OPEN
+- Status: FIXED, awaiting current-revision CI
 - Confidence: HIGH
 - File: `src/features/live-workspace/useWorkspaceReads.ts`
 - Problem: A switch completing after whole-workspace unmount can start fresh
   reads; a later access failure can also replace the new page URL with `/app`.
-- Required correction: Guard refresh/settlement by owner lifetime and use its
-  current client. Preserve reconciliation after adapter-only retirement.
+- Correction: Refresh and switch callbacks reject disposed owners and use the
+  current effect-owned client. Regressions distinguish whole-owner unmount from
+  adapter-only retirement, which still reconciles through the replacement client.
 
 ### RELY-9 - First history entry lacks collection context
 
 - Severity: MEDIUM
-- Status: OPEN
+- Status: FIXED, awaiting current-revision CI
 - Confidence: HIGH
 - File: `src/features/live-workspace/LiveWorkspace.tsx`
 - Problem: Without an initial control change, only the destination gets an
   opaque history key. Back can retain a later filter instead of the initial
   service query, selection and return focus.
-- Required correction: Snapshot the confirmed actor's current entry before its
-  first push, using replaceState without losing framework metadata.
+- Correction: Actor-owned RAM history snapshots the confirmed actor's unkeyed
+  entry before its first push. Only an opaque key enters replaceState; framework
+  metadata survives. The native Back regression restores the original query,
+  selection and focus without a priming control change.
 
 ### RELY-10 - Retired unmoved presses can activate through click
 
 - Severity: MEDIUM
-- Status: OPEN
+- Status: FIXED, awaiting current-revision CI
 - Confidence: HIGH
 - File: `src/components/workspace/RoleControl.tsx`
 - Problem: Epoch retirement suppresses the trailing click only after movement
   crossed the drag threshold; an unmoved retired press can still choose a role.
-- Required correction: Cancel obsolete or canceled presses regardless of
-  movement, covering down/epoch-change/up/click in both radio and button modes.
+- Correction: Canceled, busy or obsolete presses suppress their trailing click
+  regardless of movement. Eight radio/button regressions cover value changes,
+  disable/re-enable, cancellation and lost capture, followed by a usable fresh
+  gesture. Target geometry and reduced-motion styling remain unchanged.
 
 ## Readability [READ]
 

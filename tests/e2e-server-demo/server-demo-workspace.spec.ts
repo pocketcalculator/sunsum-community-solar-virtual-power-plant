@@ -7,6 +7,7 @@ import {
   installSyntheticSaveAudit, readSyntheticSaveAudit, syntheticLocalOrigin,
   syntheticStorageState, SYNTHETIC_SAVE_CANARIES, type SyntheticStorageAttempt,
 } from "../fixtures/live-read-contracts";
+import { expectCompactPerspectiveRow, expectPerspectiveGlide } from "../e2e/perspective-layout";
 
 type DemoRole = "site_owner" | "operator" | "investor";
 interface DemoCall {
@@ -196,6 +197,7 @@ async function navigate(page: Page, name: string) {
 }
 
 test("actual mock sessions are explicit, labeled and shared by canonical aliases without role grants", async ({ page, demo }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/app");
   await expect(page.locator('[data-mode="server-demo"]')).toHaveCount(1);
   await expect(page.getByText("Developer/demo mode", { exact: true })).toBeVisible();
@@ -205,8 +207,13 @@ test("actual mock sessions are explicit, labeled and shared by canonical aliases
   )).toBeVisible();
   expect(demo.calls.filter((call) => call.method === "POST")).toEqual([]);
   for (const role of ["site_owner", "operator", "investor"] as const) {
-    await switchRole(page, demo, role);
+    if (role === "operator") {
+      await expectPerspectiveGlide(page, "Developer/demo sign-in", () => switchRole(page, demo, role));
+    } else {
+      await switchRole(page, demo, role);
+    }
     await expect(page.getByRole("heading", { level: 1, name: roleTitle[role], exact: true })).toBeVisible();
+    await expectCompactPerspectiveRow(page, "Developer/demo sign-in");
     const switches = demo.calls.filter((call) => call.method === "POST").length;
     await page.goto(`/dashboard/${role === "site_owner" ? "site-owner" : role}`);
     await expect(page).toHaveURL((url) => url.pathname === "/app");

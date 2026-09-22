@@ -93,9 +93,11 @@ export function RoleControl({
     drag.current = null;
     setMotion((previous) => previous.epoch === current.epoch
       ? { ...previous, position: null, target: null } : previous);
+    const retired = cancelled || busy || current.epoch !== motion.epoch;
+    if (retired) cancelledClick.current = true;
     if (current.moved) {
       suppressClickUntil.current = event.timeStamp + 100;
-      const target = cancelled || current.epoch !== motion.epoch ? null : atPointer(event);
+      const target = retired ? null : atPointer(event);
       if (target) { choose(target); focus(target); }
     }
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
@@ -125,6 +127,7 @@ export function RoleControl({
           origin = clampPosition((painted.left - first.left) / pitch);
         }
         cancelledClick.current = false;
+        suppressClickUntil.current = 0;
         drag.current = {
           pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false,
           epoch: motion.epoch, origin, pitch,
