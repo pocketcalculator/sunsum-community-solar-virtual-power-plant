@@ -265,7 +265,7 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext, c
     onContext({ ...context, view: next, projectId: null, scopeId: targetId, collectionView });
     scheduleFocus(() => document.getElementById("workspace-content")?.focus());
   }, [view, context, isCollection, cancelNavigationReads, eligibleRooms, targetProjectId,
-    onContext, targetId, collectionView, scheduleFocus]);
+    onContext, targetId, collectionView, scheduleFocus, setRequestedRoom]);
   useLayoutEffect(() => registerNavigation(navigate), [registerNavigation, navigate]);
   const openRecord = (id: string) => {
     const record = findRecord(id);
