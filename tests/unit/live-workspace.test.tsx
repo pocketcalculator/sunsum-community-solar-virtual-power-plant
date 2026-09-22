@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WS2_CONTRACT_REVISION } from "@/domain/connections";
 import type { LiveReadConfiguration } from "@/domain/live-configuration";
 import type * as LiveReadModule from "@/features/live-read";
+import { workspaceActorKey } from "@/features/live-read";
 import type { InterestReceipt, InvestorSnapshot, LiveExportManifest, LiveReadClient, LiveSnapshot, OperatorSnapshot, OwnerDetail, OwnerSnapshot, ReadDownload, ReadEngagement, ReadRecord, ReadResult, WorkspaceClient } from "@/features/live-read";
 import { LiveWorkspace } from "@/features/live-workspace";
 import { workspaceContext } from "@/features/live-workspace/navigation";
 import { compareSourceTimes, INITIAL_COLLECTION, selectReadRecords } from "@/features/live-workspace/presentation";
 import { useWorkspaceReads } from "@/features/live-workspace/useWorkspaceReads";
+import { useProjectInterest } from "@/features/live-workspace/useProjectInterest";
 
 const mocks = vi.hoisted(() => ({
   factory: vi.fn(),
@@ -143,6 +145,14 @@ function useInvestor(value = investorSnapshot()) {
   return value;
 }
 
+function fixtureClient(): WorkspaceClient {
+  return {
+    readSnapshot: mocks.snapshot, readDetail: mocks.detail, readIdentity: mocks.identity,
+    readDocument: mocks.document, readExport: mocks.exported, invalidate: mocks.invalidate,
+    readMyEngagements: mocks.engagements, expressInterest: mocks.interest,
+  };
+}
+
 function operatorSnapshot(rows = Array.from({ length: 50 }, (_, index) => record(index))): OperatorSnapshot {
   const operatorScope = { userId: "fixture-operator", role: "operator", generation: 1 } as const;
   return {
@@ -165,11 +175,7 @@ beforeEach(() => {
   mocks.snapshot.mockResolvedValue({ ok: true, data: snapshot() });
   mocks.identity.mockResolvedValue({ ok: true, data: identity });
   mocks.detail.mockResolvedValue({ ok: true, data: detail() });
-  mocks.factory.mockReturnValue({ ok: true, data: {
-    readSnapshot: mocks.snapshot, readDetail: mocks.detail, readIdentity: mocks.identity,
-    readDocument: mocks.document, readExport: mocks.exported, invalidate: mocks.invalidate,
-    readMyEngagements: mocks.engagements, expressInterest: mocks.interest,
-  } satisfies WorkspaceClient });
+  mocks.factory.mockReturnValue({ ok: true, data: fixtureClient() });
 });
 
 afterEach(() => {
@@ -819,7 +825,7 @@ describe("read collection phase order", () => {
       const value = useInvestor();
       mocks.interest.mockResolvedValue({
         kind: "unknown", receipt: interestReceipt(value),
-        error: { kind: "network", message: "The outcome is unknown.", status: null, code: "network", connectionId: null },
+        error: { kind: "unavailable", message: "The outcome is unknown.", status: 503, code: "service_unavailable", connectionId: null },
       });
       mocks.engagements.mockResolvedValue({
         ok: true, data: { identity: value.identity, scope: value.scope, provenance, engagements: [] },
@@ -828,6 +834,7 @@ describe("read collection phase order", () => {
       fireEvent.click(await screen.findByRole("button", { name: "Select Contract roof 00" }));
       fireEvent.click(screen.getByRole("button", { name: "Register nonbinding interest" }));
       await screen.findByText("The outcome is unknown.");
+      expect(screen.getByText("service_unavailable", { exact: true }).tagName).toBe("CODE");
       expect(screen.getByRole("button", { name: "Make a new registration attempt" })).toBeDisabled();
       fireEvent.click(screen.getByRole("button", { name: "Refresh interest status" }));
       await waitFor(() => expect(mocks.engagements).toHaveBeenCalledTimes(1));
@@ -849,6 +856,110 @@ describe("read collection phase order", () => {
       expect(screen.getByText("Connected workspace", { exact: true })).toBeInTheDocument();
       expect(renderer).not.toHaveBeenCalled();
       expect(screen.queryByText("Forbidden demo adapter")).not.toBeInTheDocument();
+    });
+
+    it("restores an uncertain command after same-actor reauthorization without retaining failed read state", async () => {
+      const value = useInvestor();
+      mocks.interest.mockResolvedValue({
+        kind: "unknown", receipt: interestReceipt(value),
+        error: { kind: "denied", message: "The outcome is unknown.", status: null, code: "scope_mismatch", connectionId: null },
+      });
+      mocks.engagements.mockResolvedValue({
+        ok: true, data: { identity: value.identity, scope: value.scope, provenance, engagements: [] },
+      });
+      render(<LiveWorkspace configuration={{ ...configuration, canAttemptInterest: true }} initialHref="/app?view=portfolio" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Open Contract roof 00" }));
+      fireEvent.click(screen.getByRole("button", { name: "Register nonbinding interest" }));
+      await waitFor(() => expect(screen.queryByRole("region", { name: "Project interest" })).not.toBeInTheDocument());
+      expect(screen.queryByRole("region", { name: "Stored record detail" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("checkbox", { name: /understand the uncertain outcome/ })).not.toBeInTheDocument();
+
+      const nextScope = { ...value.scope, generation: 2 };
+      const nextIdentity = { ...value.identity, scope: nextScope };
+      mocks.identity.mockResolvedValue({ ok: true, data: nextIdentity });
+      mocks.snapshot.mockResolvedValue({ ok: true, data: { ...value, scope: nextScope, identity: nextIdentity } });
+      mocks.engagements.mockResolvedValue({
+        ok: true, data: { identity: nextIdentity, scope: nextScope, provenance, engagements: [] },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Refresh permitted reads" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Open Contract roof 00" }));
+      const panel = within(await screen.findByRole("region", { name: "Project interest" }));
+      expect(panel.getByText("The outcome is unknown.")).toBeInTheDocument();
+      expect(panel.getByRole("button", { name: "Make a new registration attempt" })).toBeDisabled();
+      expect(panel.getByRole("checkbox", { name: /understand the uncertain outcome/ })).not.toBeChecked();
+      fireEvent.click(panel.getByRole("button", { name: "Refresh interest status" }));
+      await waitFor(() => expect(mocks.engagements).toHaveBeenCalledTimes(1));
+      expect(mocks.engagements).toHaveBeenLastCalledWith(expect.objectContaining({ scope: nextScope }));
+      expect(panel.getByText("The outcome is unknown.")).toBeInTheDocument();
+
+      mocks.engagements.mockResolvedValue({
+        ok: false, error: { kind: "unavailable", message: "Synthetic reconciliation unavailable.",
+          status: 503, code: "service_unavailable", connectionId: null },
+      });
+      await waitFor(() => expect(panel.getByRole("button", { name: "Refresh interest status" })).toBeEnabled());
+      fireEvent.click(panel.getByRole("button", { name: "Refresh interest status" }));
+      await panel.findByText("Synthetic reconciliation unavailable.");
+      expect(panel.getByText("The outcome is unknown.")).toBeInTheDocument();
+      expect(mocks.interest).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(["actor", "client"] as const)(
+      "keeps uncertainty hidden while retired and discards it on %s replacement",
+      async (replacement) => {
+        const value = useInvestor();
+        mocks.interest.mockResolvedValue({
+          kind: "unknown", receipt: interestReceipt(value),
+          error: { kind: "denied", message: "The outcome is unknown.", status: null, code: "scope_mismatch", connectionId: null },
+        });
+        mocks.engagements.mockResolvedValue({
+          ok: false, error: { kind: "unavailable", message: "Synthetic reconciliation unavailable.",
+            status: 503, code: "service_unavailable", connectionId: null },
+        });
+        const initial: Parameters<typeof useProjectInterest>[0] = {
+          client: fixtureClient(), snapshot: value, actorKey: workspaceActorKey(value.identity),
+          onEngagements: vi.fn(), onFailure: vi.fn(),
+        };
+        const { result, rerender } = renderHook(useProjectInterest, { initialProps: initial });
+        await act(async () => { await result.current.register("fixture-project"); });
+        await act(async () => { await result.current.reconcile("fixture-project"); });
+        expect(result.current.results["fixture-project"]?.kind).toBe("unknown");
+        expect(result.current.errors["fixture-project"]?.kind).toBe("unavailable");
+        rerender({ ...initial, actorKey: null, snapshot: null });
+        expect(result.current.results).toEqual({});
+        expect(result.current.errors).toEqual({});
+        expect(result.current.pending).toBeNull();
+        rerender(initial);
+        expect(result.current.results["fixture-project"]?.kind).toBe("unknown");
+        expect(result.current.errors).toEqual({});
+
+        const nextScope = { ...value.scope, userId: "another-investor", generation: 2 };
+        const nextIdentity = { ...value.identity, userId: nextScope.userId, investorId: "another-profile", scope: nextScope };
+        rerender(replacement === "client" ? { ...initial, client: fixtureClient() } : {
+          ...initial, snapshot: { ...value, scope: nextScope, identity: nextIdentity },
+          actorKey: workspaceActorKey(nextIdentity),
+        });
+        expect(result.current.results).toEqual({});
+        expect(result.current.errors).toEqual({});
+        rerender(initial);
+        expect(result.current.results).toEqual({});
+        expect(mocks.interest).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it("does not retain confirmed command receipts through authorization retirement", async () => {
+      const value = useInvestor();
+      const initial: Parameters<typeof useProjectInterest>[0] = {
+        client: fixtureClient(), snapshot: value, actorKey: workspaceActorKey(value.identity),
+        onEngagements: vi.fn(), onFailure: vi.fn(),
+      };
+      const { result, rerender } = renderHook(useProjectInterest, { initialProps: initial });
+      await act(async () => { await result.current.register("fixture-project"); });
+      expect(result.current.results["fixture-project"]?.kind).toBe("created");
+      rerender({ ...initial, actorKey: null, snapshot: null });
+      rerender(initial);
+      expect(result.current.results).toEqual({});
+      expect(result.current.pending).toBeNull();
+      expect(mocks.interest).toHaveBeenCalledTimes(1);
     });
 
     it("keeps the shell and injected control mounted while retiring old actor data and reading identity again", async () => {

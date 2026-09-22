@@ -9,6 +9,8 @@ import {
 
 interface InterestState {
   actorKey: string | null;
+  ownerKey: string | null;
+  client: WorkspaceClient | null;
   pending: string | null;
   results: Readonly<Record<string, InterestResult>>;
   errors: Readonly<Record<string, ReadError>>;
@@ -24,10 +26,17 @@ export function useProjectInterest({
   onFailure: (error: ReadError, scope?: ReadScope) => void;
 }) {
   const [state, setState] = useState<InterestState>({
-    actorKey, pending: null, results: {}, errors: {},
+    actorKey, ownerKey: actorKey, client, pending: null, results: {}, errors: {},
   });
-  if (state.actorKey !== actorKey) setState({ actorKey, pending: null, results: {}, errors: {} });
-  if (state.actorKey === actorKey && snapshot?.role === "investor" && snapshot.engagements.ok) {
+  if (state.client !== client || (actorKey !== null && state.ownerKey !== actorKey)) {
+    setState({ actorKey, ownerKey: actorKey, client, pending: null, results: {}, errors: {} });
+  } else if (state.actorKey !== actorKey) {
+    // Temporary retirement hides the actor's data, not whether its dispatched command is unresolved.
+    setState({
+      ...state, actorKey, pending: null, errors: {},
+      results: Object.fromEntries(Object.entries(state.results).filter(([, result]) => result.kind === "unknown")),
+    });
+  } else if (actorKey !== null && snapshot?.role === "investor" && snapshot.engagements.ok) {
     let resolved: Record<string, InterestResult> | null = null;
     for (const [projectId, result] of Object.entries(state.results)) {
       if (result.kind !== "unknown" || !result.receipt) continue;
@@ -52,13 +61,14 @@ export function useProjectInterest({
 
   const perform = useCallback(async (projectId: string, register: boolean, acknowledgeUnknownOutcome: boolean) => {
     if (busy.current) return;
+    const owned = (current: InterestState) => current.actorKey === actorKey && current.client === client;
     if (!client || !snapshot || snapshot.role !== "investor") {
       const error: ReadError = {
         kind: "out-of-reach", code: "current_investor_required", status: null,
         connectionId: "SUNSUM-CONNECTION:WS2-INVESTOR",
         message: "A current admitted investor read is required before checking or registering interest.",
       };
-      setState((current) => current.actorKey === actorKey
+      setState((current) => owned(current)
         ? { ...current, errors: { ...current.errors, [projectId]: error } } : current);
       return;
     }
@@ -68,7 +78,7 @@ export function useProjectInterest({
     request.current = controller;
     const scope = snapshot.scope;
     const active = () => currentVersion === version.current;
-    setState((current) => current.actorKey === actorKey
+    setState((current) => owned(current)
       ? { ...current, pending: projectId, errors: Object.fromEntries(
           Object.entries(current.errors).filter(([id]) => id !== projectId)) } : current);
     try {
@@ -77,7 +87,7 @@ export function useProjectInterest({
           scope, signal: controller.signal, acknowledgeUnknownOutcome,
         });
         if (!active()) return;
-        setState((current) => current.actorKey === actorKey
+        setState((current) => owned(current)
           ? { ...current, results: { ...current.results, [projectId]: result } } : current);
         if (result.kind === "not-sent" || result.kind === "refused" || result.kind === "unknown") {
           onFailure(result.error, scope);
@@ -87,7 +97,7 @@ export function useProjectInterest({
       const result = await client.readMyEngagements({ scope, signal: controller.signal });
       if (!active() || controller.signal.aborted) return;
       if (!result.ok) {
-        setState((current) => current.actorKey === actorKey
+        setState((current) => owned(current)
           ? { ...current, errors: { ...current.errors, [projectId]: result.error } } : current);
         onFailure(result.error, scope);
         return;
@@ -95,7 +105,7 @@ export function useProjectInterest({
       onEngagements(result.data);
       const existing = currentProjectInterest(result.data.engagements, projectId);
       setState((current) => {
-        if (current.actorKey !== actorKey) return current;
+        if (!owned(current)) return current;
         const previous = current.results[projectId];
         if (existing && previous?.kind === "unknown" && previous.receipt) return {
           ...current, results: { ...current.results, [projectId]: {
@@ -108,15 +118,16 @@ export function useProjectInterest({
       if (active()) {
         busy.current = false;
         request.current = null;
-        setState((current) => current.actorKey === actorKey ? { ...current, pending: null } : current);
+        setState((current) => owned(current) ? { ...current, pending: null } : current);
       }
     }
   }, [client, snapshot, actorKey, onEngagements, onFailure]);
 
-  const results: Readonly<Record<string, InterestResult>> = state.actorKey === actorKey ? state.results : {};
-  const errors: Readonly<Record<string, ReadError>> = state.actorKey === actorKey ? state.errors : {};
+  const visible = actorKey !== null && state.actorKey === actorKey && state.client === client;
+  const results: Readonly<Record<string, InterestResult>> = visible ? state.results : {};
+  const errors: Readonly<Record<string, ReadError>> = visible ? state.errors : {};
   return {
-    pending: state.actorKey === actorKey ? state.pending : null,
+    pending: visible ? state.pending : null,
     results,
     errors,
     register: (projectId: string, acknowledgeUnknownOutcome = false) =>

@@ -1,6 +1,6 @@
 import { isWorkspaceQuery, workspaceQueryString } from "@/domain/workspace-filters";
 import { LIVE_READ_LIMITS } from "./constants";
-import { ReadFault, malformed, readError, rejectRead } from "./errors";
+import { ReadFault, malformed, readError, rejectRead, serviceErrorCode } from "./errors";
 import type { ConnectionId } from "./registry";
 import type { LiveRole, ReadError, ReadOperation, SnapshotQuery } from "./types";
 import { isId, isObject } from "./values";
@@ -194,12 +194,7 @@ function parseJson(bytes: Uint8Array): unknown {
 }
 
 function httpFault(status: number, operation: Pick<ReadOperation, "connectionId">, body?: unknown): ReadFault {
-  const codes = [
-    "invalid_query", "invalid_body", "unauthenticated", "forbidden_origin",
-    "forbidden_role", "forbidden_owner", "forbidden_tier", "not_found",
-    "conflict", "validation_failed", "service_unavailable",
-  ];
-  const code = isObject(body) && typeof body.code === "string" && codes.includes(body.code) ? body.code : null;
+  const code = isObject(body) ? serviceErrorCode(body.code) : null;
   const kind = status === 401 ? "unauthenticated" : status === 403 ? "denied" :
     status === 404 ? "missing" : status === 400 || status === 422 ? "invalid" :
     status === 408 || status === 504 ? "timeout" : status === 413 ? "too-large" : "unavailable";
@@ -356,6 +351,10 @@ export function createTransport(origin: string, fetcher: typeof globalThis.fetch
           error: { ...httpFault(response.status, { connectionId }, payload).error,
             message: response.status === 401 ? "Sign in through the admitted session before registering interest." :
               response.status === 404 ? "This project is no longer available for interest." :
+                response.status === 400
+                  ? "The service rejected the request format. Refresh the selected project; if this continues, ask the service owner to review the interest contract. No automatic retry is performed." :
+                  response.status === 422
+                    ? "The service could not validate this project interest. Confirm the project requirements with the service owner before another deliberate attempt." :
                 isObject(payload) && payload.code === "forbidden_tier"
                   ? "Complete the existing investor onboarding before registering interest." :
                   "The service refused this interest request. Its role, origin and validation rules remain in effect." },

@@ -544,6 +544,8 @@ test("actor replacement retires page-two selection, local collection state and h
   await selected.click();
   await expect(page.getByRole("region", { name: "Stored record detail", exact: true })).toContainText("Continuity");
   await navigate(page, "Documents");
+  await expect(page.getByRole("heading", { name: "Documents, with the right context", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Permitted document metadata", exact: true })).toBeVisible();
   audit.useFixtures(owner);
   await page.getByRole("button", { name: "Refresh permitted reads", exact: true }).click();
   await expect(page.getByRole("radio", { name: "Site owner", exact: true })).toBeChecked();
@@ -1023,6 +1025,16 @@ for (const outcome of ["network", "unavailable", "invalid-success", "wrong-proje
     await expect(page.locator("main")).toContainText(UNKNOWN_INTEREST);
     await expect(page.locator("main")).not.toContainText(CREATED_INTEREST);
     audit.disarmInterest();
+    if (outcome === "wrong-project" || outcome === "wrong-investor") {
+      await expect(page.getByRole("region", { name: "Project interest", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("region", { name: "Stored record detail", exact: true })).toHaveCount(0);
+      await page.getByRole("button", { name: "Refresh permitted reads", exact: true }).click();
+      await expect(page.getByRole("radio", { name: "Investor", exact: true })).toBeChecked();
+      await page.getByRole("button", { name: "Open Synthetic project", exact: true }).click();
+      await expect(page.getByRole("region", { name: "Project interest", exact: true })).toContainText(UNKNOWN_INTEREST);
+      await expect(page.getByRole("button", { name: "Make a new registration attempt", exact: true })).toBeDisabled();
+      expectOnlyScopedInterest(audit.calls, fixtures.ids.projectId, 1);
+    }
     const reads = audit.calls.filter((call) => call.path === "/api/me/engagements").length;
     await page.getByRole("button", { name: /refresh.*(?:interest|engagement)|check.*(?:interest|engagement)/i }).click();
     await expect.poll(() => audit.calls.filter((call) => call.path === "/api/me/engagements").length).toBeGreaterThan(reads);

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { WorkspaceSourceMode } from "@/domain/live-configuration";
-import type { ReadError } from "@/features/live-read";
+import { serviceErrorCode, type ReadError } from "@/features/live-read";
 import styles from "./Workspace.module.css";
 
 const errorTitles: Record<ReadError["kind"], string> = {
@@ -18,6 +18,11 @@ const errorTitles: Record<ReadError["kind"], string> = {
   unavailable: "This service is out of reach right now",
 };
 
+export function ServiceErrorCode({ value }: { value: string | null }) {
+  const code = serviceErrorCode(value);
+  return code === null ? null : <p className={styles.muted}>Service code: <code>{code}</code></p>;
+}
+
 export function ReadFailure({ error, label, sourceMode = "connected" }: {
   error: ReadError; label?: string; sourceMode?: WorkspaceSourceMode;
 }) {
@@ -25,6 +30,7 @@ export function ReadFailure({ error, label, sourceMode = "connected" }: {
     <section className={styles.warning} role="status" aria-label={label ?? "Read status"}>
       <strong>{errorTitles[error.kind]}</strong>
       <p>{error.message}</p>
+      <ServiceErrorCode value={error.code} />
       {error.kind === "unauthenticated" && <p>
         {sourceMode === "server-demo"
           ? "Choose a seeded role using the explicit server-demo control. Its records and identity are fictional."

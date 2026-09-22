@@ -12,3 +12,4 @@ export { LIVE_READ_LIMITS } from "./constants";
 export { createLiveReadClient, createWorkspaceClient, workspaceActorKey } from "./client";
 export { currentProjectInterest, eligibleDealRoomProjects } from "./interest";
 export { formatReadExport } from "./export";
+export { serviceErrorCode } from "./errors";

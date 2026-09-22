@@ -176,6 +176,13 @@ must acknowledge the unresolved outcome and repeat preflight. Project-level
 interest is distinct from funding-need-specific rows; preserve the service's
 engagement ordering/binding state. Reading detail does not itself express interest.
 
+If a mismatched receipt retires access, use **Refresh permitted reads**, then
+reselect a newly authorized project before checking its interest status.
+Only unresolved-command bookkeeping survives temporary retirement in RAM,
+hidden until the same actor is freshly authorized by the same client.
+A different actor or client/configuration lifetime discards that bookkeeping;
+it does not retain authorized records, persist a command or trigger a retry.
+
 **UI originals remain site-only** for permitted owner/operator scope behind the
 independent gate. PR70 implements project-content GET in the backend, including
 eligible tier-one investor access, but this frontend does not call it. There is

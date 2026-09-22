@@ -3,7 +3,7 @@ import {
   currentProjectInterest,
   type InterestResult, type InvestorSnapshot, type ReadError,
 } from "@/features/live-read";
-import { ReadFailure } from "./ReadStatus";
+import { ReadFailure, ServiceErrorCode } from "./ReadStatus";
 import styles from "./Workspace.module.css";
 
 export function ProjectInterest({
@@ -39,6 +39,7 @@ export function ProjectInterest({
     {result?.kind === "existing" && <p role="status">An existing engagement was confirmed; no new creation is claimed.</p>}
     {result?.kind === "unknown" && <section className={styles.warning} role="status" aria-label="Interest request status">
       <strong>Interest outcome unknown</strong><p>{result.error.message}</p>
+      <ServiceErrorCode value={result.error.code} />
     </section>}
     {result && (result.kind === "not-sent" || result.kind === "refused") && <>
       <p>{result.kind === "not-sent" ? "No interest POST was sent." : "The interest request was refused."}</p>

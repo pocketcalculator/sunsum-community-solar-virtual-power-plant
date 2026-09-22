@@ -360,6 +360,29 @@ describe("interest uncertainty and request lifetime", () => {
     expect(h.posts()).toHaveLength(1);
   });
 
+  it.each([{ project_id: OTHER_PROJECT }, { investor_id: IDS.operatorUserId }])(
+    "keeps a foreign receipt unknown after fresh same-actor recovery and empty reconciliation %o",
+    async (change) => {
+      const h = setup();
+      h.state.post = () => json(h.receipt(change), 201);
+      const previous = await h.ready();
+      expect(await h.client.expressInterest(PROJECT, { scope: previous.scope })).toMatchObject({
+        kind: "unknown", receipt: { dispatched: true }, error: { kind: "denied" },
+      });
+      expect(await h.client.readMyEngagements({ scope: previous.scope })).toMatchObject({ ok: false });
+      const recovered = await h.ready();
+      expect(recovered.scope.generation).not.toBe(previous.scope.generation);
+      expect(take(await h.client.readMyEngagements({ scope: recovered.scope })).engagements).toEqual([]);
+      expect(await h.client.expressInterest(PROJECT, { scope: recovered.scope })).toMatchObject({ kind: "unknown" });
+      expect(h.posts()).toHaveLength(1);
+      h.state.post = null;
+      expect(await h.client.expressInterest(PROJECT, {
+        scope: recovered.scope, acknowledgeUnknownOutcome: true,
+      })).toMatchObject({ kind: "created" });
+      expect(h.posts()).toHaveLength(2);
+    },
+  );
+
   it.each([200, 409, 500, 503])("keeps unexpected or unconfirmed HTTP %i outcomes unknown", async (status) => {
     const h = setup();
     h.state.post = () => json({ code: "unexpected" }, status);

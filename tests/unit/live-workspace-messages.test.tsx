@@ -25,7 +25,36 @@ describe("live-read presentation states", () => {
     expect(screen.getByRole("status")).toHaveTextContent("outside your current access");
     expect(screen.getByRole("status")).toHaveTextContent("does not grant permission");
     expect(screen.queryByText("No projects")).not.toBeInTheDocument();
+    expect(screen.getByText("forbidden_role", { exact: true }).tagName).toBe("CODE");
   });
+
+  it.each([
+    ["invalid_body", 400, "invalid"],
+    ["validation_failed", 422, "invalid"],
+    ["unauthenticated", 401, "unauthenticated"],
+    ["forbidden_tier", 403, "denied"],
+    ["forbidden_origin", 403, "denied"],
+    ["not_found", 404, "missing"],
+    ["service_unavailable", 503, "unavailable"],
+  ] as const)("shows the safe %s service code alongside actionable human copy", (code, status, kind) => {
+    render(<ReadFailure error={{
+      kind, code, status, connectionId: null, message: "The service refused the request.",
+    }} />);
+    expect(screen.getByText(code, { exact: true }).tagName).toBe("CODE");
+    expect(screen.getByRole("status")).toHaveTextContent("The service refused the request.");
+  });
+
+  it.each([null, "unrecognized-private-value", "invalid_body:PRIVATE-CANARY", "<script>PRIVATE-CANARY</script>"])(
+    "does not echo arbitrary code content %s", (code) => {
+      const { container } = render(<ReadFailure error={{
+        kind: "invalid", code, status: 400, connectionId: null, message: "Use the accepted input contract.",
+      }} />);
+      expect(container.querySelector("code")).toBeNull();
+      expect(container).not.toHaveTextContent("PRIVATE-CANARY");
+      expect(container).not.toHaveTextContent("unrecognized-private-value");
+      expect(container.querySelector("script")).toBeNull();
+    },
+  );
 
   it("renders source strings as text and does not replace null values with zero", () => {
     const { container } = render(<ReadFacts items={[
