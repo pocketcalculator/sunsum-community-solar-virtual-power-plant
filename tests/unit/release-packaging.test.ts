@@ -43,6 +43,7 @@ const demoContent = {
 };
 const operatorPaths = [
   "README.md", "LICENSE", "docs/ws1/connections.md", "docs/ws1/connection-and-deployment-guide.md",
+  "src/backend/README.md", "docs/api/README.md", "docs/api/openapi.yaml", "docs/api/viability-openapi.yaml",
   "docs/ws1/live-read.env.example", "docs/ws1/server-demo.env.example", "docs/ws1/media-credits.md",
   "docs/ws1/code-approval.example.json", audioManifestPath, audioCreditsPath, "scripts/New-UiRelease.ps1",
   "docs/ws1/architecture.md", "docs/ws1/contracts.md", "infrastructure/docs/app-service-postgres.md",
@@ -154,6 +155,7 @@ beforeEach(() => {
   put(".env", "EXCLUDED_TEST_VALUE=never-in-application-archive");
   for (const file of [
     "README.md", "LICENSE", "docs/ws1/connections.md", "docs/ws1/connection-and-deployment-guide.md",
+    "src/backend/README.md", "docs/api/README.md", "docs/api/openapi.yaml", "docs/api/viability-openapi.yaml",
     "docs/ws1/live-read.env.example", "docs/ws1/server-demo.env.example", "docs/ws1/media-credits.md",
     "docs/ws1/code-approval.example.json",
     "docs/ws1/architecture.md", "docs/ws1/contracts.md", "infrastructure/docs/app-service-postgres.md",

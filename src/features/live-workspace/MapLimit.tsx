@@ -16,7 +16,7 @@ export function MapLimit() {
         This is not a live feed.</p>
       <p>Parcel credentials and ESRI provider/account tokens stay on the backend, including short-lived or
         referer-bound tokens. This browser integration does not request, receive or store them.
-        A separate basemap key or entitlement has not been provisioned.</p>
+        Basemap setup and provider entitlements have not been verified for this frontend.</p>
       <p>The list remains useful. No private parcel sample, invented geography or another
         role&apos;s precise coordinates fill this space.</p>
       <p className={styles.muted}>The endpoint defaults to synthetic parcels; freshness metadata alone

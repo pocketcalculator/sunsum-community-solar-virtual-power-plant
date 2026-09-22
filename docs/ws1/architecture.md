@@ -10,27 +10,21 @@ establishes a deployed three-role MVP.
 See the [connection index](connections.md) and
 [operator guide](connection-and-deployment-guide.md) for current entry paths.
 
-The revised MVP Team Charter, dated September 14, 2026, identifies Site Owner,
-Platform Operator, and Financier/Investor experiences and the seven project
-stages. Its Features A-G define the wider workflow. The original foundation
-covered the public introduction and fictional profile flow; this increment
-adds the separate demo workspace and selected existing-service integration. The
-project's VPP flow board supplies the guided landing dialogue, the sign-in
-sequence, the individual-versus-organisation split and the participant
-taxonomy. The earlier SolarEase dashboard informs visual hierarchy only, not
-financial or AI feature scope. Private source documents and screenshots are not
-included in this repository.
+Site-owner, operator and investor views share presentation, not authority.
+The wider project journey in the [technical design](../sunsum_technical_design_doc.md)
+is broader than this frontend's selected reads and interest command.
+Private research, screenshots and real parcel data are not application assets.
 
 Next.js and TypeScript remain the frontend stack. The
 [technical design](../sunsum_technical_design_doc.md) selects Azure Database
 for PostgreSQL Flexible Server with Drizzle ORM and Drizzle Kit for server-side
-persistence, and Linux App Service for web hosting. The preview has been
-smoke-tested on F1. The implemented `PostgresBackendStore` is selected through
+persistence, and Linux App Service for web hosting. The implemented
+`PostgresBackendStore` is selected through
 `SUNSUM_STORE=db` and uses `DATABASE_URL`/`SUNSUM_DB_AUTH`; the default fixture mode
 still needs no database. The separate `PG*` connection and migration tooling is
 not that application adapter. The [development deployment guide](../../infrastructure/docs/deployment.md)
-records an Azure database-backed deployment, while provisioning a new environment
-and authenticating real participants remain separate work. The browser-only
+records infrastructure separately; that history does not establish this
+follow-up's deployment or participant identity. The browser-only
 profile flow still saves nothing and requires no database credentials.
 
 ## Implemented responsibility boundaries
@@ -80,6 +74,9 @@ importable through the alias at all.
 **No credential enters the profile draft.** The fictional public flow does
 not request a password or claim to create an account/code. Its no-save
 behavior is different from the synthetic workspace's explicit local storage.
+The draft no longer includes an account method, while backend profile intake
+requires one. Adoption is not a mechanical snake_case transform: do not invent
+a sign-in answer or collapse preview roles into backend-derived roles/grants.
 
 Both features' presentation and public entry points share the same static
 Node/server-import restrictions as shared UI. The complete `node:` namespace is
@@ -202,6 +199,9 @@ old fixture dashboard. The static entry never reaches live/session transport
 or server modules. The narrow `live-workspace` orchestration exceptions use
 only the public `live-read` and `community-context` entries, not private
 feature internals.
+Implemented backend profile/contact, GIS and project-original APIs are not
+enabled by that composition. UI original downloads remain site-only;
+no project-document listing route is invented.
 
 The current dev infrastructure intentionally fixes `SUNSUM_STORE=mock`.
 Do not change that guard to follow an AI-suggested GIS setup checklist.
@@ -277,12 +277,13 @@ scoped API keys versus app/user OAuth against the actual ArcGIS product/tenant;
 legacy `generateToken` results are not a blanket security-capability verdict.
 See the [authentication options](connection-and-deployment-guide.md#backend-geojson-map-boundary).
 
-PR71 is **OPEN** at `c6549bd`, proposing operator-only, no-query
-`GET /api/sites/candidate-parcels` with default demo fixtures and the
-[nullable snake_case property contract](contracts.md#new-upstream-handoffs-awaiting-admission).
-It is not merged/live/admitted. `fetched_at`/`stale` is freshness metadata, not
-a fixture/live source indicator. Keep candidate parcels separate from submitted
-sites/projects unless an actual authorized join is provided.
+Merged PR71 implements no-query `GET /api/sites/candidate-parcels` for
+`site_owner` or `operator`, without per-owner filtering. Its final head
+`5be551b` does not change that role/provenance policy. The backend defaults to
+three synthetic parcels; the [wire contract](contracts.md#parcel-and-gis-contract)
+has no fixture/live source field. `fetched_at`/`stale` is freshness metadata,
+not live-provider proof. No frontend GIS operation is admitted. Keep candidates
+separate from submitted sites/projects unless an authorized join is provided.
 `SUNSUM-CONNECTION:MAPS-LOCATION` remains the single admission/operation entry;
 do not invent a map route, proxy, data grant or replacement backend. Current
 presentation is `live-workspace\MapLimit.tsx` within `CollectionView.tsx`.
@@ -294,10 +295,11 @@ Geometry/address and incomplete zoning/land-class coverage cannot substitute
 for the model owner's required field/layer list.
 Any bounded frontend fixtures remain fictional, not source-private parcels.
 
-A hybrid cache with change-driven lookup or an agreed schedule is a proposal,
-not an implemented refresh policy. Cadence remains unknown, with no default
-frontend polling. Cache basemaps/reference layers only as provider terms and
-licensing permit; do not assume a right to mirror them.
+The backend has an on-demand process-local cache, not a finalized refresh SLA.
+Authorization/cooldown, concurrent-failure, completeness and source-policy
+caveats remain to be resolved before frontend admission; no live validation
+is claimed. A change-driven/scheduled policy is still a proposal, with no default
+frontend polling. Cache reference layers only as licensing permits.
 
 ## Visual baseline
 
@@ -357,15 +359,13 @@ increment. The
 [infrastructure foundation](../../infrastructure/README.md) prepares separate
 server-only Drizzle connections and Bicep/Azure CLI code delivery.
 This UI release does not provision a database or connect an identity provider.
-The source package, synthetic Pages bundle, authorized operations and
-conditional cloud deployment have separate acceptance evidence. The inspected
-source lineage is `db0c6a5d6e39fe7cf079dab27e9616189945cf6c`, not current main;
-neither it nor a package hash is a deployed revision. The maintainer has merged
-PR62 and upstream now includes additional API/dependency changes.
-[Publication is held](../../README.md#upstream-reconciliation-hold) until the
-coordinator reconciles those deltas and re-freezes contracts. Preserve current
-source and infrastructure guards; no main push/merge, Azure deployment or
-cloud-workflow dispatch is authorized by this workstream.
+The source package, synthetic bundle, authorized operations and deployment have
+separate evidence. This new follow-up to externally merged PR62 is locally
+reconciled with upstream `449f6b0660609af3c80946f618c5e73828a36768`.
+The consumed-contract pin identifies that inspected upstream; the actual
+release commit belongs in generated artifact metadata. Neither is
+deployment proof or permission to enable new APIs. Preserve infrastructure
+guards; no source-main push/merge or Azure deployment was performed by this work.
 
 No credentials or private data belong in public runtime configuration. Future
 server-only exports must remain separate from client-safe public feature entries.

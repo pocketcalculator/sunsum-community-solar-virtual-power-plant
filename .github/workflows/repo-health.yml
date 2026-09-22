@@ -229,6 +229,17 @@ jobs:
       - name: Exercise the actual Pages prefix
         run: npm run test:e2e -- --config=playwright.vibehub.config.ts --workers=1
 
+      - name: Retain synthetic landing and header images
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sunsum-ui-images-${{ env.ACCEPTANCE_SOURCE_SHA }}
+          path: |
+            test-results/**/public-front-door-*.png
+            test-results/**/compact-synthetic-header-*.png
+            test-results/**/shared-pill-glide-settled.png
+          if-no-files-found: warn
+
       - name: Package source and demo without Azure
         shell: pwsh
         run: |

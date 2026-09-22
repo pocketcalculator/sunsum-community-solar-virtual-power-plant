@@ -131,6 +131,10 @@ if ($package.engines.node -isnot [string] -or [string]::IsNullOrWhiteSpace($pack
 }
 $handoffPaths = @(
     'README.md', 'LICENSE',
+    'src\backend\README.md',
+    'docs\api\README.md',
+    'docs\api\openapi.yaml',
+    'docs\api\viability-openapi.yaml',
     'docs\ws1\connections.md',
     'docs\ws1\architecture.md',
     'docs\ws1\contracts.md',

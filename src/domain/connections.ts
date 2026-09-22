@@ -169,7 +169,7 @@ export const CONNECTION_REGISTRY: readonly ConnectionDefinition[] = Object.freez
     "SUNSUM-CONNECTION:MAPS-LOCATION",
     "Backend GeoJSON map seam",
     "Existing backend and location integration owners",
-    "Stored authorized location fields remain available. The merged backend offers GeoJSON FeatureCollection (EPSG:4326). The browser never receives parcel credentials or ESRI provider/account tokens, including short-lived or referer-bound tokens. A separate basemap key or entitlement has not been provisioned.",
+    "Stored authorized location fields remain available. The merged backend offers GeoJSON FeatureCollection (EPSG:4326). The browser never receives parcel credentials or ESRI provider/account tokens, including short-lived or referer-bound tokens. Basemap setup and provider entitlements have not been verified for this frontend.",
     "Merged PR71 implements GET /api/sites/candidate-parcels for site owners and operators; it is not admitted by this frontend. Reconcile authentication, the project-join contract, approved property projection, role/record disclosure, bounds and trusted fixture/live provenance before adding a typed GET. The backend defaults to three synthetic parcels and reports freshness, not source provenance. Its read-through cache is not an agreed refresh schedule: no polling by default. Backend/operators own provider credentials. Edit this registry and the live-read transport/projection only after that handoff.",
   ),
   seam(
