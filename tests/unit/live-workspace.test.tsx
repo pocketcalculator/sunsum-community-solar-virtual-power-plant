@@ -602,9 +602,9 @@ describe("mocked frontend read workspace (not real service access)", () => {
     const search = await screen.findByRole("textbox", { name: "Search permitted records" });
     fireEvent.change(search, { target: { value: "Contract roof" } });
     fireEvent.change(screen.getByRole("combobox", { name: "Sort records" }), { target: { value: "name" } });
-    fireEvent.click(screen.getByRole("button", { name: "Cards", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Cards" }));
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-    fireEvent.click(screen.getByRole("button", { name: "Select Contract roof 26", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Contract roof 26" }));
     expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
     act(() => {
       visibility.mockReturnValue("hidden");
@@ -616,12 +616,12 @@ describe("mocked frontend read workspace (not real service access)", () => {
       visibility.mockReturnValue("visible");
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    await screen.findByRole("button", { name: "Select Contract roof 26", exact: true });
+    await screen.findByRole("button", { name: "Select Contract roof 26" });
     expect(screen.getByRole("textbox", { name: "Search permitted records" })).toHaveValue("Contract roof");
     expect(screen.getByRole("combobox", { name: "Sort records" })).toHaveValue("name");
-    expect(screen.getByRole("button", { name: "Cards", exact: true })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Cards" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Select Contract roof 26", exact: true }))
+    expect(screen.getByRole("button", { name: "Select Contract roof 26" }))
       .toHaveAttribute("aria-pressed", "true");
     expect(mocks.identity).toHaveBeenCalledTimes(2);
     expect(mocks.interest).not.toHaveBeenCalled();
@@ -741,8 +741,8 @@ describe("read collection phase order", () => {
       mocks.identity.mockResolvedValue({ ok: true, data: value.identity });
       mocks.snapshot.mockResolvedValue({ ok: true, data: value });
       render(<LiveWorkspace configuration={configuration} initialHref="/app?view=pipeline" />);
-      await screen.findByRole("heading", { name: "Read the project pipeline", exact: true });
-      fireEvent.click(screen.getByRole("checkbox", { name: "screening", exact: true }));
+      await screen.findByRole("heading", { name: "Read the project pipeline" });
+      fireEvent.click(screen.getByRole("checkbox", { name: "screening" }));
       await waitFor(() => expect(mocks.snapshot).toHaveBeenLastCalledWith(expect.objectContaining({
         query: { statuses: ["screening"] },
       })));
@@ -761,7 +761,7 @@ describe("read collection phase order", () => {
       const beforeLocal = mocks.snapshot.mock.calls.length;
       fireEvent.change(screen.getByRole("combobox", { name: "Records per page" }), { target: { value: "50" } });
       fireEvent.change(screen.getByRole("combobox", { name: "Sort records" }), { target: { value: "name" } });
-      fireEvent.click(screen.getByRole("button", { name: "Cards", exact: true }));
+      fireEvent.click(screen.getByRole("button", { name: "Cards" }));
       expect(mocks.snapshot).toHaveBeenCalledTimes(beforeLocal);
       expect(JSON.stringify(window.history.state)).not.toContain("A & B");
       expect(window.location.search).not.toContain("location");
@@ -777,10 +777,10 @@ describe("read collection phase order", () => {
         ...value, records: value.records.map((row) => ({ ...row, name: "Newest permitted project" })),
       };
       mocks.snapshot.mockImplementationOnce(() => old.promise).mockResolvedValueOnce({ ok: true, data: newest });
-      fireEvent.click(screen.getByRole("checkbox", { name: "development", exact: true }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "development" }));
       await waitFor(() => expect(mocks.snapshot).toHaveBeenCalledTimes(2));
       expect(screen.queryByText("Contract roof 00")).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole("checkbox", { name: "construction", exact: true }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "construction" }));
       await screen.findByText("Newest permitted project");
       expect(mocks.snapshot).toHaveBeenLastCalledWith(expect.objectContaining({
         query: { mandateMatch: true, stages: ["development", "construction"] },
@@ -797,7 +797,7 @@ describe("read collection phase order", () => {
         kind: "unavailable", message: "Synthetic room unavailable.", status: 503, code: "service_unavailable", connectionId: null,
       } });
       render(<LiveWorkspace configuration={{ ...configuration, canAttemptInterest: true }} initialHref="/app?view=portfolio" />);
-      fireEvent.click(await screen.findByRole("button", { name: "Open Contract roof 00", exact: true }));
+      fireEvent.click(await screen.findByRole("button", { name: "Open Contract roof 00" }));
       await screen.findByRole("region", { name: "Tier-zero project context" });
       expect(mocks.detail).not.toHaveBeenCalled();
       expect(mocks.interest).not.toHaveBeenCalled();
@@ -825,7 +825,7 @@ describe("read collection phase order", () => {
         ok: true, data: { identity: value.identity, scope: value.scope, provenance, engagements: [] },
       });
       render(<LiveWorkspace configuration={{ ...configuration, canAttemptInterest: true }} initialHref="/app?view=portfolio" />);
-      fireEvent.click(await screen.findByRole("button", { name: "Select Contract roof 00", exact: true }));
+      fireEvent.click(await screen.findByRole("button", { name: "Select Contract roof 00" }));
       fireEvent.click(screen.getByRole("button", { name: "Register nonbinding interest" }));
       await screen.findByText("The outcome is unknown.");
       expect(screen.getByRole("button", { name: "Make a new registration attempt" })).toBeDisabled();

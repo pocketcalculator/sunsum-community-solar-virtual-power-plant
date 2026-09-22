@@ -116,11 +116,12 @@ export function createWorkspaceClient(
     if (!isObject(configuration) || configuration.canAttemptReads !== true || configuration.apiBasePath !== "/api") {
       return failure(readError("out-of-reach", "The existing-service read connection has not been admitted.", "configuration_not_admitted"));
     }
-    const mode = workspaceSourceMode(configuration);
-    if ((mode !== "connected" && mode !== "server-demo") ||
-      configuration.source !== (mode === "server-demo" ? "mock-configured" : "database-configured")) {
+    const sourceMode = workspaceSourceMode(configuration);
+    if ((sourceMode !== "connected" && sourceMode !== "server-demo") ||
+      configuration.source !== (sourceMode === "server-demo" ? "mock-configured" : "database-configured")) {
       return failure(readError("out-of-reach", "The source mode and store do not match; no fallback is admitted.", "configuration_not_admitted"));
     }
+    const mode = sourceMode;
     const configKeys = [
       "canAttemptReads", "canAttemptExports", "canAttemptDocumentDownloads",
       "apiBasePath", "source", "reason", "mode", "canAttemptInterest", "syntheticIdentities",

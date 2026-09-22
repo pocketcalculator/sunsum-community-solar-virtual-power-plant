@@ -34,7 +34,7 @@ describe("landing page", () => {
   it("offers an explicit workspace entrance without replacing the public arrival", () => {
     render(<LandingPage />);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Community solar, with communities at the center.");
-    expect(screen.getByRole("link", { name: "Open Sunroom workspace", exact: true })).toHaveAttribute("href", "/app");
+    expect(screen.getByRole("link", { name: "Open Sunroom workspace" })).toHaveAttribute("href", "/app");
     expect(screen.getByRole("link", { name: "Why local needs come first" })).toHaveAttribute("href", "/need");
   });
 
