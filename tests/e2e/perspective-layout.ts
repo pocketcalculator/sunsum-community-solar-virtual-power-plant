@@ -29,6 +29,15 @@ export async function expectCompactPerspectiveRow(page: Page, name: string) {
   const fontSizes = await group.locator("[data-role]").evaluateAll((elements) =>
     elements.map((element) => parseFloat(getComputedStyle(element).fontSize)));
   expect(fontSizes.every((size) => size >= 13)).toBe(true);
+  const labels = await group.locator("[data-role] > span").evaluateAll((elements) => elements.map((element) => {
+    const label = element.getBoundingClientRect();
+    const target = element.parentElement?.getBoundingClientRect();
+    const lineHeight = parseFloat(getComputedStyle(element).lineHeight);
+    return Boolean(target && Number.isFinite(lineHeight) && label.height <= lineHeight + 1 &&
+      label.left >= target.left - 1 && label.right <= target.right + 1);
+  }));
+  expect(labels).toHaveLength(3);
+  expect(labels.every(Boolean)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
 }
 

@@ -115,7 +115,7 @@ test("a failed public clip reports an error without losing the authored story", 
   await page.route("**/audio/need.mp3", (route) => route.fulfill({ status: 404, body: "" }));
   await page.goto("/need");
   await page.getByRole("button", { name: /^Play / }).click();
-  await expect(page.getByRole("alert")).toContainText("could not be played");
+  await expect(page.getByRole("region", { name: /^Music:/ }).getByRole("alert")).toContainText("could not be played");
   await expect(page.getByRole("button", { name: /^Play / })).toBeVisible();
   await expect(page.getByRole("article")).toContainText("not a claim of current projects or guaranteed outcomes");
 });
