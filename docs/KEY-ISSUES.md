@@ -2,7 +2,7 @@
 
 ## API [API]
 >
-> Last reviewed: 2026-09-21 | Open: 0
+> Last reviewed: 2026-09-21 | Open: 2
 
 Source-contract review of the live-read adapter, configuration, connection registry, and `/app` entry against WS2 commit `73695a052a6324434b36bebbdd0c834b455471b7`. Findings include untracked implementation files. These are source-backed failures, not claims about a deployed service.
 
@@ -65,6 +65,35 @@ Source-contract review of the live-read adapter, configuration, connection regis
 - Reproduction: Encode a manifest with contract revision `73695a052a6324434b36bebbdd0c834b455471b7` and retrieval time `2026-09-21T08:00:00.000Z`. Both saved encodings omit those values even though the returned wrapper contains them.
 - Confidence: HIGH; inspected both encoded Blob texts.
 - Fix: Include an allowlisted source/provenance object in JSON and equivalent scalar CSV metadata rows, keeping source generation, retrieval time, contract revision, and unknown deployment revision distinct. Preserve existing escaping and do not serialize raw service URLs or credentials.
+
+### API-6 - Interest used cached project membership before dispatch
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `src/features/live-read/client.ts`, `expressInterest`
+- Problem: Fresh identity and engagement reads did not recheck whether the
+  selected project still belonged to the current filtered portfolio.
+- Correction: Retain the snapshot's copied query within its generation and
+  repeat that exact portfolio GET before dispatch. Missing projects and failed
+  preflight reads produce an explicit unsent result, never an unfiltered read.
+- Regression: `live-interest-contract.test.ts` covers exact filters, mutation of
+  the caller's original query array, stage/visibility removal and failed reads.
+  The backend remains the final authority; this is not an atomic write guarantee.
+
+### API-7 - Incomplete creation timestamps could confirm an invalid receipt
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `src/features/live-read/client.ts`, 201 receipt validation
+- Problem: The tolerant GET projection allowed missing/null timestamps through
+  the new POST confirmation branch.
+- Correction: Require both parsed creation and state-change timestamps for a
+  confirmed 201. Invalid receipts retain the dispatched unknown outcome; GET
+  projection compatibility is unchanged.
+- Regression: `live-interest-contract.test.ts` covers each timestamp omitted,
+  null and empty, empty reconciliation and no unacknowledged second POST.
 
 ### Cross-domain handoff
 
@@ -150,8 +179,9 @@ the real object-URL hook's navigation/unmount cleanup.
 
 > Last reviewed: 2026-09-21 | Open: 0
 
-These three LOW findings are bounded maintenance simplifications, not
-authorization changes or proposals to rewrite stakeholder copy.
+READ-1 through READ-3 are historical bounded maintenance simplifications.
+The successor integration review adds READ-4 below; none changes authorization
+or stakeholder story copy.
 
 ### READ-1 - Retired local CSS classes remain after control replacement
 
@@ -182,6 +212,18 @@ authorization changes or proposals to rewrite stakeholder copy.
   tone helper. A focused assertion binds labels, filter order and tones; owner
   wording, screening and journey stages remain separate. All 67 scoped
   onboarding/operator/detail/presentation cases pass after both simplifications.
+
+### READ-4 - Profile wording conflates local and service-backed demo identities
+
+- Severity: MEDIUM
+- Status: RESOLVED
+- Confidence: HIGH
+- File: `src/features/live-workspace/RoleViews.tsx:81`
+- Problem: The shared profile said a "demo role" was not its service identity,
+  although explicit server-demo intentionally uses a seeded service identity.
+- Resolution: Qualified the disclaimer as "browser-local demo role." This keeps
+  public answers and fictional local selection separate from authenticated
+  service identity without another mode branch or any permission change.
 
 ## Testing [TEST]
 

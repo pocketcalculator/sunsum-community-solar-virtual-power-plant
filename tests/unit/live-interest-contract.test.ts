@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_IDENTITY_IDS } from "@/backend/demo-principals";
 import { resolveLiveReadConfiguration, type LiveReadConfiguration } from "@/domain/live-configuration";
+import type { ProjectStage, WorkspaceQuery } from "@/domain/workspace-filters";
 import {
   createWorkspaceClient, currentProjectInterest, eligibleDealRoomProjects,
   type InterestResult, type ReadEngagement, type ReadResult,
@@ -9,7 +10,7 @@ import {
 import {
   SYNTHETIC_LIVE_READ_IDS as IDS,
   SYNTHETIC_LIVE_READ_TIME as TIME,
-  syntheticEngagement, syntheticIdentity, syntheticInvestorProfile, syntheticPortfolio,
+  syntheticEngagement, syntheticIdentity, syntheticInvestorProfile, syntheticPortfolio, syntheticPortfolioItem,
 } from "../fixtures/live-read-contracts";
 
 const PROJECT = IDS.projectId;
@@ -42,9 +43,10 @@ function setup(mode: "connected" | "server-demo" = "connected", changes: Partial
     rows: unknown[];
     post: (() => Response | Promise<Response>) | null;
     identityRead: (() => Response | Promise<Response>) | null;
+    portfolioRead: ((url: URL) => Response | Promise<Response>) | null;
   } = {
     identity: syntheticIdentity("investor", { user_id: IDS.investorUserId }),
-    rows: [], post: null, identityRead: null,
+    rows: [], post: null, identityRead: null, portfolioRead: null,
   };
   const investorId = () => {
     const profile = state.identity.investor;
@@ -66,7 +68,8 @@ function setup(mode: "connected" | "server-demo" = "connected", changes: Partial
     }
     if (method !== "GET") throw new Error(`Unexpected synthetic mutation: ${method} ${url.pathname}`);
     if (url.pathname === "/api/me") return state.identityRead ? state.identityRead() : json(state.identity);
-    if (url.pathname === "/api/portfolio") return json(syntheticPortfolio({ mandate_match: true }));
+    if (url.pathname === "/api/portfolio") return state.portfolioRead
+      ? state.portfolioRead(url) : json(syntheticPortfolio({ mandate_match: true }));
     if (url.pathname === "/api/me/engagements") return json(state.rows);
     if (url.pathname === "/api/investors/me/profile") return json(syntheticInvestorProfile({
       id: investorId(), user_id: state.identity.user_id,
@@ -168,6 +171,75 @@ describe("explicit project-level nonbinding interest", () => {
     const snapshot = await h.ready();
     expect(await h.client.expressInterest(PROJECT, { scope: snapshot.scope })).toMatchObject({
       kind: "not-sent", error: { code: "interest_not_admitted" },
+    });
+    expect(h.posts()).toEqual([]);
+  });
+
+  it("rechecks the exact admitted query before sending interest", async () => {
+    const h = setup();
+    const stages: ProjectStage[] = ["development", "commissioning"];
+    const query: WorkspaceQuery = {
+      stages, mandateMatch: false, projectType: "community rooftop", viability: "potentially_viable",
+    };
+    h.state.portfolioRead = () => json(syntheticPortfolio({
+      mandate_match: false,
+      items: [syntheticPortfolioItem({
+        stage: "development", journey_stage_id: "development",
+        preliminary_project_type: "community rooftop", my_engagement_state: null,
+      })],
+    }));
+    const snapshot = take(await h.client.readSnapshot({ query }));
+    stages.push("construction");
+    expect(await h.client.expressInterest(PROJECT, { scope: snapshot.scope })).toMatchObject({ kind: "created" });
+    const portfolios = h.calls.filter((call) => call.path.startsWith("/api/portfolio"));
+    expect(portfolios).toHaveLength(2);
+    expect(portfolios[1]?.path).toBe(portfolios[0]?.path);
+    const preflight = portfolios[1];
+    if (!preflight) throw new Error("Interest did not re-read the portfolio.");
+    const parameters = new URL(preflight.path, "https://sunsum.invalid").searchParams;
+    expect(parameters.getAll("stage")).toEqual(["development", "commissioning"]);
+    expect(parameters.get("mandate_match")).toBe("false");
+    expect(parameters.get("project_type")).toBe("community rooftop");
+    expect(parameters.get("viability")).toBe("potentially_viable");
+    expect(h.posts()).toHaveLength(1);
+  });
+
+  it.each(["stage changed", "visibility removed"] as const)("does not dispatch when fresh project admission fails: %s", async (change) => {
+    const h = setup();
+    let stage: ProjectStage = "development";
+    let visible = true;
+    h.state.portfolioRead = (url) => {
+      const included = visible && url.searchParams.getAll("stage").includes(stage);
+      return json(syntheticPortfolio({
+        items: included ? [syntheticPortfolioItem({
+          stage, journey_stage_id: stage, my_engagement_state: null,
+        })] : [],
+        project_count: included ? 1 : 0,
+        total_estimated_capacity_kw: included ? 16 : 0,
+        mandate_match: false,
+      }));
+    };
+    const snapshot = take(await h.client.readSnapshot({
+      query: { stages: ["development"], mandateMatch: false },
+    }));
+    if (change === "stage changed") stage = "construction";
+    else visible = false;
+    expect(await h.client.expressInterest(PROJECT, { scope: snapshot.scope })).toMatchObject({
+      kind: "refused", receipt: null, error: { code: "project_not_admitted" },
+    });
+    expect(h.calls.filter((call) => call.path.startsWith("/api/portfolio")).map((call) => call.path)).toEqual([
+      "/api/portfolio?stage=development&mandate_match=false",
+      "/api/portfolio?stage=development&mandate_match=false",
+    ]);
+    expect(h.posts()).toEqual([]);
+  });
+
+  it("does not dispatch when the fresh portfolio read fails", async () => {
+    const h = setup();
+    const snapshot = await h.ready();
+    h.state.portfolioRead = () => json({ code: "unavailable", message: "Synthetic portfolio failure." }, 503);
+    expect(await h.client.expressInterest(PROJECT, { scope: snapshot.scope })).toMatchObject({
+      kind: "not-sent", receipt: null, error: { status: 503 },
     });
     expect(h.posts()).toEqual([]);
   });
@@ -293,6 +365,23 @@ describe("interest uncertainty and request lifetime", () => {
     h.state.post = () => json({ code: "unexpected" }, status);
     const snapshot = await h.ready();
     expect((await h.client.expressInterest(PROJECT, { scope: snapshot.scope })).kind).toBe("unknown");
+    expect(h.posts()).toHaveLength(1);
+  });
+
+  it.each([
+    { created_at: undefined }, { created_at: null }, { created_at: "" },
+    { state_changed_at: undefined }, { state_changed_at: null }, { state_changed_at: "" },
+  ])("keeps incomplete timestamp receipts uncertain without replay: %o", async (change) => {
+    const h = setup();
+    h.state.post = () => json(h.receipt(change), 201);
+    const snapshot = await h.ready();
+    expect(await h.client.expressInterest(PROJECT, { scope: snapshot.scope })).toMatchObject({
+      kind: "unknown", receipt: { dispatched: true },
+    });
+    expect(take(await h.client.readMyEngagements({ scope: snapshot.scope })).engagements).toEqual([]);
+    expect(await h.client.expressInterest(PROJECT, { scope: snapshot.scope })).toMatchObject({
+      kind: "unknown", error: { code: "interest_outcome_unknown" },
+    });
     expect(h.posts()).toHaveLength(1);
   });
 

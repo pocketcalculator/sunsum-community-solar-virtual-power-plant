@@ -1,6 +1,6 @@
 import type { LiveReadConfiguration } from "@/domain/live-configuration";
 import { workspaceSourceMode } from "@/domain/live-configuration";
-import { copyWorkspaceQuery } from "@/domain/workspace-filters";
+import { copyWorkspaceQuery, type WorkspaceQuery } from "@/domain/workspace-filters";
 
 import { LIVE_READ_LIMITS } from "./constants";
 import { failure, malformed, ReadFault, readError, rejectRead, success } from "./errors";
@@ -165,6 +165,7 @@ export function createWorkspaceClient(
     const groups = new Map<Channel, Group>();
     const documents = new Map<string, DocumentReference>();
     const permittedInterestProjects = new Set<string>();
+    let interestQuery: WorkspaceQuery | null = null;
     const unknownInterest = new Map<string, InterestReceipt>();
     let interestPending = false;
     let generation = 0;
@@ -178,6 +179,7 @@ export function createWorkspaceClient(
       scope = null;
       documents.clear();
       permittedInterestProjects.clear();
+      interestQuery = null;
       for (const pending of groups.values()) {
         if (pending !== except) pending.controller.abort(new ReadFault(error));
       }
@@ -428,6 +430,7 @@ export function createWorkspaceClient(
         const pipelineItems = await section(group, { kind: "my-engagements" }, (value) => engagements(value, identity));
         await after(group, identity);
         if (pipelineItems.ok) reconcileUnknownInterest(identity, pipelineItems.data);
+        interestQuery = filter ?? {};
         for (const record of collection.records) {
           if (record.projectId !== null) permittedInterestProjects.add(record.projectId);
         }
@@ -474,8 +477,12 @@ export function createWorkspaceClient(
           const acknowledged = readOptions.acknowledgeUnknownOutcome === true;
           const identity = await before(group, readOptions.scope);
           requireInvestor(identity);
-          if (!permittedInterestProjects.has(projectId)) {
+          if (interestQuery === null || !permittedInterestProjects.has(projectId)) {
             rejectRead("denied", "Choose a project in the current permitted portfolio before registering interest.", "project_not_admitted");
+          }
+          const collection = await read(group, { kind: "portfolio", query: interestQuery }, portfolio);
+          if (!collection.records.some((record) => record.projectId === projectId)) {
+            rejectRead("denied", "This project is no longer in the current permitted portfolio. Refresh the collection before registering interest.", "project_not_admitted");
           }
           const investorId = identity.investorId;
           if (investorId === null) return malformed();
@@ -523,7 +530,8 @@ export function createWorkspaceClient(
             ? engagements([response.payload], identity, projectId)[0] : null;
           if (response.kind === "created" && (object(response.payload).funding_need_id !== null ||
             !created || created.fundingNeedId !== null ||
-            created.state !== "interested" || created.isBinding !== false)) malformed();
+            created.state !== "interested" || created.isBinding !== false ||
+            created.createdAt === null || created.stateChangedAt === null)) malformed();
           await after(group, identity);
           assertGroup(group);
           unknownInterest.delete(key);

@@ -78,7 +78,7 @@ export function ProfileView({ snapshot }: { snapshot: LiveSnapshot }) {
         { label: "Organization", value: identity.organizationName ?? "Not specified" },
         { label: "Investor onboarding", value: identity.onboarded === null ? "Not supplied" : identity.onboarded ? "Recorded complete" : "Not recorded complete" },
       ]} />
-      <p className={styles.muted}>A public participation answer or demo role is not this identity.</p>
+      <p className={styles.muted}>A public participation answer or browser-local demo role is not this identity.</p>
     </section>
     {snapshot.role === "investor" && (!snapshot.profile.ok ? <ReadFailure error={snapshot.profile.error} /> :
       <section className={styles.panel}>

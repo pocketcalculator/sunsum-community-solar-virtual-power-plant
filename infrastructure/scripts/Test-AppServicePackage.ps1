@@ -38,7 +38,8 @@ function Test-PositiveInteger($Value) {
 }
 
 $resolved = (Resolve-Path -LiteralPath $Path).Path
-$compressedBytes = (Get-Item -LiteralPath $resolved).Length
+# The atomic packager's temporary archive is a hidden dotfile on Linux.
+$compressedBytes = (Get-Item -LiteralPath $resolved -Force).Length
 if ($compressedBytes -gt 64MB) { throw 'Source archive exceeds the 64 MiB safety limit.' }
 $archive = [System.IO.Compression.ZipFile]::OpenRead($resolved)
 try {
