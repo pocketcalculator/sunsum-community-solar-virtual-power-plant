@@ -86,9 +86,12 @@ describe("shared controlled role presentation", () => {
     fireEvent.pointerMove(owner, { pointerId: 9, clientX: 220, clientY: 20 });
     fireEvent.keyDown(owner, { key: "Escape" });
     fireEvent.pointerUp(owner, { pointerId: 9, clientX: 220, clientY: 20 });
-    fireEvent.click(screen.getByRole("radio", { name: "Investor" }), { detail: 1 });
+    const accepted = fireEvent.click(screen.getByRole("radio", { name: "Investor" }), { detail: 1 });
+    expect(accepted).toBe(false);
     expect(change).not.toHaveBeenCalled();
-    expect(owner).toBeChecked();
+    // JSDOM only restores the clicked radio after cancellation; native group restoration is covered in Playwright.
+    expect(owner.closest("[data-role]")).toHaveAttribute("data-selected", "true");
+    expect(container.querySelector<HTMLElement>("[data-role-hit-track]")?.style.getPropertyValue("--role-index")).toBe("0");
   });
 
   it("separates the decorative thin track from native full-size role targets", () => {

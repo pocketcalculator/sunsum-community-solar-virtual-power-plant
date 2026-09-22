@@ -126,11 +126,13 @@ function ClipPlayer({ audio }: PageAudioPlayerProps) {
   const active = phase === "playing" || phase === "loading";
   return <section className={styles.player} aria-label={`Music: ${audio.title}`}>
     <button type="button" className={styles.button} aria-pressed={phase === "playing"}
+      aria-label={`${active ? "Pause" : "Play"} ${audio.title}`}
       aria-describedby={`${id}-status`} onClick={togglePlayback}>
-      {active ? "Pause" : "Play"}<span className={styles.visuallyHidden}> {audio.title}</span>
+      {active ? "Pause" : "Play"}
     </button>
-    <button type="button" className={styles.secondaryButton} aria-pressed={muted} onClick={toggleMuted}>
-      {muted ? "Unmute" : "Mute"}<span className={styles.visuallyHidden}> {audio.title}</span>
+    <button type="button" className={styles.secondaryButton} aria-pressed={muted}
+      aria-label={`${muted ? "Unmute" : "Mute"} ${audio.title}`} onClick={toggleMuted}>
+      {muted ? "Unmute" : "Mute"}
     </button>
     <p className={styles.credit}>
       <span className={styles.title}>{audio.title}</span>

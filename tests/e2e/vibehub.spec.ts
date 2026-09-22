@@ -92,6 +92,10 @@ test("dragging tracks the pointer continuously, then glides back on cancellation
   await expect(owner).toBeChecked();
   await expectPerspectiveGlide(page, "Demo role", async () => {
     await page.keyboard.press("Escape");
+    const accepted = await group.getByRole("radio", { name: "Investor", exact: true }).evaluate((element) =>
+      element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 })));
+    expect(accepted).toBe(false);
+    await expect(owner).toBeChecked();
     await page.mouse.up();
   });
   await expect(owner).toBeChecked();

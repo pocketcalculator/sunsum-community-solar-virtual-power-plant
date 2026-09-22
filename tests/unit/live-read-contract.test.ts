@@ -950,12 +950,15 @@ describe("separately admitted original bytes and normalized exports", () => {
     const manifest = take(await client.readExport({ scope: await scopeOf(client) }));
     const encoded = JSON.parse(await formatReadExport(manifest, "json").blob.text());
     expect(encoded.provenance).toEqual({
-      source: "WS2", contractRevision: WS2_CONTRACT_REVISION, deployedRevision: null, retrievedAt: OBSERVED,
+      source: "WS2", mode: "connected", store: "database-configured",
+      contractRevision: WS2_CONTRACT_REVISION, deployedRevision: null, retrievedAt: OBSERVED,
     });
     expect(encoded.generatedAt).toBe(manifest.generatedAt);
     expect(encoded.generatedAt).not.toBe(encoded.provenance.retrievedAt);
     const csv = await formatReadExport(manifest, "csv").blob.text();
     expect(csv).toContain('"source","WS2"');
+    expect(csv).toContain('"source_mode","connected"');
+    expect(csv).toContain('"source_store","database-configured"');
     expect(csv).toContain(`"contract_revision","${WS2_CONTRACT_REVISION}"`);
     expect(csv).toContain('"deployed_revision",""');
     expect(csv).toContain(`"retrieved_at","${OBSERVED}"`);
