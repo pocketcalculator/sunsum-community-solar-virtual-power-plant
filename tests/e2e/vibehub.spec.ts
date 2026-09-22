@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { exercisePublicAudio } from "./public-audio-cases";
 import { expectCompactPerspectiveRow, expectPerspectiveGlide } from "./perspective-layout";
+import { installStaticNetworkGuard } from "../fixtures/static-network-guard";
 
 function hostingPath() {
   const prefix = test.info().config.metadata.routePrefix;
@@ -192,21 +193,41 @@ for (const pathname of ["/need", "/opportunity", "/impact"]) {
 }
 
 for (const topic of ["need", "opportunity", "impact"] as const) {
-  test(`static ${topic} plays the exact supplied clip below the hosting prefix`, async ({ page }) => {
+  test(`static ${topic} plays the exact supplied clip below the hosting prefix`, async ({ page, context, baseURL }) => {
     test.skip(!test.info().config.metadata.routePrefix, "Static build only.");
     await page.emulateMedia({ reducedMotion: "reduce" });
     const root = hostingPath();
-    const requests: string[] = [];
-    page.on("request", (request) => {
-      const path = new URL(request.url()).pathname;
-      if (path.startsWith("/api/") || path.startsWith("/audio/")) requests.push(path);
-    });
+    if (!baseURL) throw new Error("Static test base URL is missing.");
+    const audit = await installStaticNetworkGuard(context, new URL(root, baseURL));
     await page.goto(`${root}#/${topic}`);
     await page.reload();
     await exercisePublicAudio(page, topic, root, `${root}AUDIO-CREDITS.txt`);
-    expect(requests).toEqual([]);
+    expect(audit.observed).toEqual([]);
+    expect(audit.blocked).toEqual([]);
   });
 }
+
+test("static guard blocks and observes prefixed writes, sessions and foreign traffic", async ({ page, context, baseURL }) => {
+  test.skip(!test.info().config.metadata.routePrefix, "Static build only.");
+  if (!baseURL) throw new Error("Static test base URL is missing.");
+  const root = hostingPath();
+  const audit = await installStaticNetworkGuard(context, new URL(root, baseURL));
+  await page.goto(`${root}#/need`);
+  expect(audit.observed).toEqual([]);
+  const failures = await page.evaluate(async () => {
+    const attempts = [
+      fetch("./api/profiles", { method: "POST", body: "synthetic-static-guard-canary" }),
+      fetch("/api/me"),
+      fetch("https://static-guard.invalid/not-an-api", { mode: "no-cors" }),
+    ];
+    return (await Promise.allSettled(attempts)).map((result) => result.status);
+  });
+  expect(failures).toEqual(["rejected", "rejected", "rejected"]);
+  expect(audit.observed).toHaveLength(3);
+  expect(audit.blocked).toHaveLength(3);
+  expect([...audit.observed].sort()).toEqual([...audit.blocked].sort());
+  expect(audit.blocked.some((request) => request.startsWith("POST ") && request.endsWith(`${root}api/profiles`))).toBe(true);
+});
 
 test("static role workspace links use Sunroom without relocating the legacy owner illustration", async ({ page }) => {
   test.skip(!test.info().config.metadata.routePrefix, "Static build only.");

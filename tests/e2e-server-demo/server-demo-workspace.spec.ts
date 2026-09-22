@@ -159,12 +159,28 @@ const roleUser: Record<DemoRole, string> = {
   site_owner: DEMO_SITE_OWNER_USER_ID, operator: DEMO_OPERATOR_USER_ID, investor: DEMO_INVESTOR_USER_ID,
 };
 
+function demoRoleGroup(page: Page) {
+  return page.getByRole("group", { name: "Developer/demo sign-in", exact: true });
+}
+
+function demoRoleControl(page: Page, role: DemoRole) {
+  const value = role === "site_owner" ? "site-owner" : role;
+  return demoRoleGroup(page).locator(`button[data-role-control="${value}"]`);
+}
+
+async function expectSelectedDemoRole(page: Page, role: DemoRole) {
+  const group = demoRoleGroup(page);
+  await expect(group).toHaveCount(1);
+  await expect(demoRoleControl(page, role)).toHaveAccessibleName(roleLabel[role]);
+  await expect(demoRoleControl(page, role)).toHaveAttribute("aria-current", "true");
+  await expect(group.locator('button[aria-current="true"]')).toHaveCount(1);
+}
+
 async function switchRole(page: Page, demo: DemoAudit, role: DemoRole) {
   demo.armRole(role);
   const received = page.waitForResponse((response) =>
     new URL(response.url()).pathname === "/api/auth/demo-switch" && response.request().method() === "POST");
-  await page.getByRole("group", { name: "Developer/demo sign-in", exact: true })
-    .getByRole("radio", { name: roleLabel[role], exact: true }).click();
+  await demoRoleGroup(page).getByRole("button", { name: roleLabel[role], exact: true }).click();
   const response = await received;
   expect(response.status()).toBe(200);
   expect(response.request().postData()).toBe(JSON.stringify({ role }));
@@ -183,7 +199,10 @@ test("actual mock sessions are explicit, labeled and shared by canonical aliases
   await page.goto("/app");
   await expect(page.locator('[data-mode="server-demo"]')).toHaveCount(1);
   await expect(page.getByText("Developer/demo mode", { exact: true })).toBeVisible();
-  await expect(page.locator("body")).toContainText("Server-backed fictional mock data.");
+  await expect(page.getByText(
+    "Server-backed fictional mock data. Seeded demo accounts are not verified participant identities.",
+    { exact: true },
+  )).toBeVisible();
   expect(demo.calls.filter((call) => call.method === "POST")).toEqual([]);
   for (const role of ["site_owner", "operator", "investor"] as const) {
     await switchRole(page, demo, role);
@@ -195,17 +214,16 @@ test("actual mock sessions are explicit, labeled and shared by canonical aliases
       level: 1, name: role === "site_owner" ? "Read your sites" : roleTitle[role], exact: true,
     })).toBeVisible();
     await expect(page.locator("main")).toHaveCount(1);
-    await expect(page.getByRole("group", { name: "Developer/demo sign-in", exact: true })).toHaveCount(1);
-    await expect(page.getByRole("radio", { name: roleLabel[role], exact: true })).toBeChecked();
+    await expectSelectedDemoRole(page, role);
     expect(demo.calls.filter((call) => call.method === "POST")).toHaveLength(switches);
   }
   const before = demo.calls.filter((call) => call.method === "POST").length;
   await page.goto("/dashboard/operator");
   await expect(page).toHaveURL((url) => url.pathname === "/app");
-  await expect(page.getByRole("radio", { name: "Financier", exact: true })).toBeChecked();
+  await expectSelectedDemoRole(page, "investor");
   await expect(page.getByRole("heading", { level: 1, name: roleTitle.investor, exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("radio", { name: "Financier", exact: true })).toBeChecked();
+  await expectSelectedDemoRole(page, "investor");
   expect(demo.calls.filter((call) => call.method === "POST")).toHaveLength(before);
   const cookie = (await page.context().cookies()).find((item) => item.name === "sunsum_session");
   expect(cookie).toBeDefined();
@@ -226,18 +244,20 @@ test("a deliberate mock role switch retires an older real read before its late r
   try {
     await page.getByRole("button", { name: `Open ${project.name}`, exact: true }).click();
     await pending.started;
-    const investor = page.getByRole("radio", { name: "Financier", exact: true });
+    const investor = demoRoleGroup(page).getByRole("button", { name: "Financier", exact: true });
     await expect(investor).toBeEnabled();
     demo.armRole("investor");
     const switched = page.waitForResponse((response) =>
       new URL(response.url()).pathname === "/api/auth/demo-switch" && response.request().method() === "POST");
     await investor.click();
     await switching.started;
-    const roles = page.getByRole("group", { name: "Developer/demo sign-in", exact: true });
+    const roles = demoRoleGroup(page);
     await expect(roles).toHaveCount(1);
-    await expect(roles.getByRole("radio")).toHaveCount(3);
-    for (const control of await roles.getByRole("radio").all()) await expect(control).toBeDisabled();
-    await expect(roles.getByRole("radio", { checked: true })).toHaveCount(0);
+    await expect(roles).toHaveAttribute("aria-busy", "true");
+    await expect(roles.getByRole("button")).toHaveCount(3);
+    for (const control of await roles.getByRole("button").all()) await expect(control).toBeDisabled();
+    await expect(demoRoleControl(page, "investor")).toHaveText("Signing in...");
+    await expect(roles.locator('button[aria-current="true"]')).toHaveCount(0);
     await expect(page.locator("main")).not.toContainText(project.name);
     const readsDuringSwitch = demo.calls.filter((call) => call.path === "/api/me").length;
     pending.release();
@@ -284,7 +304,7 @@ test("actual mock interest uses {} once, preserves its pending lifetime, then re
   try {
     await page.getByRole("button", { name: "Register nonbinding interest", exact: true }).click();
     await pending.started;
-    await expect(page.getByRole("radio", { name: "Operator", exact: true })).toBeDisabled();
+    await expect(demoRoleControl(page, "operator")).toBeDisabled();
     expect(demo.calls.filter((call) => call.path === path && call.method === "POST")).toHaveLength(1);
     pending.release();
     await pending.settled;
@@ -296,13 +316,13 @@ test("actual mock interest uses {} once, preserves its pending lifetime, then re
     });
     await expect.poll(() => demo.calls.filter((call) => call.path === "/api/me/engagements").length)
       .toBeGreaterThan(priorReads);
-    await expect(page.getByRole("radio", { name: "Operator", exact: true })).toBeEnabled();
+    await expect(demoRoleControl(page, "operator")).toBeEnabled();
     await expect(page.locator("main")).toContainText(/nonbinding interest (?:is |was )?(?:registered|recorded)|current engagement.*interested/i);
     demo.clearWrites();
     await navigate(page, "Reports");
     await page.goBack();
     await page.reload();
-    await expect(page.getByRole("radio", { name: "Financier", exact: true })).toBeChecked();
+    await expectSelectedDemoRole(page, "investor");
     expect(demo.calls.filter((call) => call.path === path && call.method === "POST")).toHaveLength(1);
 
     // Separate endpoint probe: real browser-origin checks and the legitimately issued mock cookie remain in force.

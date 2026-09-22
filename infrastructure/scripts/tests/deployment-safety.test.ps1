@@ -6,9 +6,14 @@ $PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot '..\DeploymentSafety.psm1') -Force
 
-function Assert-Throws([scriptblock] $Action, [string] $Message) {
+function Assert-Throws([scriptblock] $Action, [string] $Message, [string] $ExpectedMessage) {
     $threw = $false
-    try { & $Action | Out-Null } catch { $threw = $true }
+    try { & $Action | Out-Null } catch {
+        $threw = $true
+        if ($ExpectedMessage -and $_.Exception.Message -cne $ExpectedMessage) {
+            throw "Wrong failure for '$Message': $($_.Exception.Message)"
+        }
+    }
     if (-not $threw) { throw $Message }
 }
 
@@ -193,15 +198,37 @@ try {
     $snapshot = New-DeploymentSnapshot -Path $zipPath -ExpectedSha256 $package.SHA256.ToLowerInvariant()
     foreach ($wrongName in @('Package.json', 'package-Lock.json', 'Tsconfig.json', 'app/Layout.tsx', 'APP/layout.tsx', 'collision')) {
         $caseZip = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).zip"
-        $archive = [System.IO.Compression.ZipFile]::Open($caseZip, [System.IO.Compression.ZipArchiveMode]::Create)
+        Copy-Item -LiteralPath $zipPath -Destination $caseZip
+        $archive = [System.IO.Compression.ZipFile]::Open($caseZip, [System.IO.Compression.ZipArchiveMode]::Update)
         try {
-            foreach ($required in @('package.json', 'package-lock.json', 'tsconfig.json', 'app/layout.tsx')) {
-                $entryName = if ($required -ieq $wrongName) { $wrongName } else { $required }
-                $null = $archive.CreateEntry($entryName)
+            if ($wrongName -eq 'collision') {
+                # Both names pass the path allowlist; only duplicate detection rejects this.
+                $null = $archive.CreateEntry('app/Layout.tsx')
+            } else {
+                $required = @('package.json', 'package-lock.json', 'tsconfig.json', 'app/layout.tsx') |
+                    Where-Object { $_ -ieq $wrongName }
+                $original = $archive.GetEntry($required)
+                if ($null -eq $original) { throw 'The valid casing fixture is missing its original entry.' }
+                $content = [System.IO.MemoryStream]::new()
+                try {
+                    $entryStream = $original.Open()
+                    try { $entryStream.CopyTo($content) } finally { $entryStream.Dispose() }
+                    $original.Delete()
+                    $output = $archive.CreateEntry($wrongName).Open()
+                    try {
+                        $content.Position = 0
+                        $content.CopyTo($output)
+                    } finally { $output.Dispose() }
+                } finally { $content.Dispose() }
             }
-            if ($wrongName -eq 'collision') { $null = $archive.CreateEntry('Package.json') }
         } finally { $archive.Dispose() }
-        Assert-Throws { & (Join-Path $PSScriptRoot '..\Test-AppServicePackage.ps1') -Path $caseZip } 'Wrong-case required files or case collisions were accepted.'
+        $expected = if ($wrongName -ceq 'app/Layout.tsx') {
+            'Archive is missing required file with exact Linux casing: app/layout.tsx'
+        } else {
+            'Archive contains an unexpected, duplicate or unsafe path.'
+        }
+        Assert-Throws { & (Join-Path $PSScriptRoot '..\Test-AppServicePackage.ps1') -Path $caseZip } `
+            'Wrong-case required files or case collisions were accepted.' $expected
     }
     $snapshotDirectory = $snapshot.Directory
     try {

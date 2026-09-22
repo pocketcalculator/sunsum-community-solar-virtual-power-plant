@@ -106,7 +106,7 @@ preserve invalidation for current 401/403 bodies that fail during reading.
 
 ## Reliability [RELY]
 
-> Last reviewed: 2026-09-21 | Open: 0
+> Last reviewed: 2026-09-21 | Open: 4
 
 The first five findings came from an isolated source snapshot. The sixth was
 reproduced while exercising the strengthened continuity harness. Corrections
@@ -175,6 +175,53 @@ The controller suite now exercises these cases together with mounted
 identity/role replacement, visibility retirement, bounded focus refresh and
 the real object-URL hook's navigation/unmount cleanup.
 
+### RELY-7 - Session control remounts during read retirement
+
+- Severity: MEDIUM
+- Status: OPEN
+- Confidence: HIGH
+- Files: `src/features/live-workspace/LiveWorkspace.tsx`,
+  `src/features/demo-auth/components/DemoRoleSwitcher.tsx`
+- Problem: Starting a switch clears the snapshot and unmounts the initiating
+  adapter. Its refusal disappears, and the sliding indicator is replaced.
+- Required correction: Keep the shell and adapter mounted while scoped content
+  retires. Cover pending/refused switching with the actual composed adapter,
+  immediate record removal and persistent indicator node identity.
+
+### RELY-8 - Late settlement restarts a disposed workspace
+
+- Severity: MEDIUM
+- Status: OPEN
+- Confidence: HIGH
+- File: `src/features/live-workspace/useWorkspaceReads.ts`
+- Problem: A switch completing after whole-workspace unmount can start fresh
+  reads; a later access failure can also replace the new page URL with `/app`.
+- Required correction: Guard refresh/settlement by owner lifetime and use its
+  current client. Preserve reconciliation after adapter-only retirement.
+
+### RELY-9 - First history entry lacks collection context
+
+- Severity: MEDIUM
+- Status: OPEN
+- Confidence: HIGH
+- File: `src/features/live-workspace/LiveWorkspace.tsx`
+- Problem: Without an initial control change, only the destination gets an
+  opaque history key. Back can retain a later filter instead of the initial
+  service query, selection and return focus.
+- Required correction: Snapshot the confirmed actor's current entry before its
+  first push, using replaceState without losing framework metadata.
+
+### RELY-10 - Retired unmoved presses can activate through click
+
+- Severity: MEDIUM
+- Status: OPEN
+- Confidence: HIGH
+- File: `src/components/workspace/RoleControl.tsx`
+- Problem: Epoch retirement suppresses the trailing click only after movement
+  crossed the drag threshold; an unmoved retired press can still choose a role.
+- Required correction: Cancel obsolete or canceled presses regardless of
+  movement, covering down/epoch-change/up/click in both radio and button modes.
+
 ## Readability [READ]
 
 > Last reviewed: 2026-09-21 | Open: 0
@@ -227,11 +274,64 @@ or stakeholder story copy.
 
 ## Testing [TEST]
 
-> Last reviewed: 2026-09-21 | Open: 0
+> Last reviewed: 2026-09-21 | Open: 5
 
 Coverage findings are not assertions of production transport vulnerabilities.
 All service scenarios remain intercepted or mocked; none certifies real sign-in
 or cloud deployment.
+
+### TEST-9 - Lifetime suite was registered inside a running test
+
+- Severity: HIGH
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `tests/unit/demo-role-switcher.test.tsx`
+- Correction: Hoisted the composed-lifetime suite out of the refusal callback,
+  preserving both that refusal's assertions and all lifetime cases.
+
+### TEST-10 - Static audio observer missed prefixed and foreign requests
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- Files: `tests/e2e/vibehub.spec.ts`,
+  `tests/fixtures/static-network-guard.ts`
+- Correction: Context-wide deny-by-default routing admits only exact generated
+  local document/assets/native-media GETs, with independent request observation.
+  Worker transport is blocked, sockets are refused, and intercepted browser
+  canaries cover a prefixed POST, session read and foreign request. Pure policy
+  cases cover both actual and deeper hosting prefixes.
+
+### TEST-11 - Invalid archive fixtures could fail for unrelated missing media
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `infrastructure/scripts/tests/deployment-safety.test.ps1`
+- Correction: Copy the valid media-complete archive and change only the target
+  name or collision. Require the specific path/casing refusal rather than any
+  exception; the collision uses two independently allowed source paths.
+
+### TEST-12 - Unused mock parameter blocked zero-warning lint
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `tests/unit/demo-role-switcher.test.tsx`
+- Correction: Removed the unused implementation parameter; request argument
+  assertions and the zero-warning lint gate remain.
+
+### TEST-13 - Final artifacts were not bound to the reviewed PR head
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `.github/workflows/repo-health.yml`
+- Correction: Application acceptance and packaging explicitly check out the
+  full PR-head SHA (event SHA for non-PR runs). Packaging requires matching
+  manifest/demo stamps and ZIP digests, and retains a CI receipt identifying
+  source SHA, event/merge SHA, run and both ZIP hashes separately. Ordinary
+  repository/infrastructure merge checks retain their original behavior.
 
 ### TEST-1 - Browser I/O guards did not enforce origin and role operations
 

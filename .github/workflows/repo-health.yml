@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  ACCEPTANCE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 concurrency:
   group: repo-health-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -91,6 +94,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.ACCEPTANCE_SOURCE_SHA }}
 
       - name: Require the root application and lockfile
         shell: bash
@@ -132,6 +137,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.ACCEPTANCE_SOURCE_SHA }}
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -164,6 +171,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.ACCEPTANCE_SOURCE_SHA }}
 
       - name: Set up the supported Node runtime
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -195,6 +204,12 @@ jobs:
     steps:
       - name: Check out reviewed source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.ACCEPTANCE_SOURCE_SHA }}
+
+      - name: Require the exact acceptance source revision
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$ACCEPTANCE_SOURCE_SHA"
 
       - name: Set up the supported Node runtime
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -219,6 +234,21 @@ jobs:
         run: |
           & ./scripts/New-UiRelease.ps1 -OutputDirectory .azure/artifacts/ui-release
 
+      - name: Bind both artifacts and the demo stamp to the accepted source
+        shell: pwsh
+        run: |
+          $directory = '.azure/artifacts/ui-release'
+          $release = Get-Content -LiteralPath "$directory/release-manifest.json" -Raw | ConvertFrom-Json
+          $stamp = Get-Content -LiteralPath 'build/vibehub/demo-build.json' -Raw | ConvertFrom-Json
+          if ($release.sourceRevision -cne $env:ACCEPTANCE_SOURCE_SHA -or
+              $stamp.sourceRevision -cne $env:ACCEPTANCE_SOURCE_SHA -or -not $stamp.sourceClean) {
+            throw 'Artifacts do not match the exact acceptance source.'
+          }
+          foreach ($artifact in @($release.application, $release.demo)) {
+            $hash = (Get-FileHash -LiteralPath (Join-Path $directory $artifact.file) -Algorithm SHA256).Hash
+            if ($hash -ine $artifact.sha256) { throw 'Artifact hash does not match the release manifest.' }
+          }
+
       - name: Build the actual packaged application source
         shell: pwsh
         run: |
@@ -233,11 +263,24 @@ jobs:
           } finally {
             Pop-Location
           }
+          $directory = '.azure/artifacts/ui-release'
+          $release = Get-Content -LiteralPath "$directory/release-manifest.json" -Raw | ConvertFrom-Json
+          @{
+            sourceRevision = $env:ACCEPTANCE_SOURCE_SHA
+            eventRevision = $env:GITHUB_SHA
+            runId = $env:GITHUB_RUN_ID
+            runAttempt = $env:GITHUB_RUN_ATTEMPT
+            backendContractRevision = $release.backendContractRevision
+            applicationSHA256 = $release.application.sha256
+            demoSHA256 = $release.demo.sha256
+            manifestSHA256 = (Get-FileHash -LiteralPath "$directory/release-manifest.json" -Algorithm SHA256).Hash
+            packagedSourceBuild = 'succeeded'
+          } | ConvertTo-Json | Set-Content -LiteralPath "$directory/ci-acceptance.json" -Encoding utf8
 
       - name: Retain reviewed handoff artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: sunsum-ui-release-${{ github.sha }}
+          name: sunsum-ui-release-${{ env.ACCEPTANCE_SOURCE_SHA }}
           path: .azure/artifacts/ui-release/
           include-hidden-files: false
           if-no-files-found: error
