@@ -65,7 +65,9 @@ export {
 } from "./shared";
 export {
   createSite,
+  demoCandidateParcelReader,
   demoViabilityClient,
+  getCandidateParcels,
   getMissingFields,
   getSubmissionDetail,
   isOwnershipStatus,
@@ -77,6 +79,7 @@ export {
   type ActivityPayload,
   type AssessmentPayload,
   type AssessmentRecord,
+  type CandidateParcelReader,
   type CreateSiteResponse,
   type DocumentPayload,
   type MissingField,

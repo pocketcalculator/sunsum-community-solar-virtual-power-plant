@@ -12,6 +12,7 @@ the proposed internal S-VIA contract.
 | --- | --- |
 | Site owner | `POST /sites`, `PATCH /sites/{id}`, `POST /sites/{id}/submit`, `GET /me/sites`, `GET /me/outstanding` |
 | Site owner / Operator | `POST /sites/{id}/documents`, `PUT` / `GET /sites/{id}/documents/{documentId}/content` |
+| Site owner / Operator | `GET /sites/candidate-parcels` |
 | Operator | `GET /submissions`, `GET /submissions/{id}`, `POST /submissions/{id}/decision` |
 | Operator | `GET /pipeline`, `PATCH /projects/{id}`, `POST /projects/{id}/stage`, `PATCH /projects/{id}/visibility` |
 | Operator | `GET /projects/{id}/engagements` |
@@ -108,6 +109,20 @@ site before acceptance is reachable there too. A document the caller is not
 entitled to returns `404` rather than `403`, so its existence is not disclosed.
 
 `request_info` transitions a submission to `info_requested`, records the owner's outstanding item, and the owner can resubmit through `POST /sites/{id}/submit`.
+
+`GET /sites/candidate-parcels` serves the parcel boundaries an owner picks a
+site on. It is deliberately not a proxy: it accepts no parameters at all, and
+any query string is a `400`. The layer, the filter and the published field list
+are fixed in `src/backend/gis`, which is the only module holding the ArcGIS
+credential — so no caller input can reach a different layer, widen the filter,
+or request a column we do not publish. Owner names and appraised values exist
+upstream and are excluded by an allowlist rather than stripped afterwards.
+Responses come from a cache; when ArcGIS is unreachable the last good copy is
+returned with `metadata.stale` true so the map can label it, but a *rejected
+credential* fails the request instead, because serving a third party's data
+after our entitlement to it is in question is not a decision a cache should
+make. `SUNSUM_PARCELS=demo` is the default and serves synthetic parcels, so the
+endpoint works in a clean checkout and in CI with no ArcGIS subscription.
 
 Owner dashboard items keep `submission_status`, `project_stage`, and
 `journey_stage_id` separate. `journey_stage_id` uses the exact seven literals in

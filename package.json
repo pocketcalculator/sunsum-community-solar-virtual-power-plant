@@ -56,7 +56,7 @@
     "azurite": "3.37.0",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.3.4",
+    "eslint-config-next": "16.3.5",
     "jsdom": "30.0.1",
     "tsx": "4.23.13",
     "typescript": "7.0.2",

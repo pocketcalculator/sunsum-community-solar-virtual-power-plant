@@ -959,6 +959,12 @@ const SITE_ID = "11111111-2222-4333-8444-555555555555";
     ["getDealRoom", routes.getDealRoomRoute as Route, "investor", "GET"],
     ["postSiteDocument", routes.postSiteDocumentRoute as Route, "any", "POST"],
     [
+      "getCandidateParcels",
+      routes.getCandidateParcelsRoute as Route,
+      "any",
+      "GET",
+    ],
+    [
       "getProjectFundingNeeds",
       routes.getProjectFundingNeedsRoute as Route,
       "any",
@@ -1041,15 +1047,16 @@ const SITE_ID = "11111111-2222-4333-8444-555555555555";
   });
 
   /*
-   * The two multi-role routes are not open to everyone, and the roles differ
+   * The multi-role routes are not open to everyone, and the roles differ
    * between them: site documents are for the owner or an operator, funding
-   * needs for an investor or an operator. Their wrappers gate on "signed in"
-   * and core decides the role a layer down, so the allowed set is recorded
-   * per route rather than shared.
+   * needs for an investor or an operator, parcel boundaries for the owner or
+   * an operator. Their wrappers gate on "signed in" and core decides the role
+   * a layer down, so the allowed set is recorded per route rather than shared.
    */
   const MULTI_ROLE: Record<string, readonly string[]> = {
     postSiteDocument: ["site_owner", "operator"],
     getProjectFundingNeeds: ["investor", "operator"],
+    getCandidateParcels: ["site_owner", "operator"],
   };
 
   /*

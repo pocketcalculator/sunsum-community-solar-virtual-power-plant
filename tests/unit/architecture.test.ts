@@ -93,6 +93,17 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/core/probe.ts", "next/server"],
     ["src/backend/core/probe.ts", "next/headers"],
     ["src/backend/core/probe.ts", "@/features/participation"],
+    /**
+     * The GIS adapter holds the ArcGIS credential, so the rule keeping it out
+     * of the browser is worth asserting rather than assuming. This is what
+     * replaces the `server-only` marker the adapter deliberately omits: the
+     * credential cannot reach a client bundle if no client module, feature,
+     * domain type or route can name the adapter in the first place.
+     */
+    ["src/components/ui/probe.tsx", "@/backend/gis"],
+    ["src/features/onboarding/probe.tsx", "@/backend/gis"],
+    ["src/domain/probe.ts", "@/backend/gis"],
+    ["app/probe.tsx", "@/backend/gis"],
     ["src/backend/core/investors/probe.ts", "../projects/types"],
     ["src/backend/core/investors/probe.ts", "../projects/mock-store"],
     ["src/backend/core/investors/probe.ts", "../identity/viewer"],

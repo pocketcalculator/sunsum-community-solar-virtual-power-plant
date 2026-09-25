@@ -278,6 +278,66 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /sites/candidate-parcels:
+    get:
+      tags: [Sites]
+      operationId: getCandidateParcels
+      summary: Approved parcel boundaries for the site-selection map
+      description: |
+        Parcel outlines for the map an owner picks a site on, sourced from the
+        ArcGIS parcel layer.
+
+        **This is not a proxy.** It takes no parameters at all, and any query
+        string is rejected with `invalid_query`. The layer, the filter and the
+        field list are fixed server-side, so there is no input through which a
+        caller could reach a different layer, widen the filter, or request a
+        column we do not publish. The ArcGIS credential stays on the server and
+        no upstream token is ever handed to the browser.
+
+        Only the five attributes in `CandidateParcelProperties` are returned.
+        The upstream records also carry owner names and appraised values; those
+        are excluded by an allowlist, not stripped afterwards.
+
+        Served from a cache. When ArcGIS cannot be reached, the last good copy
+        is returned with `metadata.stale` set to `true` so the map can label it
+        rather than silently show boundaries that stopped updating. If the
+        credential itself is rejected, the request fails instead — stale data is
+        not served once our entitlement to it is in question.
+
+        Note for routing: `candidate-parcels` is a literal path segment and is
+        matched ahead of `/sites/{id}`.
+      responses:
+        "200":
+          description: |
+            A GeoJSON `FeatureCollection`, directly loadable by a mapping
+            library. `metadata` is an RFC 7946 §6.1 foreign member.
+          content:
+            application/geo+json:
+              schema: { $ref: "#/components/schemas/CandidateParcelCollection" }
+        "400":
+          description: |
+            A query string was supplied. The endpoint accepts none.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: |
+            The caller's role may not view parcels. Site owners and operators
+            may; investors may not.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: |
+            The parcel service is unavailable with nothing cached to fall back
+            on, the ArcGIS credential was rejected, or the parcel source is
+            misconfigured. Also returned when the session secret is missing or
+            too short — see `AuthUnavailable`. The `code` field distinguishes
+            them.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /sites/{id}:
     patch:
       tags: [Sites]
@@ -1145,6 +1205,70 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    CandidateParcelCollection:
+      type: object
+      description: |
+        A GeoJSON FeatureCollection of approved parcel boundaries.
+      required: [type, features, metadata]
+      properties:
+        type: { type: string, enum: [FeatureCollection] }
+        features:
+          type: array
+          items: { $ref: "#/components/schemas/CandidateParcelFeature" }
+        metadata: { $ref: "#/components/schemas/CandidateParcelMetadata" }
+    CandidateParcelFeature:
+      type: object
+      required: [type, id, geometry, properties]
+      properties:
+        type: { type: string, enum: [Feature] }
+        id:
+          type: string
+          description: Stable upstream identifier, used to key and select a shape.
+        geometry: { $ref: "#/components/schemas/CandidateParcelGeometry" }
+        properties: { $ref: "#/components/schemas/CandidateParcelProperties" }
+    CandidateParcelGeometry:
+      type: object
+      description: |
+        Parcels are areas, so only polygon geometries are modelled. A record
+        arriving as a point or a line is rejected upstream rather than widened
+        into this union. Coordinates are WGS 84 longitude, latitude.
+      required: [type, coordinates]
+      properties:
+        type: { type: string, enum: [Polygon, MultiPolygon] }
+        coordinates:
+          type: array
+          items: {}
+    CandidateParcelProperties:
+      type: object
+      description: |
+        The approved attributes, and the complete list of them. Ownership and
+        valuation attributes exist upstream but are excluded by an allowlist.
+
+        Every field is nullable because the source is a public assessor extract
+        with genuine gaps: an absent address is a fact about the parcel, not an
+        error. The keys are always present, so "not supplied" stays
+        distinguishable from "not approved for release".
+      required: [parcel_id, site_address, city, state, postal_code]
+      properties:
+        parcel_id: { type: string, nullable: true }
+        site_address: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        state: { type: string, nullable: true }
+        postal_code: { type: string, nullable: true }
+    CandidateParcelMetadata:
+      type: object
+      required: [fetched_at, stale]
+      properties:
+        fetched_at:
+          type: string
+          format: date-time
+          description: ISO 8601 instant at which this data was retrieved upstream.
+        stale:
+          type: boolean
+          description: |
+            True when upstream could not be reached and a previously cached
+            copy is being served. The map is expected to surface this rather
+            than hide it.
     ExportBundle:
       type: object
       required:
