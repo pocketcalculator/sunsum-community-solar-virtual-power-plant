@@ -1,0 +1,20 @@
+name: Check infrastructure providers
+description: Fail before Azure deployment commands when required providers are unregistered
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        unregistered=""
+        for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do
+          state="$(az provider show --namespace "$namespace" --query registrationState --output tsv)"
+          if [ "$state" != "Registered" ]; then
+            unregistered="${unregistered}${unregistered:+, }${namespace} ($state)"
+          fi
+        done
+        if [ -n "$unregistered" ]; then
+          echo "::error::Required resource providers are not registered: $unregistered. Register them in the subscription before deployment."
+          exit 1
+        fi

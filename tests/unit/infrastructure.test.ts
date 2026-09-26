@@ -180,12 +180,39 @@ describe("the bounded Azure preparation contract", () => {
     expect(web).toContain("var telemetrySettings = empty(telemetryComponentName)");
   });
 
-  it("supplies one complete dev-test parameter set to validate, what-if and create", () => {
+  it("validates infrastructure automatically before an environment-gated deployment", () => {
     const workflow = read(".github/workflows/deploy-azure2.yaml");
-    expect(workflow.match(/--parameters "@\$PARAMETERS_FILE"/gu)).toHaveLength(3);
-    expect(workflow).not.toMatch(/\n\s+environmentName=dev-test/u);
-    expect(workflow).toContain('PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"');
-    expect(workflow).toContain('echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"');
+    const parametersAction = read(".github/actions/compose-infrastructure-parameters/action.yml");
+    const providersAction = read(".github/actions/check-infrastructure-providers/action.yml");
+    const validateJob = workflow.slice(workflow.indexOf("  validate:"), workflow.indexOf("\n  deploy:"));
+    const deployJob = workflow.slice(workflow.indexOf("  deploy:"));
+
+    for (const path of [
+      '"infrastructure/templates/**"',
+      '"infrastructure/config/**"',
+      '"infrastructure/scripts/**"',
+      '".github/workflows/deploy-azure2.yaml"',
+    ]) {
+      expect(workflow).toContain(`- ${path}`);
+    }
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(validateJob).toContain("az bicep build");
+    expect(validateJob).toContain("az deployment group validate");
+    expect(validateJob).toContain("az deployment group what-if");
+    expect(validateJob).not.toContain("az deployment group create");
+    expect(validateJob).toContain("secrets.AZURE_VALIDATION_CLIENT_ID");
+    expect(deployJob).toContain("needs: validate");
+    expect(deployJob).toContain("environment: azure-infrastructure");
+    expect(deployJob).not.toContain("github.event_name == 'workflow_dispatch'");
+    expect(deployJob).toContain("az deployment group create");
+    expect(deployJob).toContain("secrets.AZURE_CLIENT_ID");
+    expect(workflow.match(/az deployment group create/gu)).toHaveLength(1);
+    expect(workflow.match(/uses: \.\/\.github\/actions\/compose-infrastructure-parameters/gu)).toHaveLength(2);
+    expect(workflow.match(/rm -f "\$\{PARAMETERS_FILE:-\}"/gu)).toHaveLength(2);
+
+    expect(parametersAction).not.toMatch(/\n\s+environmentName=dev-test/u);
+    expect(parametersAction).toContain('PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"');
+    expect(parametersAction).toContain('echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"');
     for (const entry of [
       'enableObservability: { value: true }',
       'logAnalyticsWorkspaceName: { value: "log-sunsum-dev-test-centralus" }',
@@ -196,21 +223,20 @@ describe("the bounded Azure preparation contract", () => {
       'appSubnetPrefix: { value: "10.30.1.0/26" }',
       'privateEndpointSubnetPrefix: { value: "10.30.2.0/28" }',
     ]) {
-      expect(workflow).toContain(entry);
+      expect(parametersAction).toContain(entry);
     }
-    expect(workflow).toContain("for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do");
-    expect(workflow).toContain("Required resource providers are not registered");
-    expect(workflow).toContain("AZURE_BLOB_PRIVATE_ENDPOINT_NAME");
-    expect(workflow).toContain("--mode Incremental");
+    expect(workflow.match(/uses: \.\/\.github\/actions\/check-infrastructure-providers/gu)).toHaveLength(2);
+    expect(providersAction).toContain("for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do");
+    expect(deployJob).toContain("AZURE_BLOB_PRIVATE_ENDPOINT_NAME");
+    expect(deployJob).toContain("--mode Incremental");
 
-    expect(workflow).toContain("umask 077");
-    expect(workflow).toContain('rm -f "${PARAMETERS_FILE:-}"');
+    expect(parametersAction).toContain("umask 077");
 
     const parameters = read("infrastructure/templates/resources.dev.bicepparam");
     // The workflow cannot consume the bicepparam file, which carries redacted
-    // identity placeholders, so the shared nonsecret values are compared here.
+    // identity placeholders, so the shared composite action values are compared here.
     const workflowValues = new Map(
-      [...workflow.matchAll(/^\s+(\w+): \{ value: (.+) \},?$/gmu)].map((match) => {
+      [...parametersAction.matchAll(/^\s+(\w+): \{ value: (.+) \},?$/gmu)].map((match) => {
         const [, key, value] = match;
         if (key === undefined || value === undefined) throw new Error("Failed to parse workflow parameter value.");
         return [key, value] as const;
@@ -268,17 +294,26 @@ describe("the bounded Azure preparation contract", () => {
     }
   });
 
-  it("binds the approval-free workflow to main and its immutable OIDC subject", () => {
+  it("binds validation and deployment OIDC subjects to their separate trust boundaries", () => {
     const workflow = read(".github/workflows/deploy-azure2.yaml");
-    const credential = JSON.parse(
+    const deploymentCredential = JSON.parse(
       read("infrastructure/config/github-actions-azure-infrastructure.federated-credential.json"),
+    );
+    const validationCredential = JSON.parse(
+      read("infrastructure/config/github-actions-main-infrastructure-validation.federated-credential.json"),
     );
     expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
     expect(workflow).toContain("environment: azure-infrastructure");
-    expect(credential).toMatchObject({
+    expect(deploymentCredential).toMatchObject({
       issuer: "https://token.actions.githubusercontent.com",
       subject:
         "repo:pocketcalculator@34637263/sunsum-community-solar-virtual-power-plant@1370296682:environment:azure-infrastructure",
+      audiences: ["api://AzureADTokenExchange"],
+    });
+    expect(validationCredential).toMatchObject({
+      issuer: "https://token.actions.githubusercontent.com",
+      subject:
+        "repo:pocketcalculator@34637263/sunsum-community-solar-virtual-power-plant@1370296682:ref:refs/heads/main",
       audiences: ["api://AzureADTokenExchange"],
     });
   });
