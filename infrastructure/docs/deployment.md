@@ -125,10 +125,47 @@ files; Azure CLI authentication is still required for cloud operations.
   Deployment also requires permission to configure the new PostgreSQL Entra
   administrator; selecting an identity is not proof of those permissions.
 
-### GitHub Actions OIDC credential
+### GitHub Actions infrastructure workflow and OIDC credentials
 
-The `azure-infrastructure` environment uses GitHub Actions OIDC, not a client
-secret. GitHub now emits this repository's immutable, ID-qualified subject:
+Pushes to `main` that change `infrastructure/templates/`, `infrastructure/config/`,
+`infrastructure/scripts/`, `.github/actions/` or
+[`.github/workflows/deploy-azure2.yaml`](../../.github/workflows/deploy-azure2.yaml)
+automatically start the **Validate and Deploy SunSum Test Infrastructure** workflow.
+`validate` job builds Bicep, validates the resource-group deployment and runs
+what-if without creating Azure resources. After validation succeeds, GitHub
+pauses the `deploy` job at the `azure-infrastructure` environment. An authorized
+reviewer must approve that environment before the same workflow run calls
+`az deployment group create`.
+
+Repository administrators must configure required reviewers under **Settings →
+Environments → azure-infrastructure**. Without required reviewers, GitHub does
+not pause the job and deployment proceeds automatically after validation.
+`workflow_dispatch` remains available for an optional manual run; it is not the
+deployment approval mechanism. The workflow serializes complete runs so two
+approved pushes cannot issue competing deployments. Verify required reviewers
+before enabling this workflow and periodically thereafter; removing them silently
+removes the deployment approval gate.
+
+Validation deliberately has no environment, so it can start before the
+environment approval gate. Its `AZURE_VALIDATION_CLIENT_ID`, tenant ID,
+subscription ID and PostgreSQL administrator identity secrets must therefore be
+available as repository secrets; environment-only secrets are not available to
+validation. The protected deploy job uses its existing `AZURE_CLIENT_ID` after
+environment approval. Do not upload the generated parameter file: both jobs
+independently create it with owner-only permissions on their own runner and
+remove it on exit.
+
+This intentionally permits an unapproved `main` infrastructure change to
+authenticate and read live deployment state for validate/what-if. Protect `main`
+with required pull-request reviews. `AZURE_VALIDATION_CLIENT_ID` must identify a
+separate Azure application granted only the resource-group permissions needed
+for Bicep `validate` and `what-if`; do not grant it permission to create, update
+or delete resources. The existing `AZURE_CLIENT_ID` remains the
+deployment-capable identity protected by the environment gate.
+
+The protected `azure-infrastructure` deployment job uses GitHub Actions OIDC,
+not a client secret. GitHub emits this repository's immutable, ID-qualified
+environment subject:
 
 ```text
 repo:pocketcalculator@34637263/sunsum-community-solar-virtual-power-plant@1370296682:environment:azure-infrastructure
@@ -139,24 +176,43 @@ and audience for the application identified by `AZURE_CLIENT_ID`. The legacy
 name-only subject does not match and causes `AADSTS700213` before any Azure
 deployment command runs.
 
-An authorized identity administrator can add the versioned credential while
-signed in to the intended tenant. This is a cloud write and must not be run as
-part of ordinary deployment:
+The approval-free validation job uses a separate, read-only Azure application
+and has a different subject:
+
+```text
+repo:pocketcalculator@34637263/sunsum-community-solar-virtual-power-plant@1370296682:ref:refs/heads/main
+```
+
+An authorized identity administrator can add the versioned credentials while
+signed in to the intended tenant. Add the existing environment credential to the
+application identified by `AZURE_CLIENT_ID`, and add
+[`github-actions-main-infrastructure-validation.federated-credential.json`](../config/github-actions-main-infrastructure-validation.federated-credential.json)
+to the separate application identified by `AZURE_VALIDATION_CLIENT_ID`. This is
+a cloud write and must not be run as part of ordinary deployment:
 
 ```powershell
-$applicationObjectId = az ad app show `
+$deploymentApplicationObjectId = az ad app show `
   --id '<AZURE_CLIENT_ID>' `
   --query id `
   --output tsv
 
 az ad app federated-credential create `
-  --id $applicationObjectId `
+  --id $deploymentApplicationObjectId `
   --parameters '@infrastructure/config/github-actions-azure-infrastructure.federated-credential.json'
+
+$validationApplicationObjectId = az ad app show `
+  --id '<AZURE_VALIDATION_CLIENT_ID>' `
+  --query id `
+  --output tsv
+
+az ad app federated-credential create `
+  --id $validationApplicationObjectId `
+  --parameters '@infrastructure/config/github-actions-main-infrastructure-validation.federated-credential.json'
 ```
 
-Keep the previous credential until a main-branch workflow dispatch signs in
-successfully, then separately review its removal. Repository changes alone
-cannot update an Entra application registration.
+Keep the environment credential; it is required for the protected deployment
+job. Repository changes alone cannot create the validation application, assign
+its least-privilege role or update either Entra application registration.
 
 ### Local identity setup
 

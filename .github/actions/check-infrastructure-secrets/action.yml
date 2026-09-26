@@ -1,0 +1,37 @@
+name: Check infrastructure secrets
+description: Fail before Azure login when required infrastructure secrets are unavailable
+
+inputs:
+  azure-client-id:
+    required: true
+  azure-tenant-id:
+    required: true
+  azure-subscription-id:
+    required: true
+  postgres-admin-object-id:
+    required: true
+  postgres-admin-principal-name:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        AZURE_CLIENT_ID: ${{ inputs.azure-client-id }}
+        AZURE_TENANT_ID: ${{ inputs.azure-tenant-id }}
+        AZURE_SUBSCRIPTION_ID: ${{ inputs.azure-subscription-id }}
+        POSTGRES_ADMIN_OBJECT_ID: ${{ inputs.postgres-admin-object-id }}
+        POSTGRES_ADMIN_PRINCIPAL_NAME: ${{ inputs.postgres-admin-principal-name }}
+      run: |
+        set -euo pipefail
+        missing_secrets=""
+        for secret in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID POSTGRES_ADMIN_OBJECT_ID POSTGRES_ADMIN_PRINCIPAL_NAME; do
+          if [ -z "${!secret:-}" ]; then
+            missing_secrets="${missing_secrets}${missing_secrets:+, }$secret"
+          fi
+        done
+        if [ -n "$missing_secrets" ]; then
+          echo "::error::Missing required secrets: $missing_secrets."
+          exit 1
+        fi
