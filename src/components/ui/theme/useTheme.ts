@@ -7,11 +7,14 @@ import {
   getServerThemeStoreReady,
   getThemePreference,
   getThemeStoreReady,
+  getResolvedTheme,
+  getServerResolvedTheme,
   setThemePreference,
   subscribeToThemePreference,
 } from "./themeStore";
 
 export interface ThemeControl {
+  readonly resolvedTheme: ReturnType<typeof getResolvedTheme>;
   /** The choice on record, which may be "follow the device". */
   readonly preference: ThemePreference;
   readonly setPreference: (preference: ThemePreference) => void;
@@ -46,5 +49,11 @@ export function useTheme(): ThemeControl {
     getServerThemeStoreReady,
   );
 
-  return { preference, ready, setPreference: setThemePreference };
+  const resolvedTheme = useSyncExternalStore(
+    subscribeToThemePreference,
+    getResolvedTheme,
+    getServerResolvedTheme,
+  );
+
+  return { preference, ready, resolvedTheme, setPreference: setThemePreference };
 }

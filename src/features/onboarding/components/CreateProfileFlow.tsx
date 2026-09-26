@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -14,6 +13,7 @@ import {
   type StepperStep,
 } from "@/components/ui/form/Stepper";
 import { suggestedUserTypes, type IntentOptionId } from "@/domain/intents";
+import { PublicLearning } from "@/features/community-context";
 import {
   EMPTY_PROFILE_DRAFT,
   type FieldIssue,
@@ -30,11 +30,10 @@ import {
   previousStep,
   stepIndex,
   validateStep,
-  type ProfileFlowState,
   type ProfileStepId,
 } from "../model/steps";
 import { buildProfileSummary } from "../model/validation";
-import { AccountStep } from "./AccountStep";
+import { ProfileDetailsStep } from "./ProfileDetailsStep";
 import { CompletionPanel } from "./CompletionPanel";
 import { GuidedStartStep } from "./GuidedStartStep";
 import { ParticipantTypeStep } from "./ParticipantTypeStep";
@@ -45,16 +44,6 @@ import buttons from "./buttons.module.css";
 import styles from "./CreateProfileFlow.module.css";
 
 const HEADING_ID = "create-profile-heading";
-
-/**
- * Finishing discards the password, so no usable credential is held afterwards.
- * Saying so through the same channel the sign-in step uses keeps one answer to
- * "is the credential ready", rather than a second rule that only finishing knows.
- */
-const CREDENTIAL_DISCARDED: FieldIssue = {
-  field: "password",
-  message: "Choose a password again. It was cleared when you finished.",
-};
 
 /** Which element to move focus to once the next render has committed. */
 interface FocusIntent {
@@ -73,12 +62,11 @@ export interface CreateProfileFlowProps {
 }
 
 /**
- * The "New User / Create Profile" flow.
+ * The fictional public profile preview.
  *
  * Holds the draft, decides what may happen next by asking the model, and leaves
- * every step to render its own questions. One deliberate exception to that rule:
- * the password never enters the draft, so the sign-in step keeps it in its own
- * state and reports only whether it is acceptable.
+ * every step to render its own questions. Learning opens alongside the same
+ * mounted draft; nothing is persisted or submitted.
  *
  * Field ids are fixed rather than generated, because error summaries and page
  * anchors link to them; the flow is therefore meant to appear once per page.
@@ -97,12 +85,12 @@ export function CreateProfileFlow({
     FIRST_STEP,
   ]);
   const [issues, setIssues] = useState<readonly FieldIssue[]>([]);
-  const [passwordIssue, setPasswordIssue] = useState<FieldIssue | null>(null);
   const [finished, setFinished] = useState(false);
   const [focusIntent, setFocusIntent] = useState<FocusIntent | null>(null);
 
   const headingRef = useRef<HTMLHeadingElement>(null);
   const errorSummaryRef = useRef<HTMLDivElement>(null);
+  const learningRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (focusIntent === null) return;
@@ -118,9 +106,13 @@ export function CreateProfileFlow({
   const summary = buildProfileSummary(draft);
   const isLastStep = nextStep(stepId) === null;
 
-  // One reading of the flow, shared by navigation, step status and finishing,
-  // so they cannot reach different conclusions about the same answers.
-  const flowState: ProfileFlowState = { draft, credentialIssue: passwordIssue };
+  const openLearning = () => {
+    const details = learningRef.current?.querySelector("details");
+    if (details) {
+      details.open = true;
+      details.querySelector("summary")?.focus();
+    }
+  };
 
   const requestFocus = (target: FocusIntent["target"]) => {
     setFocusIntent((current) => ({
@@ -150,10 +142,7 @@ export function CreateProfileFlow({
     setIssues((shown) => {
       if (shown.length === 0) return shown;
 
-      const live = validateStep(stepId, {
-        draft: updated,
-        credentialIssue: passwordIssue,
-      });
+      const live = validateStep(stepId, updated);
 
       return shown
         .map(
@@ -182,36 +171,12 @@ export function CreateProfileFlow({
     setVisited((current) =>
       current.includes(target) ? current : [...current, target],
     );
-    setIssues(validateStep(target, flowState));
+    setIssues(validateStep(target, draft));
     requestFocus("errors");
   };
 
-  /**
-   * The password is not a draft field, so editing it cannot go through
-   * `updateDraft`. Without this, a password error stayed on screen — and the
-   * field stayed `aria-invalid` — after the person had already fixed it.
-   *
-   * Must stay referentially stable: the sign-in step lists it in an effect's
-   * dependencies, so a new identity each render would re-run that effect
-   * continuously.
-   */
-  const handlePasswordIssueChange = useCallback((issue: FieldIssue | null) => {
-    setPasswordIssue(issue);
-    setIssues((shown) =>
-      shown.some((candidate) => candidate.field === "password")
-        ? shown.flatMap((candidate) =>
-            candidate.field !== "password"
-              ? [candidate]
-              : issue !== null
-                ? [issue]
-                : [],
-          )
-        : shown,
-    );
-  }, []);
-
   const handleContinue = () => {
-    const stepIssues = validateStep(stepId, flowState);
+    const stepIssues = validateStep(stepId, draft);
 
     if (stepIssues.length > 0) {
       setIssues(stepIssues);
@@ -228,7 +193,7 @@ export function CreateProfileFlow({
 
     // Finishing re-checks every step, not just this one. Answers can be edited
     // in any order, so passing the last step is not evidence the rest still pass.
-    const blocking = firstBlockingStep(flowState);
+    const blocking = firstBlockingStep(draft);
 
     if (blocking !== null || summary === null) {
       goToBlockingStep(blocking ?? FIRST_STEP);
@@ -237,12 +202,11 @@ export function CreateProfileFlow({
 
     setIssues([]);
     setFinished(true);
-    setPasswordIssue(CREDENTIAL_DISCARDED);
     requestFocus("heading");
   };
 
   const handleEditAfterFinishing = () => {
-    const blocking = firstBlockingStep(flowState);
+    const blocking = firstBlockingStep(draft);
 
     if (blocking !== null) {
       goToBlockingStep(blocking);
@@ -259,7 +223,7 @@ export function CreateProfileFlow({
   };
 
   const canSelectStep = (target: ProfileStepId): boolean =>
-    canEnterStep(target, flowState);
+    canEnterStep(target, draft);
 
   const handleSelectStep = (id: string) => {
     if (!isProfileStepId(id) || !canSelectStep(id)) return;
@@ -271,7 +235,7 @@ export function CreateProfileFlow({
     if (!canSelectStep(target)) return "blocked";
 
     const answered =
-      visited.includes(target) && validateStep(target, flowState).length === 0;
+      visited.includes(target) && validateStep(target, draft).length === 0;
 
     return answered ? "completed" : "upcoming";
   };
@@ -292,18 +256,13 @@ export function CreateProfileFlow({
         selected={draft.intentOptionIds}
       />
     ),
-    account: (
-      <AccountStep
-        accountMethodId={draft.accountMethodId}
+    details: (
+      <ProfileDetailsStep
         email={draft.email}
         fullName={draft.fullName}
         issues={issues}
-        onAccountMethodChange={(accountMethodId) =>
-          updateDraft({ accountMethodId })
-        }
         onEmailChange={(email) => updateDraft({ email })}
         onFullNameChange={(fullName) => updateDraft({ fullName })}
-        onPasswordIssueChange={handlePasswordIssueChange}
       />
     ),
     representation: (
@@ -329,16 +288,16 @@ export function CreateProfileFlow({
     ),
     review: (
       <ReviewStep
+        draft={draft}
         issues={issues}
         onConsentChange={(consentAccepted) => updateDraft({ consentAccepted })}
         onEditStep={handleSelectStep}
-        state={flowState}
       />
     ),
   };
 
   const headingText = finished
-    ? "Your profile is assembled"
+    ? "Your fictional profile is assembled"
     : currentStep.title;
   const descriptionText = finished
     ? "Nothing was saved. This is the profile you assembled, shown back to you."
@@ -350,17 +309,21 @@ export function CreateProfileFlow({
   return (
     <div className={styles.flow}>
       <header className={styles.intro}>
-        <p className={styles.eyebrow}>New participant</p>
-        <h1 className={styles.title}>Create your Sunsum profile</h1>
+        <p className={styles.eyebrow}>Public preview</p>
+        <h1 className={styles.title}>Explore your participation</h1>
         <p className={styles.lede}>
           {PROFILE_STEP_LIST.length} short steps, and every answer can be
-          changed before you finish. Nothing you enter is saved or sent: Sunsum
-          has no identity or profile service connected yet.
+          changed before you finish. Use fictional details. Nothing is saved or
+          sent, and no account, sign-in or verification code is created.
         </p>
       </header>
 
+      <div ref={learningRef}>
+        <PublicLearning returnFocusId={HEADING_ID} />
+      </div>
+
       <Stepper
-        label="Create profile steps"
+        label="Profile preview steps"
         onSelect={handleSelectStep}
         steps={stepperSteps}
       />
@@ -390,11 +353,13 @@ export function CreateProfileFlow({
         {finished && summary !== null ? (
           <CompletionPanel
             onEdit={handleEditAfterFinishing}
+            onLearn={openLearning}
             summary={summary}
           />
         ) : (
           <form
             className={styles.form}
+            autoComplete="off"
             noValidate
             onSubmit={(event) => {
               event.preventDefault();
@@ -411,8 +376,7 @@ export function CreateProfileFlow({
 
             {/*
               Every step stays mounted and the inactive ones are hidden, so
-              moving back and forward never discards what was typed — including
-              the password, which lives in the sign-in step alone.
+              moving back and forward never discards an unfinished answer.
             */}
             <div className={styles.steps}>
               {PROFILE_STEP_LIST.map((step) => (
@@ -442,8 +406,9 @@ export function CreateProfileFlow({
             </div>
 
             <p className={styles.footnote}>
-              Continuing never creates an account. The last step only shows your
-              answers back to you; Sunsum has nowhere to store a profile yet.
+              Continuing never creates an account or requests a code. The last
+              step only shows your fictional answers back to you. Leaving or
+              reloading this preview clears them.
             </p>
           </form>
         )}

@@ -15,14 +15,24 @@ this directory. Keep environment-specific values outside committed templates.
   It manages a Linux B1/Basic plan, fixture-only web app, private Storage and a
   new Entra-only PostgreSQL server/database. All use separate test targets in
   the existing resource group; no create/existing modes are used.
-- `modules/` holds `web.bicep`, `storage.bicep`, `network.bicep` and `postgres.bicep`.
+- `modules/` holds `web.bicep`, `storage.bicep`, `network.bicep`, `postgres.bicep`,
+  `observability.bicep`, `diagnostics.bicep` and `private-network.bicep`.
   These are invoked by parent templates rather than used as deployment entry points.
-  The dev entry invokes web, Storage and PostgreSQL creation modules.
+  The dev entry always invokes the web, Storage and PostgreSQL creation modules,
+  and invokes the observability, diagnostics and private-network modules only
+  when `enableObservability` or `enablePrivateNetworking` is true.
 - `resources.bicep` passes explicit PostgreSQL creation inputs to the module and
   returns the new server's connection outputs. The native parameters select
   PostgreSQL 17/Burstable B1ms/32 GiB. Tenant and administrator identity values are
   redacted in public parameters; supply approved values locally before preview/apply.
   Placeholders compile locally but cannot pass deployment preflight.
+  `postgresAdministrators` accepts the exported sealed `EntraAdministrator[]` type;
+  the current dev input contains one entry. Each entry has `objectId`,
+  `principalName` and `principalType`, in the shared `tenantId`. The root passes the
+  list to the module's `administrators` input. Legacy scalar inputs remain a
+  one-entry fallback only when the array is omitted. See
+  [local identity setup](../docs/deployment.md#local-identity-setup) for migration
+  and multi-admin examples; private inputs are not changed automatically.
 - `modules/web.bicep` creates the explicitly requested, billable B1 plan and links
   the web app through `plan.id`.
   Dev uses `asp-sunsum-dev-test-centralus` and `app-sunsum-dev-test-centralus`:
@@ -51,7 +61,7 @@ do not publish credentials or personal administrator data.
 | --- | --- |
 | `../config/dev.json` | Shared subscription, resource group and web-app name; `infrastructure` holds the deployment name and input paths, while `code` holds the HTTP check mode. Infrastructure paths resolve from this config's directory. |
 | `resources.dev.bicepparam` | Test resource names and compute settings, with tenant/administrator placeholders; bound to `resources.bicep` by its native `using` declaration. |
-| `resources.bicep` and `modules/` | Desired resource state: B1/Basic plan, fixture-only web app, private Storage, and a new Entra-only PostgreSQL server/database. |
+| `resources.bicep` and `modules/` | Desired resource state: B1/Basic plan, fixture-only web app, private Storage, and a new Entra-only PostgreSQL server/database, plus the opt-in observability and private-network resources. |
 
 Versioned inputs support local compilation; preview/apply also needs the three
 redacted identity values supplied locally. The ignored identity backup is not
@@ -73,6 +83,22 @@ for commands, artifact handling and normal create/update/no-change behavior.
 | `main.bicep` | Resource group | Separate document-storage entry using Storage/network modules; its optional network path is not selected by dev config. |
 | `storage-role-grants.bicep` | Resource group | Separate administrator grant to the web identity at the two container scopes only. |
 | `web-sign-in.bicep` | Resource group | Explicit opt-in Easy Auth on an existing app; precreated workforce registration and nonempty approved-user/guest allowlist. |
+
+`resources.bicep` takes `enableObservability` and `enablePrivateNetworking`,
+both `false` by default so existing reviewed deployments keep their current
+resource set and cost. When enabled it creates a Log Analytics workspace, a
+workspace-based Application Insights component, diagnostic settings on the web
+app and PostgreSQL server, a virtual network with a delegated App Service subnet
+and a private-endpoint subnet, the blob private endpoint, the
+`privatelink.blob.*` private DNS zone, its virtual-network link and the private
+DNS zone group. Names, the address space, retention and the daily ingestion cap
+are explicit parameters; `resources.dev.bicepparam` and
+`../../.github/workflows/deploy-azure2.yaml` supply the dev-test values. The web
+module reads the Application Insights connection string from the deployed
+component, so no deployment output carries it. PostgreSQL keeps public network
+access with separately approved firewall rules and gets no private endpoint.
+See [observability and private networking](../docs/app-service-postgres.md#observability-and-private-networking)
+for names, portal locations and the cost and address-space assumptions.
 
 `modules/web.bicep` and `modules/postgres.bicep` are reusable core modules. The
 `resources.parameters.example.json` is the preserved legacy creation example,
@@ -105,7 +131,10 @@ Compiler-backed tests evaluate boundary inputs and verify that the database
 resource uses the validated expression. This is not a SQL permission check.
 
 PostgreSQL child writes are serialized after server creation: secure transport,
-minimum TLS, Entra administrator, then database. This avoids competing provider
+minimum TLS, each Entra administrator (`@batchSize(1)`), then database. The list
+must be nonempty and have unique, valid object IDs. Omitting an administrator from
+the list does not revoke it in Incremental mode; removal needs separate approval.
+This avoids competing provider
 updates within the module; it is not a cross-deployment lock or a guarantee of
 data-plane readiness. Inspect partial failures before an authorized rerun.
 

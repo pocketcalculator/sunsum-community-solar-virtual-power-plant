@@ -176,6 +176,14 @@ export function getServerThemePreference(): ThemePreference {
   return DEFAULT_THEME_PREFERENCE;
 }
 
+export function getResolvedTheme(): ReturnType<typeof resolveTheme> {
+  return resolveTheme(getThemePreference(), lightSchemeQuery()?.matches ?? false);
+}
+
+export function getServerResolvedTheme(): ReturnType<typeof resolveTheme> {
+  return resolveTheme(DEFAULT_THEME_PREFERENCE, false);
+}
+
 export function setThemePreference(preference: ThemePreference): void {
   if (getThemePreference() === preference) return;
 

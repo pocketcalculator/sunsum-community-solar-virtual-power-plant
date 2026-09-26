@@ -3,11 +3,44 @@ title: SunSum Community Solar Virtual Power Plant
 description: Community-owned virtual power plant software for the Microsoft 2026 Global Hackathon
 ---
 
+## Start here
+
+This release has **two deliberately separate interfaces**. The connected
+workspace reads approved existing services. The interactive demo uses
+fictional browser-local records. Neither is a substitute for the other.
+
+| I want to... | Start with | Credentials |
+| --- | --- | --- |
+| See the interactive Sunroom demo | [Open the Pages demo](https://nicolassalazar-pro.github.io/sunsum-ui-demo/) | None; use fictional inputs |
+| Run the demo locally | `npm ci`, `npm run build:demo`, then `npm run preview:demo` | None |
+| Read existing project data | [Connect the existing application](docs/ws1/connection-and-deployment-guide.md#connect-existing-reads), then open `/app` | An approved existing participant session |
+| Hand the app to its Azure owner | [Create the source package](docs/ws1/connection-and-deployment-guide.md#package-without-azure) | None to package |
+| Find an integration point | [Connection index](docs/ws1/connections.md) or search `SUNSUM-CONNECTION:` | No secrets are stored in the index |
+
+Use **Node 22.22.2 or newer in the Node 22 line, and npm 10**. Run commands
+from the repository root. The local static preview opens at
+`http://127.0.0.1:4183`; its output is `build/vibehub`, not the Next application.
+These commands assume a full repository checkout. If you received the release
+ZIPs, follow [the delivered-artifact instructions](docs/ws1/connection-and-deployment-guide.md#use-a-delivered-release-without-repackaging):
+the application ZIP builds Next, while the separate demo ZIP is already compiled.
+
+**Authenticated, permission-controlled workflow writes are not implemented
+in this frontend release.** Existing backend write APIs have not been removed.
+Demo submission, review, interest and notes are local simulations, not real
+service actions. An unavailable connection is **out of reach right now**;
+that does not mean another team has not built it.
+
+The original Linux App Service source-ZIP deployment model is retained.
+Infrastructure configuration, repository permissions and a working homepage
+do not prove application-publishing authority or working participant identity.
+If access is out of reach, deliver the package: do not create a replacement
+resource, use demo sign-in, or place credentials in frontend configuration.
+
 ## Overview
 
 SunSum is a Microsoft 2026 Global Hackathon project building software for a
-community-owned solar virtual power plant. By Friday, September 18, the project
-aims to deliver a deployed prototype demonstrating one complete solar-project
+community-owned solar virtual power plant. The original hackathon charter
+describes a deployed prototype demonstrating one complete solar-project
 origination journey across three roles:
 
 1. A site owner selects a rooftop or land parcel, submits a potential solar
@@ -20,6 +53,9 @@ origination journey across three roles:
 All three roles can track a project's development stage.
 
 ## Goals
+
+These are the wider project goals, not a claim that this live-read release
+implements every workflow below.
 
 - Deliver one application URL with site-owner, platform-operator, and investor
   experiences
@@ -79,80 +115,56 @@ configuration.
 
 ## Project status
 
-This contribution introduces the **WS1 public frontend foundation** plus the
-**New User / Create Profile** workflow, built with Next.js and TypeScript. It is
-not the complete hackathon MVP.
+The public site, Sunroom demo and connected read interface share the original
+SunSum design language. Data, authority and workflow commands are separated.
+The selected WS2 read contracts are implemented in a browser-safe adapter;
+actual connectivity still depends on the existing host, legitimate session,
+permitted records and service configuration.
 
 Available routes:
 
 | Route   | Purpose                                                          |
 | ------- | ---------------------------------------------------------------- |
-| `/`     | Value proposition, the three ways to take part, journey, and FAQ |
-| `/join` | The guided create-profile workflow                               |
-| `GET /api/portfolio` | Selected fixture or PostgreSQL store with a fixed demo investor |
-| `/dashboard/site-owner` | Interactive site-owner dashboard design prototype |
+| `/` | Public introduction, participation paths, About, journey and FAQ |
+| `/need`, `/opportunity`, `/impact` | Community-first editorial pages |
+| `/join` | Fictional participation preview; no password or account creation |
+| `/app` | Existing-service read workspace; never falls back to demo records |
+| `/concepts`, `/concepts/sunroom`, `/concepts/gridline` | Compatibility aliases to `/app`; no Gridline interface |
+| `/dashboard/site-owner` | Dynamic alias to `/app?view=sites`; the original illustration remains in the static demo |
+| `/dashboard/investor`, `/dashboard/operator` | Session-read portfolio and pipeline workspaces merged from `main`; they fall back to their illustrative sample when no session is present |
+| Pages root | Synthetic Sunroom; `#/` opens the public landing |
 
 `/join` accepts an optional `?start=` parameter so the landing page can open the
 flow with a guided answer already selected. Unrecognised values are ignored.
 
-`/dashboard/site-owner` implements the supplied location-selection, ROI
-comparison, and allocation-card mockup using the existing Sunsum design tokens.
-Its locations and financial figures are illustrative design data only. The
-simulation control aggregates explicit mock return values for the selected
-predefined locations; it is not a financial forecast or an accepted screening
-model. A user can filter and select the supplied map locations or enter an
-address as a local draft. Custom addresses remain marked as pending validation,
-are excluded from the mock calculation, and receive no fabricated map
-coordinate because no geocoder is connected.
+The demo keeps deliberate manual workflows, 50 fictional fresh-start records,
+map/list selection, scoped HTML/CSV exports and existing saved-scenario recovery.
+The original owner illustration has ten predefined mock locations and is not a
+forecast, geocoder or live project dashboard. No real utility, funding or
+device action occurs.
 
-The selector and comparison strip are generated from the same location
-collection. The prototype includes ten predefined sites; the selection list
-scrolls vertically and the comparison cards scroll horizontally as the
-collection grows. Newly entered draft addresses immediately receive a pending
-comparison card, keeping both views synchronized.
+Public participation choices describe intent, not account permissions. The live
+role comes from `GET /api/me` and the existing signed session; a role selector or
+query parameter never grants it. Live errors, unavailable data and expired
+sessions remain visible rather than showing fictional success.
 
-The comparison strip is also the per-location breakdown of the latest ROI
-simulation. Cards included in that run are highlighted, their individual and
-community return values add exactly to the headline totals, and changed
-selections show a prompt to rerun before the comparison status changes.
+Theme preferences use the existing nonsensitive browser setting and semantic
+tokens. Assistance is deterministic, typed guidance: no live model generation,
+microphone, speech-to-text, TTS or hidden tool action. Optional learning is
+distinct from an authenticated workflow and from human project support.
 
-The shared header offers light, dark, and system theme modes. The selected mode
-is stored in the browser and all application surfaces consume the same semantic
-design tokens.
+The public `/join` flow saves nothing and creates no account. In contrast,
+the **synthetic Sunroom demo does save its fictional workflow in this browser**.
+Do not enter real personal information. Live read data is ephemeral and
+identity-scoped; it is never stored in the synthetic workflow.
 
-The secondary header navigation exposes the three role workspaces: Site Owner,
-Investor, and Platform Operator. Its labels, role IDs, and destinations are
-defined in `src/features/participation/components/PublicShell.tsx` in the
-`ROLE_NAV` collection. To connect a button to a new page, create the route under
-`app/` and update that item's `href` in `ROLE_NAV`.
+Document metadata, original bytes, generated demo drafts and summary exports
+are different artifacts. Metadata can exist without downloadable bytes.
+Investor access stays within the existing disclosure tier; reading a project
+does not express interest, unlock a deal room or commit funding.
 
-All role buttons are intentionally visible while authentication and participant
-data are unavailable. When identity is connected, resolve the signed-in user's
-authorized `ParticipantRoleId` values at the server boundary in
-`app/layout.tsx`, then pass them to `PublicShell` through its `visibleRoleIds`
-prop. Do not infer access from a hidden button: each role page and API must also
-enforce the same authorization at its service boundary.
-
-The public header also includes an **AI assistant** preview. It opens a
-right-side guidance drawer with the same rooftop, land and funding entry paths,
-plus deterministic replies for basic greetings and questions. This preview does
-not call an AI model or any remote service. Speech-to-text uses the browser's
-speech-recognition capability when available. A person can choose a local file
-and remove it from the composer, but the application only displays its name: it
-does not read, upload or retain the file.
-
-**Nothing is saved.** The flow validates every answer and shows the assembled
-profile back to you, but no account is created, no request leaves the browser,
-and no value is persisted. The wire format is not settled yet, so the summary is
-a local review rather than a preview of a request. The three federated sign-in
-options are shown as unavailable because no identity provider is connected. A
-password is validated in the browser, is never written into the profile draft or
-the summary, and is discarded when the flow finishes; a browser password manager
-may still offer to remember it, as on any sign-up form.
-
-Site submission, screening, persistence, operator decisions, private documents,
-and investor authorization require the backend and domain handoffs described in
-[the contract register](docs/ws1/contracts.md).
+See the [connection index](docs/ws1/connections.md) for each read family and
+[contract register](docs/ws1/contracts.md) for source/version evidence.
 
 **Azure Database for PostgreSQL Flexible Server with Drizzle ORM is the
 selected persistence stack**, with Drizzle Kit for schema and migrations.
@@ -183,11 +195,17 @@ selected services and remaining infrastructure prerequisites.
 | `src/features/participation/` | Landing page, public shell and entry paths |
 | `src/features/assistant/` | Browser-only guidance drawer, local replies and future instruction placeholder |
 | `src/features/onboarding/` | The create-profile flow, its step model and validation |
+| `src/features/community-context/` | Authored public stories, optional learning and VPP relationship education |
+| `src/features/live-read/` | Bounded existing-service readers, response guards and permitted projections |
+| `src/features/live-workspace/` | Ephemeral, identity-scoped read UI and navigation/download lifetimes |
+| `src/features/design-lab/` | Isolated fictional Sunroom workflows and their browser-local store |
+| `src/components/workspace/` | Controlled presentation shared without sharing data authority |
 | `src/components/ui/` | Domain-neutral controls and form primitives |
 | `src/styles/` | Design tokens and shared layout helpers |
 | `tests/` | Unit, component, boundary and browser tests |
 | `docs/ws1/` | Architecture boundaries and the contract register |
 | `infrastructure/` | Templates, diagrams, infrastructure decisions and provider prerequisites |
+| `scripts/New-UiRelease.ps1` | Clean-revision application/demo bundles and the separate operator handoff |
 
 Routes compose a feature's public entry point. Features never import each
 other's internals, and the domain layer depends on nothing above it. These
@@ -198,7 +216,7 @@ rewrite:
 
 | Path | Responsibility |
 | --- | --- |
-| `src/features/assistant/components/Assistant.tsx` | Launcher, drawer, conversation, local file picker and speech-to-text controls |
+| `src/features/assistant/components/Assistant.tsx` | Deterministic guidance launcher, drawer and typed replies |
 | `src/features/assistant/components/Assistant.module.css` | Responsive drawer and composer styles using shared design tokens |
 | `src/features/assistant/model/responses.ts` | Temporary deterministic replies for common conversation and participation topics |
 | `src/features/assistant/content/instructions.md` | Documented placeholder for future server-side model instructions |
@@ -207,8 +225,8 @@ rewrite:
 When an AI service is introduced, its route must load `instructions.md` on the
 server and keep model credentials, private prompts and participant information
 out of the browser bundle. The local response function is the intended
-replacement boundary. The current preview does not interpret selected files or
-send conversation content anywhere.
+replacement boundary. The current preview does not interpret files, capture audio or send
+conversation content anywhere.
 
 This replaces the earlier single-page template and its `app/api/submit` echo
 route; both were scaffolding for this interface rather than product behaviour.
@@ -236,6 +254,12 @@ registry. Do not add credentials or a private registry address to `.npmrc`.
 
 ## Infrastructure deployment
 
+**This is background for the infrastructure workstream, not the live-read
+release procedure.** To ship this interface use the
+[existing-host code-only guide](docs/ws1/connection-and-deployment-guide.md).
+Do not run infrastructure apply or create a paid test stack as a workaround
+for missing code-publishing access.
+
 Start with the [infrastructure deployment guide](infrastructure/docs/deployment.md#infrastructure-deployment).
 The current **Bicep and Azure CLI** entry creates or updates a separate dev-test
 stack in an existing resource group: a **paid B1/Basic Linux App Service plan**,
@@ -259,9 +283,13 @@ authorization and uses the same workflow for creation, updates and unchanged rer
 
 Infrastructure deployment does **not** upload application code, run migrations,
 grant runtime database access or activate the PostgreSQL-backed application store.
-The web app remains `SUNSUM_STORE=mock`. Use the separate
+The web app remains `SUNSUM_STORE=mock`. Application code deploys separately:
+pushes to `main` that touch application sources run the
+[automatic code-deployment workflow](infrastructure/docs/deployment.md#automatic-deployment-from-main),
+and the same
 [code-deployment entry](infrastructure/docs/deployment.md#application-code-deployment)
-to package, upload and build the application without reapplying infrastructure.
+packages, uploads and builds the application manually without reapplying
+infrastructure.
 Both commands default to [one shared dev config](infrastructure/config/dev.json).
 Use the same `-ConfigPath` for both when targeting a local config; infrastructure
 validation rejects a web-app name that differs from the compiled Bicep parameters.
@@ -300,9 +328,9 @@ Browser screenshots and reports are generated under `test-results` and
 `playwright-report`, which are not source files. npm owns the generated lockfile
 format; authored JSON/YAML remains covered by Prettier.
 
-These checks exercise the public foundation. They do not establish a working
-three-role backend, complete accessibility conformance, hosted CI success, or
-production readiness.
+These checks exercise local source and interface behavior. Mocked contract
+responses do not establish a real participant session, live service access,
+complete accessibility conformance or production readiness.
 
 See [architecture and extension boundaries](docs/ws1/architecture.md) before
 adding a feature. Proposals should begin as a GitHub issue so assumptions,

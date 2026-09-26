@@ -49,6 +49,11 @@ describe("the actual module-boundary configuration", () => {
     ["src/components/ui/probe.tsx", "fs/promises"],
     ["src/components/ui/probe.tsx", "server-only"],
     ["src/components/ui/probe.tsx", "next/headers"],
+    ["src/components/workspace/probe.tsx", "@/features/design-lab"],
+    ["src/components/workspace/probe.tsx", "@/features/live-read"],
+    ["src/components/workspace/probe.tsx", "@/backend"],
+    ["src/components/workspace/probe.tsx", "next/headers"],
+    ["src/components/workspace/probe.tsx", "node:fs"],
     ["src/features/participation/probe.tsx", "../../app/page"],
     ["src/features/participation/probe.tsx", "@/features/onboarding"],
     [
@@ -88,6 +93,17 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/core/probe.ts", "next/server"],
     ["src/backend/core/probe.ts", "next/headers"],
     ["src/backend/core/probe.ts", "@/features/participation"],
+    /**
+     * The GIS adapter holds the ArcGIS credential, so the rule keeping it out
+     * of the browser is worth asserting rather than assuming. This is what
+     * replaces the `server-only` marker the adapter deliberately omits: the
+     * credential cannot reach a client bundle if no client module, feature,
+     * domain type or route can name the adapter in the first place.
+     */
+    ["src/components/ui/probe.tsx", "@/backend/gis"],
+    ["src/features/onboarding/probe.tsx", "@/backend/gis"],
+    ["src/domain/probe.ts", "@/backend/gis"],
+    ["app/probe.tsx", "@/backend/gis"],
     ["src/backend/core/investors/probe.ts", "../projects/types"],
     ["src/backend/core/investors/probe.ts", "../projects/mock-store"],
     ["src/backend/core/investors/probe.ts", "../identity/viewer"],
@@ -160,6 +176,39 @@ describe("the actual module-boundary configuration", () => {
     ["src/features/participation/probe.tsx", "../../backend"],
     ["src/components/ui/probe.tsx", "../../backend"],
     ["src/domain/probe.ts", "../backend"],
+    /**
+     * The investor and operator workspaces are presentation over an
+     * already-authorized payload, exactly as the site owner dashboard is. They
+     * must not be able to reach a store, a driver or another feature.
+     */
+    ["src/features/investor-portfolio/probe.tsx", "@/backend"],
+    ["src/features/investor-portfolio/probe.tsx", "@/backend/core"],
+    ["src/features/investor-portfolio/probe.tsx", "@/backend/core/investors"],
+    ["src/features/investor-portfolio/probe.tsx", "../../backend"],
+    ["src/features/investor-portfolio/probe.tsx", "next/headers"],
+    ["src/features/investor-portfolio/probe.tsx", "pg"],
+    ["src/features/investor-portfolio/probe.tsx", "drizzle-orm"],
+    ["src/features/investor-portfolio/probe.tsx", "@/features/participation"],
+    [
+      "src/features/investor-portfolio/probe.tsx",
+      "@/features/participation/paths",
+    ],
+    ["src/features/operator-pipeline/probe.tsx", "@/backend"],
+    ["src/features/operator-pipeline/probe.tsx", "@/backend/core/projects"],
+    ["src/features/operator-pipeline/probe.tsx", "../../backend"],
+    ["src/features/operator-pipeline/probe.tsx", "next/headers"],
+    ["src/features/operator-pipeline/probe.tsx", "pg"],
+    /**
+     * The workspace and the static demo each compose one named dependency set;
+     * every other feature stays out of reach, including a live reader reached
+     * from the synthetic entry.
+     */
+    ["src/features/live-workspace/probe.tsx", "@/features/investor-portfolio"],
+    ["src/features/live-workspace/probe.tsx", "@/features/design-lab"],
+    ["src/features/live-workspace/probe.tsx", "@/backend"],
+    ["src/features/design-lab/probe.tsx", "@/features/live-read"],
+    ["src/features/design-lab/probe.tsx", "@/features/live-workspace"],
+    ["src/features/design-lab/probe.tsx", "@/backend"],
   ])(
     "rejects %s importing %s",
     async (file, dependency) => {
@@ -219,6 +268,23 @@ describe("the actual module-boundary configuration", () => {
     ["src/backend/probe.ts", "@/backend/db"],
     ["src/backend/probe.ts", "./db/backend-store"],
     ["src/backend/probe.ts", "./core/projects"],
+    /** The new workspaces may use shared UI and shared vocabulary, as features do. */
+    ["src/features/investor-portfolio/probe.tsx", "@/components/ui/Badge"],
+    ["src/features/investor-portfolio/probe.tsx", "@/domain/journey"],
+    ["src/features/investor-portfolio/probe.tsx", "react"],
+    ["src/features/operator-pipeline/probe.tsx", "@/components/ui/Badge"],
+    ["src/features/operator-pipeline/probe.tsx", "@/domain/journey"],
+    /** A route composes a feature with the backend, which is its job. */
+    ["app/dashboard/investor/probe.tsx", "@/features/investor-portfolio"],
+    ["app/dashboard/operator/probe.tsx", "@/features/operator-pipeline"],
+    /** The two compositions the sibling rule names, and nothing else. */
+    ["src/features/live-workspace/probe.tsx", "@/features/live-read"],
+    ["src/features/live-workspace/probe.tsx", "@/features/community-context"],
+    ["src/features/design-lab/probe.tsx", "@/features/community-context"],
+    [
+      "src/features/design-lab/probe.tsx",
+      "@/features/site-owner-dashboard/model/mockDashboard",
+    ],
   ])(
     "permits %s importing %s",
     async (file, dependency) => {

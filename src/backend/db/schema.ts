@@ -1,5 +1,7 @@
 import { ROLES } from "@/backend/core/identity";
+import { ACCOUNT_METHODS, REPRESENTATIONS } from "@/backend/core/participants";
 import { PROJECT_STAGES, SITE_TYPES, VIABILITY_STATUSES } from "@/backend/core/projects";
+import { PARTICIPANT_ROLES } from "@/domain/roles";
 import { sql, type SQL } from "drizzle-orm";
 import {
   boolean,
@@ -33,7 +35,11 @@ import {
 } from "./enums";
 
 /**
- * The eleven tables of design document section 5.2.
+ * The eleven tables of design document section 5.2, plus `participant_profiles`.
+ *
+ * `participant_profiles` has no section behind it: it holds a completed
+ * `/join` sign-up form, which is a pre-account record rather than one of the
+ * modelled entities. Its own comment explains why it is not a `users` row.
  *
  * Read ADR 0001 before changing anything here. The choices that look arbitrary
  * are not: text-plus-CHECK instead of native enums, `numeric` instead of
@@ -72,6 +78,14 @@ function jsonbLiteral(values: readonly string[]): string {
 const primaryKey = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
+/**
+ * The three charter workspaces as plain ids.
+ *
+ * Derived from `PARTICIPANT_ROLES` rather than restated so the constraint and
+ * the list the sign-up form offers cannot drift apart.
+ */
+const PARTICIPANT_ROLE_IDS: readonly string[] = PARTICIPANT_ROLES.map((role) => role.id);
+
 // ---------------------------------------------------------------------------
 // S-IAM
 // ---------------------------------------------------------------------------
@@ -95,6 +109,97 @@ export const users = pgTable(
   (t) => [
     uniqueIndex("users_email_unique").on(sql`lower(${t.email})`),
     check("users_role_check", oneOf(t.role, ROLES)),
+  ],
+);
+
+/**
+ * A completed `/join` form, captured before any account exists.
+ *
+ * Not a `users` row, and deliberately not a step toward becoming one. Nobody
+ * is authenticated when this is written, so every value in it is self-reported
+ * and unverified. Writing a half-populated `users` row instead would put an
+ * unverified email into the table the authorization path reads, which is
+ * exactly the confusion this separation prevents: nothing here grants access.
+ *
+ * Append-only, with no unique constraint on the email. That is the opposite of
+ * `users`, and intentionally so — an unverified address must not decide which
+ * row gets overwritten, or anyone could replace a stranger's submission by
+ * typing their address. Repeat submissions are rows an operator reconciles.
+ *
+ * No password column exists, at any strength. The form validates one in
+ * component state and never sends it, and the request parser rejects unknown
+ * keys, so there is no path by which a credential reaches this table.
+ */
+export const participantProfiles = pgTable(
+  "participant_profiles",
+  {
+    id: primaryKey(),
+    fullName: text("full_name").notNull(),
+    email: text("email").notNull(),
+    /** How they said they will sign in later. An intention, not a credential. */
+    accountMethod: text("account_method", { enum: ACCOUNT_METHODS }).notNull(),
+    representation: text("representation", { enum: REPRESENTATIONS }).notNull(),
+    /** Required for an organisation, and forced to null for an individual. */
+    organisationName: text("organisation_name"),
+    /**
+     * Free text rather than a CHECK, following `documents.doc_type`. The user
+     * type taxonomy belongs to the sign-up form and grows whenever a new
+     * audience is named in the charter; pinning thirty values into a
+     * constraint would make every copy change a migration, and an unrecognised
+     * value is better stored than lost. The request parser validates it
+     * against `@/domain/userTypes`, so the database is the second line here,
+     * not the first.
+     */
+    userTypeId: text("user_type_id").notNull(),
+    /**
+     * Derived from the user type, never sent by the caller. Null is a real
+     * answer: the "still learning" types map to no workspace.
+     */
+    roleId: text("role_id"),
+    intentOptionIds: jsonb("intent_option_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    consentAccepted: boolean("consent_accepted").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    /**
+     * Not unique. Lookup only, for the operator reconciling submissions by
+     * address; `lower()` because the form does not normalise case.
+     */
+    index("participant_profiles_email_idx").on(sql`lower(${t.email})`),
+    check("participant_profiles_account_method_check", oneOf(t.accountMethod, ACCOUNT_METHODS)),
+    check("participant_profiles_representation_check", oneOf(t.representation, REPRESENTATIONS)),
+    check(
+      "participant_profiles_role_id_check",
+      sql`${t.roleId} IS NULL OR ${oneOf(t.roleId, PARTICIPANT_ROLE_IDS)}`,
+    ),
+    /**
+     * The two halves of the representation question, held together. Without
+     * these an organisation could be stored with no name to bill or contact,
+     * and an individual could carry an organisation name the form never asked
+     * for — both are rows no screen knows how to render honestly.
+     */
+    check(
+      "participant_profiles_organisation_name_check",
+      sql`(${t.representation} = 'organisation' AND ${t.organisationName} IS NOT NULL AND btrim(${t.organisationName}) <> '') OR (${t.representation} = 'individual' AND ${t.organisationName} IS NULL)`,
+    ),
+    check(
+      "participant_profiles_names_present_check",
+      sql`btrim(${t.fullName}) <> '' AND btrim(${t.email}) <> ''`,
+    ),
+    /**
+     * Consent is the lawful basis for holding these contact details, so a row
+     * without it is one we had no business writing. Enforced in the database
+     * as well as in core because a seeding script or a future caller that
+     * skipped the workflow would otherwise create exactly that row.
+     */
+    check("participant_profiles_consent_check", sql`${t.consentAccepted}`),
+    check(
+      "participant_profiles_intent_option_ids_is_array",
+      sql`jsonb_typeof(${t.intentOptionIds}) = 'array'`,
+    ),
   ],
 );
 

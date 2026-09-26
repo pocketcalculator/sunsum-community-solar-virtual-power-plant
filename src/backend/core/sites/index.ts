@@ -42,3 +42,8 @@ export {
   type SubmissionSummary,
   type UserPayload,
 } from "./workflows";
+export {
+  demoCandidateParcelReader,
+  getCandidateParcels,
+  type CandidateParcelReader,
+} from "./candidate-parcels";

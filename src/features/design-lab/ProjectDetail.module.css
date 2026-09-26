@@ -1,0 +1,137 @@
+/* Shared project detail. Semantic --lab-* tokens only; renders inside the shared Modal
+   (wide for operators, drawer for owners and investors). */
+
+.workspace { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.workspace :where(button, input:not([type=radio]), select, textarea, summary) { min-height: 44px; }
+.workspace button { min-width: 44px; min-height: 44px; }
+.workspace :where(button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid var(--lab-focus); outline-offset: 3px; }
+.workspace :where(p, li, dd) { overflow-wrap: anywhere; }
+.preview { font-size: 12px; color: var(--lab-muted); line-height: 1.6; }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--lab-line); }
+.tabs button { flex: 1 1 116px; padding: 10px 12px; border: 1px solid var(--lab-line); border-radius: 8px; background: var(--lab-surface); color: var(--lab-muted); font: inherit; font-size: 14px; line-height: 1.4; transition: background 180ms, color 180ms; }
+.tabs button:hover { background: var(--lab-surface-alt); color: var(--lab-text); }
+.tabs button.activeTab { background: var(--lab-hero); border-color: var(--lab-accent-ink); color: var(--lab-hero-ink); font-weight: 600; }
+.panel { min-width: 0; }
+.panel[hidden] { display: none; }
+.stack { display: flex; flex-direction: column; gap: 24px; }
+.section { display: flex; flex-direction: column; gap: 12px; }
+.section > header { display: flex; flex-direction: column; gap: 3px; }
+.section h3 { font-size: 18px; font-weight: 600; }
+.microLabel { font-size: 12px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--lab-muted); }
+
+.statusStage { display: flex; flex-direction: column; gap: 12px; }
+.statusRow { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 16px; }
+.statusRow > div { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+
+.nextAction { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; border: 1px solid var(--lab-line); border-radius: 10px; background: var(--lab-bg); }
+.nextAction p { font-size: 14px; }
+.nextAction button { align-self: flex-start; margin-top: 8px; }
+
+.metaGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.meta strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+
+.ranges { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.range { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; border: 1px solid var(--lab-line); border-radius: 10px; background: var(--lab-bg); min-width: 0; }
+.range span { font-size: 12px; color: var(--lab-muted); }
+.range strong { font-size: 15px; font-weight: 500; letter-spacing: -.01em; overflow-wrap: anywhere; }
+
+.assessmentGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+.assessmentRecord { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--lab-line); border-radius: 12px; min-width: 0; background: var(--lab-bg); }
+.assessmentRecord h4, .comparison h4 { font-size: 16px; font-weight: 600; }
+.assessmentRecord .ranges { width: 100%; grid-template-columns: minmax(0, 1fr); }
+.provenance { display: flex; flex-direction: column; gap: 12px; font-size: 14px; width: 100%; }
+.provenance > div { min-width: 0; }
+.provenance dt { color: var(--lab-muted); font-size: 12px; margin-bottom: 4px; }
+.provenance dd { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.comparison { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-left: 3px solid var(--lab-accent-ink); background: var(--lab-surface-alt); border-radius: 0 10px 10px 0; font-size: 14px; }
+.subhead { font-size: 14px; font-weight: 600; color: var(--lab-text); }
+
+.factorList, .flagList, .needs, .noteList, .docList, .historyList { list-style: none; display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; }
+.factorList li, .flagList li { display: flex; gap: 8px; font-size: 14px; color: var(--lab-text); }
+.factorList li { padding-left: 12px; border-left: 2px solid var(--lab-line); }
+.flagList li svg { color: var(--lab-warning); flex-shrink: 0; margin-top: 2px; }
+.fixture { display: flex; gap: 8px; font-size: 14px; padding: 12px 14px; border-radius: 10px; background: var(--lab-hero); color: var(--lab-hero-ink); }
+.fixture svg { flex-shrink: 0; margin-top: 2px; }
+
+.docRow { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 12px; padding: 16px; border: 1px solid var(--lab-line); border-radius: 10px; background: var(--lab-bg); }
+.docIcon { display: grid; grid-template-columns: 1fr; place-items: center; width: 34px; height: 34px; flex-shrink: 0; border-radius: 8px; background: var(--lab-surface-alt); color: var(--lab-muted); }
+.docMain { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.docMain strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.docMain small { font-size: 12px; color: var(--lab-muted); }
+.task { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--lab-line); border-radius: 12px; background: var(--lab-bg); min-width: 0; scroll-margin-block: 24px; }
+.task h4 { font-size: 16px; font-weight: 600; }
+.selectedTask { border-color: var(--lab-accent-ink); }
+
+.timeline { list-style: none; display: flex; flex-direction: column; margin: 0; padding: 0; }
+.timeline li { position: relative; display: flex; gap: 12px; padding: 0 0 18px 4px; }
+.timeline li:last-child { padding-bottom: 0; }
+.timeDot { position: relative; z-index: 1; flex-shrink: 0; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--lab-accent); }
+.timeline li:not(:last-child)::before { content: ""; position: absolute; left: 8px; top: 14px; bottom: 0; width: 1px; background: var(--lab-line); }
+.timeline li > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.timeline strong { font-size: 14px; font-weight: 500; }
+.timeline small { font-size: 12px; color: var(--lab-muted); }
+.timeline p { font-size: 14px; color: var(--lab-muted); overflow-wrap: anywhere; }
+
+.muted { font-size: 14px; color: var(--lab-muted); }
+.hint { font-size: 14px; color: var(--lab-warning); }
+.warning, .feedback { font-size: 14px; padding: 12px 16px; border-radius: 10px; line-height: 1.6; }
+.warning { background: var(--lab-warning-bg); color: var(--lab-warning); border-left: 3px solid currentColor; }
+.feedback { background: var(--lab-hero); color: var(--lab-hero-ink); }
+.savedText { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.form { display: flex; flex-direction: column; gap: 16px; }
+.form > button { align-self: flex-start; }
+.form :where(input, textarea, select) { font-size: 14px; }
+.choiceGroup { border: 0; padding: 0; margin: 0; min-width: 0; }
+.choiceGroup legend { font-size: 14px; font-weight: 500; padding: 0; margin-bottom: 8px; }
+
+.choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.choice { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 12px; border: 1px solid var(--lab-line); border-radius: 9px; background: var(--lab-bg); color: var(--lab-muted); font-size: 14px; font-weight: 500; cursor: pointer; transition: background 180ms, border-color 180ms, color 180ms; }
+.choice input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--lab-accent-ink); }
+.choice:focus-within { outline: 2px solid var(--lab-focus); outline-offset: 3px; }
+.choice:hover { color: var(--lab-text); }
+.choiceOn { border-color: var(--lab-accent-ink); background: var(--lab-hero); color: var(--lab-hero-ink); }
+
+.controlRow { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.controlRow p { font-size: 14px; }
+.controlRow > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+.formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+
+.disclosure { padding-top: 8px; border-top: 1px solid var(--lab-line); min-width: 0; }
+.disclosure summary { cursor: pointer; padding: 12px 4px; font-size: 14px; font-weight: 500; color: var(--lab-text); }
+.disclosure > :not(summary) { margin-top: 12px; }
+.historyList li { display: flex; flex-direction: column; gap: 5px; }
+.historyList { gap: 16px; }
+.historyList small, .historyList time { color: var(--lab-muted); font-size: 12px; }
+.historyTop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.historyTop small { font-size: 12px; color: var(--lab-muted); }
+
+.noteList > li { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid var(--lab-line); border-radius: 10px; background: var(--lab-bg); }
+.noteList p { font-size: 14px; overflow-wrap: anywhere; }
+.noteList small { font-size: 12px; color: var(--lab-muted); }
+
+.tierBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 2px; }
+
+.needs li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border: 1px solid var(--lab-line); border-radius: 10px; background: var(--lab-bg); }
+.needs strong { font-size: 14px; font-weight: 500; }
+.needs span { font-size: 14px; color: var(--lab-muted); }
+
+.engage { display: flex; flex-wrap: wrap; gap: 10px; }
+
+@media (max-width: 640px) {
+  .nextAction p, .meta strong, .range strong, .factorList li, .flagList li,
+  .fixture, .docMain strong, .timeline strong, .timeline p, .muted, .controlRow p,
+  .noteList p, .needs strong, .needs span, .savedText, .hint, .form textarea,
+  .form input:not([type=radio]), .form select, .provenance, .comparison { font-size: 16px; }
+}
+@media (max-width: 480px) {
+  .statusRow, .metaGrid, .ranges, .formGrid, .choices { grid-template-columns: minmax(0, 1fr); }
+  .tabs button { flex-basis: calc(50% - 8px); }
+  .controlRow { align-items: stretch; }
+  .docRow > button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .choice, .tabs button { transition: none; }
+  .workspace button, .workspace button:hover:not(:disabled), .workspace button:active:not(:disabled) { transition: none; transform: none; }
+}
