@@ -19,12 +19,10 @@ import {
   previousStep,
   stepIndex,
   validateStep,
-  type ProfileFlowState,
 } from "@/features/onboarding/model/steps";
 
 const completeDraft: ProfileDraft = {
   ...EMPTY_PROFILE_DRAFT,
-  accountMethodId: "email",
   fullName: "Ada Lovelace",
   email: "ada@example.org",
   representation: "individual",
@@ -32,13 +30,8 @@ const completeDraft: ProfileDraft = {
   consentAccepted: true,
 };
 
-/** A draft plus an acceptable password, which is the usual case. */
-function stateOf(draft: ProfileDraft): ProfileFlowState {
-  return { draft, credentialIssue: null };
-}
-
-const empty = stateOf(EMPTY_PROFILE_DRAFT);
-const complete = stateOf(completeDraft);
+const empty = EMPTY_PROFILE_DRAFT;
+const complete = completeDraft;
 
 describe("guided intents", () => {
   it("has unique option ids that all point at real user types", () => {
@@ -96,7 +89,7 @@ describe("step machine", () => {
     expect(FIRST_STEP).toBe("start");
     expect(PROFILE_STEP_LIST.map((step) => step.id)).toEqual([
       "start",
-      "account",
+      "details",
       "representation",
       "user-type",
       "review",
@@ -108,52 +101,43 @@ describe("step machine", () => {
   });
 
   it("moves forwards and backwards within bounds", () => {
-    expect(nextStep("start")).toBe("account");
+    expect(nextStep("start")).toBe("details");
     expect(nextStep("review")).toBeNull();
     expect(previousStep("start")).toBeNull();
-    expect(previousStep("account")).toBe("start");
+    expect(previousStep("details")).toBe("start");
     expect(stepIndex("user-type")).toBe(3);
   });
 
   it("only opens a step once every earlier step passes", () => {
     expect(canEnterStep("start", empty)).toBe(true);
-    expect(canEnterStep("account", empty)).toBe(true);
+    expect(canEnterStep("details", empty)).toBe(true);
     expect(canEnterStep("representation", empty)).toBe(false);
     expect(canEnterStep("review", complete)).toBe(true);
   });
 
-  it("counts an unusable credential as a sign-in problem", () => {
-    const withoutPassword: ProfileFlowState = {
-      draft: completeDraft,
-      credentialIssue: { field: "password", message: "Create a password." },
-    };
-
-    expect(validateStep("account", withoutPassword)).toContainEqual({
-      field: "password",
-      message: "Create a password.",
-    });
-    expect(canEnterStep("review", withoutPassword)).toBe(false);
-    expect(firstBlockingStep(withoutPassword)).toBe("account");
+  it("needs only valid fictional details, not authentication, to continue", () => {
+    expect(validateStep("details", complete)).toEqual([]);
+    expect(canEnterStep("review", complete)).toBe(true);
+    expect(firstBlockingStep(complete)).toBeNull();
   });
 
   it("reports the earliest step still holding the flow up", () => {
-    expect(firstBlockingStep(empty)).toBe("account");
+    expect(firstBlockingStep(empty)).toBe("details");
 
-    const withAccount = stateOf({
+    const withDetails: ProfileDraft = {
       ...EMPTY_PROFILE_DRAFT,
-      accountMethodId: "email",
       fullName: "Ada Lovelace",
       email: "ada@example.org",
-    });
-    expect(firstBlockingStep(withAccount)).toBe("representation");
+    };
+    expect(firstBlockingStep(withDetails)).toBe("representation");
     expect(firstBlockingStep(complete)).toBeNull();
   });
 
   it("blocks a complete draft that has not consented", () => {
-    const withoutConsent = stateOf({
+    const withoutConsent: ProfileDraft = {
       ...completeDraft,
       consentAccepted: false,
-    });
+    };
 
     expect(firstBlockingStep(withoutConsent)).toBe("review");
   });

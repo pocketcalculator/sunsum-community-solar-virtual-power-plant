@@ -29,11 +29,14 @@ describe("the bounded Azure preparation contract", () => {
     expect(core).toContain("module storage './modules/storage.bicep' = {");
     expect(core).toContain("module postgres './modules/postgres.bicep' = {");
     expect(core).toContain("serverName: postgresServerName");
-    expect(core).toContain("adminObjectId: postgresAdminObjectId");
+    expect(core).toContain("administrators: postgresAdministrators");
     expect(core).toContain("output AZURE_POSTGRES_SERVER_NAME string = postgres.outputs.name");
     expect(core).toContain("output PGHOST string = postgres.outputs.fqdn");
     expect(core).not.toContain("web-sign-in.bicep");
-    expect(core).not.toContain("storage-role-grants.bicep");
+    expect(core).toContain("module blobRoles './storage-role-grants.bicep' = if (deployRbac)");
+    expect(core).toContain("param deployRbac bool = false");
+    expect(core).toContain("approvedWebPrincipalId: approvedWebPrincipalId");
+    expect(core).toContain("blobDataAccess: 'Contributor'");
   });
 
   it("provides private LRS containers and an explicit policy-approved public-network choice", () => {
@@ -117,9 +120,138 @@ describe("the bounded Azure preparation contract", () => {
     expect(provision).toContain("Assert-AppServiceFreePlan");
   });
 
+  it("adds opt-in observability and private-network resources without changing the default resource set", () => {
+    const core = read("infrastructure/templates/resources.bicep")
+      .replace(/\/\*[\s\S]*?\*\//gu, "")
+      .replace(/^\s*\/\/.*$/gmu, "");
+    expect(core).toContain("param enableObservability bool = false");
+    expect(core).toContain("param enablePrivateNetworking bool = false");
+    expect(core).toContain("module observability './modules/observability.bicep' = if (enableObservability) {");
+    expect(core).toContain("module diagnostics './modules/diagnostics.bicep' = if (enableObservability) {");
+    expect(core).toContain("module privateNetwork './modules/private-network.bicep' = if (enablePrivateNetworking) {");
+    expect(core).toContain("telemetryComponentName: enableObservability ? applicationInsightsName : ''");
+    expect(core).toContain("appSubnetId: enablePrivateNetworking ? privateNetwork!.outputs.appSubnetId : ''");
+    for (const name of [
+      "AZURE_LOG_ANALYTICS_WORKSPACE_NAME",
+      "AZURE_APPLICATION_INSIGHTS_NAME",
+      "AZURE_DIAGNOSTIC_SETTING_NAME",
+      "AZURE_VIRTUAL_NETWORK_NAME",
+      "AZURE_BLOB_PRIVATE_ENDPOINT_NAME",
+      "AZURE_BLOB_PRIVATE_DNS_ZONE_NAME",
+      "AZURE_PRIVATE_DNS_ZONE_LINK_NAME",
+    ]) {
+      expect(core).toContain(`output ${name} string`);
+    }
+    expect(core).not.toMatch(/ConnectionString|InstrumentationKey/u);
+
+    const observability = read("infrastructure/templates/modules/observability.bicep");
+    expect(observability).toContain("Microsoft.OperationalInsights/workspaces@");
+    expect(observability).toContain("name: 'PerGB2018'");
+    expect(observability).toContain("dailyQuotaGb: dailyQuotaGb");
+    expect(observability).toContain("WorkspaceResourceId: workspace.id");
+    expect(observability).toContain("IngestionMode: 'LogAnalytics'");
+    expect(observability).not.toMatch(/output[^\n]*(ConnectionString|InstrumentationKey)/u);
+
+    const diagnostics = read("infrastructure/templates/modules/diagnostics.bicep");
+    expect(diagnostics).toContain("Microsoft.Insights/diagnosticSettings@");
+    expect(diagnostics).toContain("workspaceId: workspaceId");
+    expect(diagnostics).toContain("category: 'AppServiceHTTPLogs'");
+    expect(diagnostics).toContain("category: 'PostgreSQLLogs'");
+
+    const network = read("infrastructure/templates/modules/private-network.bicep")
+      .replace(/\/\*[\s\S]*?\*\//gu, "")
+      .replace(/^\s*\/\/.*$/gmu, "");
+    expect(network).toContain("Microsoft.Network/virtualNetworks@");
+    expect(network).toContain("serviceName: 'Microsoft.Web/serverFarms'");
+    expect(network).toContain("privateEndpointNetworkPolicies: 'Disabled'");
+    expect(network).toContain("name: 'privatelink.blob.${environment().suffixes.storage}'");
+    expect(network).toContain("Microsoft.Network/privateDnsZones/virtualNetworkLinks@");
+    expect(network).toContain("Microsoft.Network/privateEndpoints@");
+    expect(network).toContain("Microsoft.Network/privateEndpoints/privateDnsZoneGroups@");
+    expect(network).toContain("groupIds: ['blob']");
+    expect(network).toContain("registrationEnabled: false");
+    expect(network).not.toMatch(/DBforPostgreSQL|publicNetworkAccess/u);
+
+    const web = read("infrastructure/templates/modules/web.bicep");
+    expect(web).toContain("param telemetryComponentName string = ''");
+    expect(web).toContain("param appSubnetId string = ''");
+    expect(web).toContain("virtualNetworkSubnetId: empty(appSubnetId) ? null : appSubnetId");
+    expect(web).toContain("name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'");
+    expect(web).toContain("var telemetrySettings = empty(telemetryComponentName)");
+  });
+
+  it("supplies one complete dev-test parameter set to validate, what-if and create", () => {
+    const workflow = read(".github/workflows/deploy-azure2.yaml");
+    expect(workflow.match(/--parameters "@\$PARAMETERS_FILE"/gu)).toHaveLength(3);
+    expect(workflow).not.toMatch(/\n\s+environmentName=dev-test/u);
+    expect(workflow).toContain('PARAMETERS_FILE="$RUNNER_TEMP/deployment-parameters.json"');
+    expect(workflow).toContain('echo "PARAMETERS_FILE=$PARAMETERS_FILE" >> "$GITHUB_ENV"');
+    for (const entry of [
+      'enableObservability: { value: true }',
+      'logAnalyticsWorkspaceName: { value: "log-sunsum-dev-test-centralus" }',
+      'applicationInsightsName: { value: "appi-sunsum-dev-test-centralus" }',
+      'enablePrivateNetworking: { value: true }',
+      'virtualNetworkName: { value: "vnet-sunsum-dev-test-centralus" }',
+      'virtualNetworkAddressPrefix: { value: "10.30.0.0/16" }',
+      'appSubnetPrefix: { value: "10.30.1.0/26" }',
+      'privateEndpointSubnetPrefix: { value: "10.30.2.0/28" }',
+    ]) {
+      expect(workflow).toContain(entry);
+    }
+    expect(workflow).toContain("for namespace in Microsoft.OperationalInsights Microsoft.Insights Microsoft.Network; do");
+    expect(workflow).toContain("Required resource providers are not registered");
+    expect(workflow).toContain("AZURE_BLOB_PRIVATE_ENDPOINT_NAME");
+    expect(workflow).toContain("--mode Incremental");
+
+    expect(workflow).toContain("umask 077");
+    expect(workflow).toContain('rm -f "${PARAMETERS_FILE:-}"');
+
+    const parameters = read("infrastructure/templates/resources.dev.bicepparam");
+    // The workflow cannot consume the bicepparam file, which carries redacted
+    // identity placeholders, so the shared nonsecret values are compared here.
+    const workflowValues = new Map(
+      [...workflow.matchAll(/^\s+(\w+): \{ value: (.+) \},?$/gmu)].map((match) => {
+        const [, key, value] = match;
+        if (key === undefined || value === undefined) throw new Error("Failed to parse workflow parameter value.");
+        return [key, value] as const;
+      }),
+    );
+    const parameterValues = new Map(
+      [...parameters.matchAll(/^param (\w+) = (.+)$/gmu)].map((match) => {
+        const [, key, value] = match;
+        if (key === undefined || value === undefined) throw new Error("Failed to parse Bicep parameter value.");
+        return [key, value] as const;
+      }),
+    );
+    const redacted = new Set(["tenantId", "postgresAdminObjectId", "postgresAdminPrincipalName", "postgresAdminPrincipalType", "postgresAdministrators"]);
+    expect(workflowValues.size).toBe(26);
+    expect([...parameterValues.keys()].filter((key) => !redacted.has(key)).sort())
+      .toEqual([...workflowValues.keys()].filter((key) => !redacted.has(key)).sort());
+    expect(workflowValues.get("postgresAdminObjectId")).toBe("$postgresAdminObjectId");
+    expect(workflowValues.get("postgresAdminPrincipalName")).toBe("$postgresAdminPrincipalName");
+    expect(workflowValues.get("postgresAdminPrincipalType")).toBe('"User"');
+    expect(parameters).toContain("param postgresAdministrators = [");
+    expect(parameters).toContain("principalType: 'User'");
+    for (const [key, value] of parameterValues) {
+      if (redacted.has(key)) continue;
+      expect(`${key}=${workflowValues.get(key)?.replace(/"/gu, "'")}`).toBe(`${key}=${value}`);
+    }
+    expect(parameters).toContain("param enableObservability = true");
+    expect(parameters).toContain("param logAnalyticsWorkspaceName = 'log-sunsum-dev-test-centralus'");
+    expect(parameters).toContain("param applicationInsightsName = 'appi-sunsum-dev-test-centralus'");
+    expect(parameters).toContain("param enablePrivateNetworking = true");
+    expect(parameters).toContain("param virtualNetworkName = 'vnet-sunsum-dev-test-centralus'");
+    expect(parameters).toContain("param virtualNetworkAddressPrefix = '10.30.0.0/16'");
+  });
+
   it("fails manual deployment until reviewed artifacts are configured", () => {
     const workflow = read(".github/workflows/deploy-azure.yml");
     const deployJob = workflow.slice(workflow.indexOf("  deploy:"));
+    const legacyGate = deployJob.indexOf("- name: Block incompatible legacy provisioning");
+    expect(legacyGate).toBeGreaterThanOrEqual(0);
+    expect(legacyGate).toBeLessThan(deployJob.indexOf("- uses: actions/checkout@"));
+    expect(deployJob.slice(legacyGate, deployJob.indexOf("- uses: actions/checkout@"))).toContain("exit 1");
+    expect(deployJob).toContain("first-time/F1 parameter contract is incompatible");
     const preflight = "      - name: Check reviewed deployment artifacts availability";
     const preflightIndex = deployJob.indexOf(preflight);
     expect(preflightIndex).toBeGreaterThanOrEqual(0);
@@ -134,6 +266,21 @@ describe("the bounded Azure preparation contract", () => {
     for (const step of deploymentSteps) {
       expect(step).toContain("if: steps.deployment-artifacts.outputs.configured == 'true'");
     }
+  });
+
+  it("binds the approval-free workflow to main and its immutable OIDC subject", () => {
+    const workflow = read(".github/workflows/deploy-azure2.yaml");
+    const credential = JSON.parse(
+      read("infrastructure/config/github-actions-azure-infrastructure.federated-credential.json"),
+    );
+    expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
+    expect(workflow).toContain("environment: azure-infrastructure");
+    expect(credential).toMatchObject({
+      issuer: "https://token.actions.githubusercontent.com",
+      subject:
+        "repo:pocketcalculator@34637263/sunsum-community-solar-virtual-power-plant@1370296682:environment:azure-infrastructure",
+      audiences: ["api://AzureADTokenExchange"],
+    });
   });
 
   it("declares a fixture-only web host with database configuration kept in operator outputs", () => {
@@ -165,7 +312,10 @@ describe("the bounded Azure preparation contract", () => {
     expect(firewall).toContain("startIpAddress: address");
     expect(firewall).toContain("endIpAddress: address");
     const deploy = read("infrastructure/scripts/Deploy-AppServiceCode.ps1");
-    expect(deploy).toContain("--track-status false --timeout 600000");
+    expect(deploy).toContain("--async true --track-status false");
+    expect(deploy).toContain("Azure CLI did not return an async deployment id");
+    expect(deploy).toContain("az webapp log deployment show");
+    expect(deploy).toContain("$attempt -lt 40");
     expect(deploy).toContain("$attempt -lt 12");
     expect(deploy).toContain("if (-not $Apply)");
   });
@@ -186,6 +336,31 @@ describe("the bounded Azure preparation contract", () => {
     expect(entry).toContain("deployment-record.json");
     expect(entry).not.toContain("Deploy-Infrastructure.ps1");
     expect(entry).not.toMatch(/postgresAdmin|BicepPath|build-params/u);
+  });
+
+  it("builds and validates before deploying code, and deploys no infrastructure", () => {
+    const workflow = read(".github/workflows/deploy-app.yml");
+    expect(workflow).toContain("environment: azure-infrastructure");
+    expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
+    expect(workflow).toContain("DEPLOYMENT_CONFIG: infrastructure/config/dev.json");
+    expect(workflow).not.toContain("app-sunsum-dev-test-centralus");
+    expect(workflow).toContain('- ".github/workflows/deploy-app.yml"');
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).toContain("node-version: 22");
+    expect(workflow).toContain("cache: npm");
+    // The checks must precede the sign-in so a failing check stops the run
+    // before any Azure write.
+    const order = ["npm ci", "npm run lint", "npm run typecheck", "npm test", "npm run build",
+      "Missing required environment secrets", "uses: azure/login@", "Deploy-Application.ps1"]
+      .map((marker) => workflow.indexOf(marker));
+    expect(order).not.toContain(-1);
+    expect([...order].sort((first, second) => first - second)).toEqual(order);
+    for (const secret of ["AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID"]) {
+      expect(workflow).toContain(`secrets.${secret} }}`);
+    }
+    expect(workflow).toContain("-Apply -ApprovalReference $reference");
+    // Code deployment must not apply templates or change runtime settings.
+    expect(workflow).not.toMatch(/az deployment group|\.bicep|appsettings|SUNSUM_STORE|SUNSUM_BLOB|SUNSUM_VIABILITY/u);
   });
 
   it("runs the actual network, archive and unified code-entry guards without Azure calls", () => {
@@ -213,9 +388,11 @@ describe("the bounded Azure preparation contract", () => {
     expect(parameters).toContain("param postgresServerName = 'db-sunsum-dev-test-centralus'");
     expect(parameters).toContain("param databaseName = 'sunsum_test'");
     expect(parameters).toContain("param tenantId = '00000000-0000-0000-0000-000000000000'");
-    expect(parameters).toContain("param postgresAdminObjectId = '00000000-0000-0000-0000-000000000000'");
-    expect(parameters).toContain("param postgresAdminPrincipalName = '<postgres-admin-principal-name>'");
-    expect(parameters).toContain("param postgresAdminPrincipalType = 'User'");
+    expect(parameters).toContain("param postgresAdministrators = [");
+    expect(parameters).toContain("objectId: '00000000-0000-0000-0000-000000000000'");
+    expect(parameters).toContain("principalName: '<postgres-admin-principal-name>'");
+    expect(parameters).toContain("principalType: 'User'");
+    expect(parameters.match(/objectId:/gu)).toHaveLength(1);
     expect(parameters).toContain("param postgresVersion = '17'");
     expect(parameters).toContain("param postgresSkuName = 'Standard_B1ms'");
     expect(parameters).not.toMatch(/readEnvironmentVariable|stsunsumdev928e5e28|db-sunsum-dev-centralus/u);

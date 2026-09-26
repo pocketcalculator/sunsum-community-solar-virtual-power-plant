@@ -4,7 +4,7 @@
  * file-selection disclosure, and unsupported speech-to-text behavior.
  */
 
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Assistant } from "@/features/assistant";
 
@@ -94,76 +94,21 @@ describe("assistant", () => {
     expect(screen.queryByText("roof-notes.txt")).not.toBeInTheDocument();
   });
 
-  it("explains when speech-to-text is unavailable", () => {
+  it("keeps microphone capture explicitly unavailable", () => {
     renderAndOpenAssistant();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Start speech-to-text" }),
-    );
-
-    expect(
-      screen.getByText("Speech-to-text is not supported by this browser."),
-    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Microphone unavailable in this preview" })).toBeDisabled();
+    expect(screen.getByText(/Microphone capture is disabled/)).toBeVisible();
   });
 
-  it("writes interim speech and restarts when the browser ends early", () => {
-    const start = vi.fn();
-    const stop = vi.fn();
-    const recognitionCallbacks: {
-      onend: (() => void) | null;
-      onerror: ((event: Event & { error: string }) => void) | null;
-      onresult: ((event: Event) => void) | null;
-    } = {
-      onend: null,
-      onerror: null,
-      onresult: null,
-    };
-
-    class SpeechRecognitionStub {
-      continuous = false;
-      interimResults = false;
-      lang = "";
-      maxAlternatives = 0;
-      start = start;
-      stop = stop;
-
-      set onend(callback: (() => void) | null) {
-        recognitionCallbacks.onend = callback;
-      }
-
-      set onerror(
-        callback: ((event: Event & { error: string }) => void) | null,
-      ) {
-        recognitionCallbacks.onerror = callback;
-      }
-
-      set onresult(callback: ((event: Event) => void) | null) {
-        recognitionCallbacks.onresult = callback;
-      }
-    }
-
+  it("never constructs a browser speech provider even when available", () => {
+    const speech = vi.fn();
     Object.defineProperty(window, "webkitSpeechRecognition", {
       configurable: true,
-      value: SpeechRecognitionStub,
+      value: speech,
     });
     renderAndOpenAssistant();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Start speech-to-text" }),
-    );
-
-    act(() => {
-      recognitionCallbacks.onresult?.({
-        results: Object.assign(
-          [{ 0: { transcript: "I have a rooftop" }, isFinal: false }],
-          { length: 1 },
-        ),
-      } as unknown as Event);
-    });
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue(
-      "I have a rooftop",
-    );
-
-    act(() => recognitionCallbacks.onend?.());
-    expect(start).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("Listening…")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Microphone unavailable in this preview" }));
+    expect(speech).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("");
   });
 });

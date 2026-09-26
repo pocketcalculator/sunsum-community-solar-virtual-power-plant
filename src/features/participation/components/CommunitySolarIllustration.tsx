@@ -1,3 +1,4 @@
+import Link from "next/link";
 import styles from "./CommunitySolarIllustration.module.css";
 
 /**
@@ -123,7 +124,12 @@ export function CommunitySolarIllustration() {
         </g>
       </svg>
       <figcaption className={styles.caption}>
-        Illustrative diagram — not project data.
+        <p>Illustrative solar sites and a shared record, not project data.</p>
+        <ul className={styles.contextLinks} role="list">
+          <li><Link href="/need">Why local needs come first</Link></li>
+          <li><Link href="/opportunity">How separate sites work together</Link></li>
+          <li><Link href="/impact">What shared impact could mean</Link></li>
+        </ul>
       </figcaption>
     </figure>
   );
