@@ -39,9 +39,11 @@ try {
         Write-Output 'Artifact and explicit target validated. No Azure calls; -Apply requires separate deployment authorization.'
         return
     }
+    $deploymentTimeoutSeconds = 3600
     $help = & az webapp deploy --help
-    if ($LASTEXITCODE -ne 0 -or ($help -join "`n") -notmatch '--track-status' -or ($help -join "`n") -notmatch '--clean') {
-        throw 'This Azure CLI must support webapp deploy --track-status and --clean; update tooling separately.'
+    $helpText = $help -join "`n"
+    if ($LASTEXITCODE -ne 0 -or $helpText -notmatch '--track-status' -or $helpText -notmatch '--clean' -or $helpText -notmatch '--timeout') {
+        throw 'This Azure CLI must support webapp deploy --track-status, --clean, and --timeout; update tooling separately.'
     }
     $raw = & az webapp show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
         --query '{id:id,host:defaultHostName,httpsOnly:httpsOnly,kind:kind}' --output json --only-show-errors
@@ -87,6 +89,7 @@ try {
     Assert-DeploymentSnapshot $approvalSnapshot
     $deployRaw = & az webapp deploy --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
         --src-path $artifact.Path --type zip --clean true --async true --track-status false `
+        --timeout $deploymentTimeoutSeconds `
         --only-show-errors --output json
     if ($LASTEXITCODE -ne 0) {
         throw 'Deployment did not report success. It may still finish remotely: inspect deployment logs before retrying; do not change the web tier.'

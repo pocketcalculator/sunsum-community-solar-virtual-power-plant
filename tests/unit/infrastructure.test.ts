@@ -348,6 +348,7 @@ describe("the bounded Azure preparation contract", () => {
     expect(firewall).toContain("endIpAddress: address");
     const deploy = read("infrastructure/scripts/Deploy-AppServiceCode.ps1");
     expect(deploy).toContain("--async true --track-status false");
+    expect(deploy).toContain("--timeout $deploymentTimeoutSeconds");
     expect(deploy).toContain("Azure CLI did not return an async deployment id");
     expect(deploy).toContain("az webapp log deployment show");
     expect(deploy).toContain("$attempt -lt 40");
@@ -375,6 +376,7 @@ describe("the bounded Azure preparation contract", () => {
 
   it("builds and validates before deploying code, and deploys no infrastructure", () => {
     const workflow = read(".github/workflows/deploy-app.yml");
+    expect(workflow).toContain("timeout-minutes: 90");
     expect(workflow).toContain("environment: azure-infrastructure");
     expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
     expect(workflow).toContain("DEPLOYMENT_CONFIG: infrastructure/config/dev.json");

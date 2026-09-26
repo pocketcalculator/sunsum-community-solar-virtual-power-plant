@@ -497,7 +497,7 @@ when a separately approved, fixed ZIP must be deployed unchanged.
 The existing app must be HTTPS-only Linux with Node 22, the reviewed startup/build
 settings, TLS 1.2 or newer and FTP/SCM basic publishing disabled. Plan SKU and plan
 read permissions are not checked. PowerShell 7.2+ is required; apply also needs an
-authenticated Azure CLI that supports `webapp deploy --clean` and `--track-status`
+authenticated Azure CLI that supports `webapp deploy --clean`, `--track-status` and `--timeout`
 and permission to inspect and deploy to the named app. A successful HTTP check
 does not verify application readiness, database access, document storage or user
 authorization. Inspect remote build/deployment logs before retrying a failure.
