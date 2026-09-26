@@ -61,7 +61,7 @@ jobs:
               postgresTier=Burstable \
               postgresSkuName=Standard_B1ms \
               postgresStorageSizeGB=32 \
-              postgresVersion=17
+              postgresVersion='17'
 
       - name: Show what-if
         env:
