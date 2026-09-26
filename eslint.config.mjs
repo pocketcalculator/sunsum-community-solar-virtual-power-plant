@@ -192,7 +192,7 @@ export default defineConfig([
     },
   },
   {
-    files: ["src/components/ui/**/*.{ts,tsx}"],
+    files: ["src/components/{ui,workspace}/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -279,6 +279,87 @@ export default defineConfig([
               ],
               message:
                 "The domain layer is shared vocabulary: it must not depend on routes, features, UI or services.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    /**
+     * The connected workspace reads through `live-read`.
+     *
+     * `live-read` is not a sibling presentation feature: it is the bounded
+     * same-origin read client — its requests, its error vocabulary and the
+     * projections the workspace renders — and it is deliberately kept out of
+     * `@/domain` so the static demo entry can never resolve a live reader.
+     * `community-context` supplies the shared explanatory copy the workspace
+     * shows beside a read. Both dependencies are named here rather than by
+     * relaxing the sibling rule, so every other feature stays out of reach.
+     */
+    files: ["src/features/live-workspace/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: serverImports,
+          patterns: [
+            databasePackageInternals,
+            backendModules,
+            {
+              group: ["**/app/**"],
+              message: "Features must not depend on application routes.",
+            },
+            {
+              group: [
+                "@/features/*",
+                "@/features/*/**",
+                "!@/features/live-read",
+                "!@/features/live-read/**",
+                "!@/features/community-context",
+                "!@/features/community-context/**",
+              ],
+              message:
+                "The live workspace may compose only the live reader and the shared community context.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    /**
+     * The static demo quotes the fixtures and the explanation it illustrates.
+     *
+     * `design-lab` ships only in the separate synthetic entry, and its point is
+     * to show the same dashboard fixtures and the same virtual-power-plant
+     * explanation the product surfaces use. Duplicating either would let the
+     * demo drift from what it claims to illustrate.
+     */
+    files: ["src/features/design-lab/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: serverImports,
+          patterns: [
+            databasePackageInternals,
+            backendModules,
+            {
+              group: ["**/app/**"],
+              message: "Features must not depend on application routes.",
+            },
+            {
+              group: [
+                "@/features/*",
+                "@/features/*/**",
+                "!@/features/community-context",
+                "!@/features/community-context/**",
+                "!@/features/site-owner-dashboard",
+                "!@/features/site-owner-dashboard/**",
+              ],
+              message:
+                "The static demo may quote only the dashboard fixtures and the shared community context.",
             },
           ],
         },

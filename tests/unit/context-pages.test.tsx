@@ -7,8 +7,12 @@ import {
   ContextPage,
   contextPage,
   PageAudioPlayer,
-  PublicShell,
 } from "@/features/participation";
+
+/**
+ * The public shell's navigation is covered by `public-shell.test.tsx`, which
+ * asserts the navigation this branch ships.
+ */
 
 afterEach(cleanup);
 
@@ -220,84 +224,5 @@ describe("the page audio control", () => {
     const credit = container.querySelector("p");
     expect(credit?.textContent).toContain("Example clip");
     expect(credit?.textContent).toContain("Example artist");
-  });
-});
-
-describe("the primary navigation", () => {
-  it("links to each context page", () => {
-    render(
-      <PublicShell>
-        <p>body</p>
-      </PublicShell>,
-    );
-
-    for (const page of CONTEXT_PAGES) {
-      expect(
-        screen.getByRole("link", { name: page.navLabel }).getAttribute("href"),
-      ).toBe(page.href);
-    }
-  });
-
-  /**
-   * Review removed these: both pointed at sections the landing page already
-   * shows as cards, so they navigated to something already on screen.
-   */
-  it("no longer offers the anchors review asked to drop", () => {
-    render(
-      <PublicShell>
-        <p>body</p>
-      </PublicShell>,
-    );
-
-    expect(screen.queryByRole("link", { name: "Participation paths" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Delivery journey" })).toBeNull();
-  });
-
-  it("keeps the FAQ anchor", () => {
-    render(
-      <PublicShell>
-        <p>body</p>
-      </PublicShell>,
-    );
-
-    expect(
-      screen.getByRole("link", { name: "FAQ" }).getAttribute("href"),
-    ).toBe("/#faq");
-  });
-
-  /** Each role's link must reach that role's workspace, not the sign-up form. */
-  it("points every role link at its workspace", () => {
-    render(
-      <PublicShell>
-        <p>body</p>
-      </PublicShell>,
-    );
-
-    expect(
-      screen.getByRole("link", { name: "Site Owner" }).getAttribute("href"),
-    ).toBe("/dashboard/site-owner");
-    expect(
-      screen.getByRole("link", { name: "Investor" }).getAttribute("href"),
-    ).toBe("/dashboard/investor");
-    expect(
-      screen.getByRole("link", { name: "Platform Operator" }).getAttribute("href"),
-    ).toBe("/dashboard/operator");
-  });
-
-  it("renders the demo control it is given, and nothing when there is none", () => {
-    const { unmount } = render(
-      <PublicShell demoControl={<p>demo pill</p>}>
-        <p>body</p>
-      </PublicShell>,
-    );
-    expect(screen.getByText("demo pill")).toBeTruthy();
-    unmount();
-
-    render(
-      <PublicShell>
-        <p>body</p>
-      </PublicShell>,
-    );
-    expect(screen.queryByText("demo pill")).toBeNull();
   });
 });

@@ -10,36 +10,36 @@ export const FAQ_ITEMS: readonly FaqItem[] = [
     id: "finished",
     question: "Is this the finished product?",
     answer:
-      "No. This is the public foundation of the interface: the home page and the create-profile flow. It sets the structure, language and design the rest of the product will be built on. The three workspaces themselves are not built yet.",
+      "No. These public pages explain a proposed community-energy approach and offer a fictional profile preview. The connected workspace is read-only and depends on authorized access; a separately labeled synthetic demo uses fictional scenarios. A proposal, an implemented screen and an operating project are different things.",
   },
   {
     id: "real-data",
     question: "Does anything here connect to real projects?",
     answer:
-      "No. Nothing on this site reads or writes project records, and every example is written to illustrate the design rather than to report a real site.",
+      "These public pages do not request project records. The connected read-only workspace reports its own connection and access status, including when a service is out of reach. Public diagrams, profile examples and separately labeled synthetic scenarios are not real project data.",
   },
   {
     id: "profile",
-    question: "What happens if I create a profile?",
+    question: "What happens in the profile preview?",
     answer:
-      "You work through the questions and see your answers collected at the end. Nothing is saved or sent: there is no identity or profile service connected yet, so no account is created and reloading the page clears what you entered.",
+      "Use fictional details to work through the questions and see your answers at the end. Nothing is saved or sent, no account or code is created, and reloading or leaving clears the draft. Optional learning opens without clearing your unfinished answers.",
   },
   {
     id: "register",
     question: "Can I register a site or sign in today?",
     answer:
-      "Not yet. Site intake and sign-in need an agreed data contract and identity setup first. You can walk through creating a profile in the meantime, but it does not sign you in.",
+      "Not through this public preview. It does not request credentials, register a site or create a session. The read-only workspace requires an established, authorized access path; choosing a participation type here cannot provide one.",
   },
   {
     id: "audience",
     question: "Who is Sunsum for?",
     answer:
-      "Three groups: people who can offer a site, the operators who run community projects, and the financiers who fund them. Each gets a workspace shaped around what they actually need to do.",
+      "Site owners, project operators and investors can explore their participation contexts. Researchers, workforce participants and people learning more can use the same education and help without being assigned another workspace or enrolled in a service.",
   },
   {
     id: "built",
     question: "How is this page built?",
     answer:
-      "It is server-rendered with Next.js and React and uses native browser controls, including this list of questions, so reading the page does not depend on client-side JavaScript. It is designed for keyboard use, strong contrast and reduced motion, and has not yet been through a formal accessibility audit.",
+      "It uses React and native browser controls, including these expandable questions and the optional learning. The design supports keyboard use, reflow and reduced motion. Learning is written guidance, not a staffed conversation or an automated outreach service.",
   },
 ];
