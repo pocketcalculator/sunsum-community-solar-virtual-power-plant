@@ -14,7 +14,7 @@ export function getWorkspaceConfiguration(): WorkspaceConfiguration {
     apiBase: SUNSUM_PUBLIC_API_BASE_URL,
     store: SUNSUM_STORE,
     demoAuth: SUNSUM_DEMO_AUTH,
-    sessionSecretConfigured: Boolean(SUNSUM_SESSION_SECRET),
+    sessionSecretConfigured: typeof SUNSUM_SESSION_SECRET === "string" && SUNSUM_SESSION_SECRET.length >= 32,
     participantSignInApproved: SUNSUM_LIVE_READ_AUTH_APPROVED === "true",
     exportApproved: SUNSUM_LIVE_EXPORT_APPROVED === "true",
     documentDownloadsApproved: SUNSUM_LIVE_DOCUMENTS_APPROVED === "true",
