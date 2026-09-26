@@ -1,0 +1,9 @@
+{
+  "operation": "CodeDeployment",
+  "subscriptionId": "<approved-existing-subscription-id>",
+  "resourceGroupName": "<approved-existing-resource-group>",
+  "webAppName": "<approved-existing-app-name>",
+  "payloadSha256": "<reviewed-application-zip-sha256>",
+  "approvalReference": "<actual-owner-review-reference>",
+  "expectedAccessMode": "ApprovedSignIn"
+}

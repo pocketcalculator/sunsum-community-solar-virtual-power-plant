@@ -31,6 +31,7 @@ import type { ActivityRecord } from "@/backend/core/activity";
 import { normalizeDocType } from "@/backend/core/documents";
 import type { EngagementRecord, FundingNeedRecord } from "@/backend/core/engagements";
 import type { InvestorProfile } from "@/backend/core/identity";
+import type { ParticipantProfileRecord } from "@/backend/core/participants";
 import type { ProjectRecord, ProjectStage, SiteType } from "@/backend/core/projects";
 import { isFailedResult } from "@/backend/core/shared";
 import type {
@@ -51,6 +52,7 @@ import {
   fundingNeeds,
   investorEngagements,
   investors,
+  participantProfiles,
   projects,
   sites,
   users,
@@ -852,6 +854,61 @@ export class PostgresBackendStore implements BackendStore {
         ...(profile.createdAt === undefined ? {} : { createdAt: new Date(profile.createdAt) }),
       })
       .onConflictDoUpdate({ target: investors.userId, set: values });
+  }
+
+  // -------------------------------------------------------------------------
+  // Participant profiles
+  // -------------------------------------------------------------------------
+
+  /**
+   * A plain insert, with no `onConflictDoUpdate`, because there is nothing to
+   * conflict on: the table has no unique constraint beyond the primary key.
+   * Deduplicating on the email would let an unverified address decide which
+   * row is overwritten. The memory store appends for the same reason, and the
+   * two must stay indistinguishable.
+   */
+  async addParticipantProfile(profile: ParticipantProfileRecord): Promise<void> {
+    await this.db.insert(participantProfiles).values({
+      id: profile.id,
+      fullName: profile.fullName,
+      email: profile.email,
+      accountMethod: profile.accountMethod,
+      representation: profile.representation,
+      organisationName: profile.organisationName,
+      userTypeId: profile.userTypeId,
+      roleId: profile.roleId,
+      intentOptionIds: [...profile.intentOptionIds],
+      consentAccepted: profile.consentAccepted,
+      createdAt: new Date(profile.createdAt),
+    });
+  }
+
+  /**
+   * Oldest first, matching the memory store's insertion order. Without the
+   * explicit ordering PostgreSQL is free to return rows in any order, and the
+   * two stores would disagree on a list the parity test compares directly.
+   */
+  async listParticipantProfiles(): Promise<readonly ParticipantProfileRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(participantProfiles)
+      .orderBy(asc(participantProfiles.createdAt));
+
+    return rows.map((row) => ({
+      id: row.id,
+      fullName: row.fullName,
+      email: row.email,
+      accountMethod: row.accountMethod,
+      representation: row.representation,
+      organisationName: row.organisationName,
+      userTypeId: row.userTypeId as ParticipantProfileRecord["userTypeId"],
+      roleId: row.roleId as ParticipantProfileRecord["roleId"],
+      intentOptionIds: toStringArray(
+        row.intentOptionIds,
+      ) as ParticipantProfileRecord["intentOptionIds"],
+      consentAccepted: row.consentAccepted,
+      createdAt: row.createdAt.toISOString(),
+    }));
   }
 
   // -------------------------------------------------------------------------

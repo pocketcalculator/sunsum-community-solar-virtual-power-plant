@@ -15,6 +15,13 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'DeploymentSafety.psm1') -Force
+function Test-SubmittedDeploymentRecord {
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary] $Deployment,
+        [Parameter(Mandatory)][string] $DeploymentId
+    )
+    return $Deployment.Contains('id') -and $Deployment.id -is [string] -and $Deployment.id -ceq $DeploymentId
+}
 if ($SubscriptionId -eq [guid]::Empty -or [string]::IsNullOrWhiteSpace($ApprovalReference)) {
     throw 'An explicit subscription and code-deployment review reference are required.'
 }
@@ -78,12 +85,50 @@ try {
     }
     Assert-DeploymentSnapshot $snapshot
     Assert-DeploymentSnapshot $approvalSnapshot
-    & az webapp deploy --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
-        --src-path $artifact.Path --type zip --clean true --async false --track-status false --timeout 600000 `
-        --only-show-errors --output none
+    $deployRaw = & az webapp deploy --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
+        --src-path $artifact.Path --type zip --clean true --async true --track-status false `
+        --only-show-errors --output json
     if ($LASTEXITCODE -ne 0) {
         throw 'Deployment did not report success. It may still finish remotely: inspect deployment logs before retrying; do not change the web tier.'
     }
+    $deploymentId = $null
+    try {
+        $deployResponse = ($deployRaw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
+        if ($deployResponse -is [System.Collections.IDictionary] -and $deployResponse.Contains('id') -and $deployResponse.id -is [string]) {
+            $deploymentId = $deployResponse.id
+        }
+    } catch {
+        $deploymentId = $null
+    }
+    if ([string]::IsNullOrWhiteSpace($deploymentId)) {
+        throw 'Azure CLI did not return an async deployment id; cannot verify the submitted deployment status.'
+    }
+    # Kudu deployment status enum: 0 = Pending, 1 = Building, 2 = Deploying, 3 = Failed, 4 = Success.
+    $kuduDeploymentFailedStatus = '3'
+    $kuduDeploymentSuccessStatus = '4'
+    $deploymentSucceeded = $false
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        $raw = & az webapp log deployment show --subscription $SubscriptionId --resource-group $ResourceGroupName --name $WebAppName `
+            --output json --only-show-errors
+        if ($LASTEXITCODE -eq 0) {
+            $deployment = ($raw -join "`n") | ConvertFrom-Json -AsHashtable -NoEnumerate
+            if ($deployment -is [System.Collections.IDictionary] -and $deployment.Contains('status') -and
+                (Test-SubmittedDeploymentRecord -Deployment $deployment -DeploymentId $deploymentId)) {
+                $status = [string]$deployment.status
+                if ($status -ceq $kuduDeploymentSuccessStatus) {
+                    $deploymentSucceeded = $true
+                    break
+                }
+                if ($status -ceq $kuduDeploymentFailedStatus) {
+                    throw 'Remote App Service deployment failed; inspect deployment logs before retrying.'
+                }
+            }
+        } else {
+            Write-Warning "Deployment status check $($attempt + 1) could not read the remote deployment status; retrying within the bounded window."
+        }
+        if ($attempt -lt 39) { Start-Sleep -Seconds 15 }
+    }
+    if (-not $deploymentSucceeded) { throw 'Remote App Service deployment did not report success within the bounded status checks. Inspect deployment logs before retrying.' }
     $online = $false
     for ($attempt = 0; $attempt -lt 12; $attempt++) {
         try {

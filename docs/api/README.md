@@ -12,12 +12,16 @@ the proposed internal S-VIA contract.
 | --- | --- |
 | Site owner | `POST /sites`, `PATCH /sites/{id}`, `POST /sites/{id}/submit`, `GET /me/sites`, `GET /me/outstanding` |
 | Site owner / Operator | `POST /sites/{id}/documents`, `PUT` / `GET /sites/{id}/documents/{documentId}/content` |
+| Site owner / Operator | `GET /sites/candidate-parcels` |
 | Operator | `GET /submissions`, `GET /submissions/{id}`, `POST /submissions/{id}/decision` |
 | Operator | `GET /pipeline`, `PATCH /projects/{id}`, `POST /projects/{id}/stage`, `PATCH /projects/{id}/visibility` |
 | Operator | `GET /projects/{id}/engagements` |
+| Operator | `POST /projects/{id}/documents`, `PUT /projects/{id}/documents/{documentId}/content` |
+| Operator / Site owner / Tier-1 investor | `GET /projects/{id}/documents/{documentId}/content` |
+| Operator | `GET /profiles` |
 | Investor | `GET /investors/me/profile`, `POST /investors/me/profile`, `GET /portfolio` |
 | Investor | `POST /projects/{id}/engagements`, `GET /me/engagements`, `GET /projects/{id}/funding-needs`, `GET /projects/{id}/deal-room` |
-| Anonymous | `POST /auth/demo-switch`, `POST /auth/logout` |
+| Anonymous | `POST /auth/demo-switch`, `POST /auth/logout`, `POST /profiles` |
 | Any signed-in role | `GET /me` |
 
 ## Section 10 paths not in the MVP slice
@@ -30,10 +34,18 @@ Handlers reject unknown input; core services authorize and enforce workflow
 rules.
 
 > **Sessions, but demo sign-in.** Every implemented route except
-> `POST /auth/demo-switch` and `POST /auth/logout` resolves its caller
+> `POST /auth/demo-switch`, `POST /auth/logout` and `POST /profiles` resolves
+> its caller
 > from a signed `sunsum_session` cookie and answers `401 unauthenticated` when
-> there is none. Those two start and end a session, so requiring one would be
-> circular. The role is read from the user row on each request, not from
+> there is none. The first two start and end a session, so requiring one would
+> be circular. `POST /profiles` is the `/join` sign-up form, which by
+> definition is used by someone who has no account, so it authenticates nobody
+> and instead checks `Sec-Fetch-Site`/`Origin` directly. What it writes is a
+> `participant_profiles` row — a pre-account record that grants no access, is
+> never read by the authorization path, and carries no credential. `GET
+> /profiles` on the same path is operator-only: the write is open, so the read
+> is where the role check lives. The role is
+> read from the user row on each request, not from
 > the token, so a caller cannot select their own role and a role changed in the
 > database takes effect immediately.
 >
@@ -78,12 +90,39 @@ Document registration and document content are separate operations:
 location comes from the stored record rather than the request, the upload's
 `Content-Type` is ignored in favour of the type validated at registration, and
 the uploaded length must match the registered `size_bytes`. A registered
-document with nothing uploaded reads as `404`, which is a normal state. Content
-access is limited to the site owner and operators — investor content delivery is
-the §7.6 short-lived-SAS design and is not implemented, so tier 1 exposes
-document *metadata* only.
+document with nothing uploaded reads as `404`, which is a normal state.
+
+A document hangs off exactly one parent. A site document is evidence an owner
+supplies before acceptance; a project document is what the platform produces
+after it — a screening report or an AI-assisted underwriting summary — and is
+registered through `POST /projects/{id}/documents` by an operator, who is also
+the only role that may publish one to investors by setting
+`disclosure_class: investor_tier_1`.
+
+Download is governed by one rule: a role may fetch exactly what its own view
+already lists. `GET /sites/{id}/documents/{documentId}/content` stays limited to
+the site owner and operators. `GET /projects/{id}/documents/{documentId}/content`
+additionally serves a tier-1 investor holding a live engagement, applying the
+deal room's own gate, so the documents a deal room advertises can actually be
+retrieved. It matches either parent, so a tier-1 document registered against the
+site before acceptance is reachable there too. A document the caller is not
+entitled to returns `404` rather than `403`, so its existence is not disclosed.
 
 `request_info` transitions a submission to `info_requested`, records the owner's outstanding item, and the owner can resubmit through `POST /sites/{id}/submit`.
+
+`GET /sites/candidate-parcels` serves the parcel boundaries an owner picks a
+site on. It is deliberately not a proxy: it accepts no parameters at all, and
+any query string is a `400`. The layer, the filter and the published field list
+are fixed in `src/backend/gis`, which is the only module holding the ArcGIS
+credential — so no caller input can reach a different layer, widen the filter,
+or request a column we do not publish. Owner names and appraised values exist
+upstream and are excluded by an allowlist rather than stripped afterwards.
+Responses come from a cache; when ArcGIS is unreachable the last good copy is
+returned with `metadata.stale` true so the map can label it, but a *rejected
+credential* fails the request instead, because serving a third party's data
+after our entitlement to it is in question is not a decision a cache should
+make. `SUNSUM_PARCELS=demo` is the default and serves synthetic parcels, so the
+endpoint works in a clean checkout and in CI with no ArcGIS subscription.
 
 Owner dashboard items keep `submission_status`, `project_stage`, and
 `journey_stage_id` separate. `journey_stage_id` uses the exact seven literals in

@@ -1,0 +1,85 @@
+.layout { display: grid; grid-template-columns: minmax(250px, .8fr) minmax(0, 1.7fr); gap: 22px; align-items: start; margin-bottom: 30px; }
+.scopeNote { margin-bottom: 24px; padding: 16px; background: var(--lab-hero); color: var(--lab-hero-ink); border-radius: 12px; line-height: 1.5; }
+.scopeNote p { margin-top: 8px; }
+.latestRun { color: var(--lab-muted); font-size: 13px; line-height: 1.5; }
+.selector { min-width: 0; }
+.search { display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--lab-line); border-radius: 8px; color: var(--lab-muted); }
+.search input { padding: 10px 0; width: 100%; min-width: 0; min-height: 44px; border: none; color: var(--lab-text); background: transparent; font: inherit; }
+.selectionCount { display: flex; flex-direction: column; gap: 3px; color: var(--lab-text); font-size: 11px; margin: 15px 0; }
+.selectionCount span { color: var(--lab-muted); font-size: 10px; }
+.locations { max-height: 385px; overflow-y: auto; scrollbar-width: thin; padding-right: 4px; }
+.location { display: flex; gap: 10px; align-items: center; padding: 13px 10px; border: 1px solid transparent; border-radius: 8px; margin-bottom: 7px; cursor: pointer; transition: background 180ms; }
+.location:hover { background: var(--lab-surface-alt); }
+.location input { accent-color: var(--lab-accent-ink); width: 16px; height: 16px; flex-shrink: 0; }
+.location span { flex: 1; }
+.location strong { display: block; font-size: 12px; font-weight: 500; }
+.location small { display: block; font-size: 10px; color: var(--lab-muted); margin-top: 3px; }
+.location > svg { color: var(--lab-muted); }
+.selected { background: var(--lab-hero); border-color: var(--lab-line); }
+.custom { padding-top: 18px; margin-top: 15px; border-top: 1px solid var(--lab-line); display: flex; flex-direction: column; gap: 11px; }
+.results { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.periods { display: flex; flex-wrap: wrap; padding: 3px; border-radius: 7px; border: 1px solid var(--lab-line); background: var(--lab-bg); }
+.periods button { min-width: 44px; min-height: 44px; border: none; border-radius: 5px; background: transparent; color: var(--lab-muted); font: inherit; font-size: 12px; padding: 6px 8px; }
+.periods .periodActive { color: var(--lab-text); background: var(--lab-surface); box-shadow: 0 1px 5px var(--lab-shadow); }
+.chartTotals { display: flex; flex-wrap: wrap; gap: 28px; margin: 22px 0 18px; }
+.chartTotals > div span { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--lab-muted); }
+.chartTotals i { width: 6px; height: 6px; border-radius: 50%; background: var(--lab-chart-secondary); }
+.chartTotals > div:nth-child(2) i { background: var(--lab-accent-ink); }
+.chartTotals strong { display: block; font-size: 28px; font-weight: 500; letter-spacing: -.05em; margin-top: 6px; }
+.chartTotals > p { margin-left: auto; text-align: right; color: var(--lab-muted); font-size: 12px; padding-top: 3px; }
+.chartTotals small { display: block; font-size: 10px; margin-top: 5px; }
+.chart { width: 100%; overflow: visible; display: block; }
+.chartNote { display: flex; align-items: center; gap: 16px; margin-top: 20px; }
+.chartNote p { font-size: 13px; color: var(--lab-muted); max-width: 360px; line-height: 1.5; }
+.chartNote button { margin-left: auto; }
+.dataTable { font-size: 12px; width: 100%; border-collapse: collapse; margin-top: 12px; }
+.dataTable caption { text-align: left; padding: 8px 0; color: var(--lab-muted); }
+.dataTable th, .dataTable td { text-align: left; border-bottom: 1px solid var(--lab-line); padding: 8px; }
+.tableScroll { max-width: 100%; overflow-x: auto; }
+.assumptions { margin-top: 20px; font-size: 13px; line-height: 1.5; }
+.assumptions summary { min-height: 44px; padding: 12px 0; cursor: pointer; font-weight: 600; }
+.assumptions dl { margin: 0; }
+.assumptions dl > div { margin-top: 12px; }
+.assumptions dt { font-weight: 600; }
+.assumptions dd { margin: 4px 0 0; color: var(--lab-muted); overflow-wrap: anywhere; }
+.allocationLabels { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+.allocationLabels span { display: flex; align-items: center; gap: 8px; color: var(--lab-muted); }
+.allocationLabels strong { color: var(--lab-text); font-weight: 500; }
+.allocationControls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, .45fr); gap: 16px; align-items: center; margin-top: 16px; }
+.slider { width: 100%; min-width: 0; margin: 0; accent-color: var(--lab-accent-ink); min-height: 44px; }
+.allocationHint, .allocationError { margin: 12px 0 20px; font-size: 13px; line-height: 1.5; }
+.allocationHint { color: var(--lab-muted); }
+.allocationError { color: var(--lab-danger); }
+.simulateRow { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.simulateRow p { font-size: 11px; }
+.simulateRow small { font-size: 10px; color: var(--lab-muted); display: block; margin-top: 5px; }
+.financialMeanings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 0; font-size: 13px; line-height: 1.5; }
+.financialMeanings dt { font-weight: 600; }
+.financialMeanings dd { margin: 4px 0 0; color: var(--lab-muted); }
+.comparisonStrip { display: flex; gap: 14px; overflow-x: auto; padding: 2px 0 15px; scroll-snap-type: x proximity; scrollbar-width: thin; }
+.comparisonCard { min-width: 212px; width: 212px; flex-shrink: 0; padding: 18px; background: var(--lab-surface); border: 1px solid var(--lab-line); border-radius: 12px; scroll-snap-align: start; }
+.comparisonIncluded { border-color: var(--lab-accent-ink); background: color-mix(in srgb, var(--lab-hero) 38%, var(--lab-surface)); }
+.comparisonTop { display: flex; align-items: center; justify-content: space-between; margin-bottom: 17px; color: var(--lab-accent-ink); }
+.comparisonCard h3 { font-size: 16px; margin-bottom: 3px; }
+.comparisonCard p { font-size: 11px; color: var(--lab-muted); }
+.comparisonCard dl { margin: 18px 0 7px; }
+.comparisonCard dl div { display: flex; justify-content: space-between; align-items: center; margin: 7px 0; }
+.comparisonCard dt { color: var(--lab-muted); font-size: 11px; }
+.comparisonCard dd { margin: 0; font-size: 14px; }
+.comparisonCard button { margin-top: 8px; width: 100%; }
+@media (max-width: 1100px) { .layout { grid-template-columns: minmax(230px, .8fr) minmax(0, 1.4fr); gap: 16px; } .chartTotals { gap: 16px; } .chartTotals strong { font-size: 23px; } .chartTotals > p { text-align: left; margin-left: 0; } .simulateRow { flex-wrap: wrap; } }
+@media (max-width: 850px) { .layout { grid-template-columns: minmax(0, 1fr); } .locations { max-height: 255px; } .results { gap: 16px; } }
+@media (max-width: 720px) {
+  .search input { font-size: 16px; min-height: 44px; }
+  .location { min-height: 62px; }
+  .location strong { font-size: 14px; }
+  .location small, .selectionCount, .custom small, .chartTotals > div span, .chartNote p, .simulateRow p, .simulateRow small, .comparisonCard p, .comparisonCard dt { font-size: 12px; }
+  .periods button { min-width: 44px; min-height: 44px; font-size: 12px; }
+  .chartTotals strong { font-size: 27px; }
+  .chartNote { flex-wrap: wrap; gap: 6px; }
+  .allocationLabels { font-size: 11px; gap: 8px; }
+  .allocationLabels span { gap: 5px; }
+  .simulateRow button { width: 100%; }
+  .allocationControls, .financialMeanings { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .location { transition: none; } }
