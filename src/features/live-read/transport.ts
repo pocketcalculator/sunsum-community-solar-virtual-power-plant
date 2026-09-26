@@ -1,10 +1,9 @@
+import { isWorkspaceQuery, workspaceQueryString } from "@/domain/workspace-filters";
 import { LIVE_READ_LIMITS } from "./constants";
-import { ReadFault, malformed, readError, rejectRead } from "./errors";
+import { ReadFault, malformed, readError, rejectRead, serviceErrorCode } from "./errors";
 import type { ConnectionId } from "./registry";
-import type { LiveRole, ReadOperation, SnapshotQuery } from "./types";
-import {
-  isId, isObject, projectStages, siteTypes, submissionStatuses, viabilityStatuses,
-} from "./values";
+import type { LiveRole, ReadError, ReadOperation, SnapshotQuery } from "./types";
+import { isId, isObject } from "./values";
 
 export type Operation =
   | { readonly kind: "identity" | "owner-sites" | "outstanding" | "profile" | "my-engagements" | "export" }
@@ -13,54 +12,16 @@ export type Operation =
   | { readonly kind: "project-engagements" | "funding" | "deal-room"; readonly projectId: string; readonly role: "operator" | "investor" }
   | { readonly kind: "document"; readonly siteId: string; readonly documentId: string };
 
-const queryKeys = [
-  "statuses", "siteType", "location", "viability", "stages", "mandateMatch", "projectType",
-];
-
-function invalidQuery(): never {
-  return rejectRead("invalid", "The filter is not admitted for this read.", "invalid_query");
-}
-
 export function validateQuery(query: unknown, role?: LiveRole): asserts query is SnapshotQuery | undefined {
-  if (query === undefined) return;
-  if (!isObject(query) || Object.keys(query).some((key) => !queryKeys.includes(key))) invalidQuery();
-  const allowed = role === "site-owner" ? [] :
-    role === "operator" ? ["statuses", "siteType", "location", "viability"] :
-    role === "investor" ? ["stages", "mandateMatch", "projectType", "viability"] : queryKeys;
-  if (Object.keys(query).some((key) => !allowed.includes(key))) invalidQuery();
-  for (const [key, choices] of [
-    ["statuses", submissionStatuses], ["stages", projectStages],
-  ] as const) {
-    const entries = query[key];
-    if (entries === undefined) continue;
-    if (
-      !Array.isArray(entries) || entries.length > choices.length ||
-      new Set(entries).size !== entries.length ||
-      entries.some((entry) => !choices.some((candidate) => candidate === entry))
-    ) invalidQuery();
-  }
-  if (query.siteType !== undefined && !siteTypes.some((value) => value === query.siteType)) invalidQuery();
-  if (query.viability !== undefined && !viabilityStatuses.some((value) => value === query.viability)) invalidQuery();
-  if (query.mandateMatch !== undefined && typeof query.mandateMatch !== "boolean") invalidQuery();
-  for (const key of ["location", "projectType"] as const) {
-    const value = query[key];
-    if (value === undefined) continue;
-    if (typeof value !== "string" || !value.trim() || value.length > 200 || /[\u0000-\u001f\u007f]/.test(value)) invalidQuery();
+  if (query !== undefined && !isWorkspaceQuery(query, role)) {
+    rejectRead("invalid", "The filter is not admitted for this read.", "invalid_query");
   }
 }
 
 function queryString(query: SnapshotQuery | undefined, role: LiveRole): string {
   validateQuery(query, role);
   if (query === undefined) return "";
-  const params = new URLSearchParams();
-  for (const status of query.statuses ?? []) params.append("status", status);
-  for (const stage of query.stages ?? []) params.append("stage", stage);
-  if (query.siteType !== undefined) params.set("type", query.siteType);
-  if (query.viability !== undefined) params.set("viability", query.viability);
-  if (query.location !== undefined) params.set("location", query.location);
-  if (query.projectType !== undefined) params.set("project_type", query.projectType);
-  if (query.mandateMatch !== undefined) params.set("mandate_match", String(query.mandateMatch));
-  const encoded = params.toString();
+  const encoded = workspaceQueryString(query);
   return encoded ? `?${encoded}` : "";
 }
 
@@ -232,13 +193,8 @@ function parseJson(bytes: Uint8Array): unknown {
   return payload;
 }
 
-function httpFault(status: number, operation: ReadOperation, body?: unknown): ReadFault {
-  const codes = [
-    "invalid_query", "invalid_body", "unauthenticated", "forbidden_origin",
-    "forbidden_role", "forbidden_owner", "forbidden_tier", "not_found",
-    "conflict", "validation_failed", "service_unavailable",
-  ];
-  const code = isObject(body) && typeof body.code === "string" && codes.includes(body.code) ? body.code : null;
+function httpFault(status: number, operation: Pick<ReadOperation, "connectionId">, body?: unknown): ReadFault {
+  const code = isObject(body) ? serviceErrorCode(body.code) : null;
   const kind = status === 401 ? "unauthenticated" : status === 403 ? "denied" :
     status === 404 ? "missing" : status === 400 || status === 422 ? "invalid" :
     status === 408 || status === 504 ? "timeout" : status === 413 ? "too-large" : "unavailable";
@@ -258,6 +214,11 @@ export interface Transport {
     readonly bytes: Uint8Array<ArrayBuffer>;
     readonly contentType: string;
   }>;
+  postInterest(projectId: string, signal: AbortSignal, onDispatch: () => void): Promise<
+    | { readonly kind: "created"; readonly payload: unknown }
+    | { readonly kind: "existing" }
+    | { readonly kind: "refused"; readonly error: ReadError }
+  >;
 }
 
 export function createTransport(origin: string, fetcher: typeof globalThis.fetch, timeoutMs: number): Transport {
@@ -341,6 +302,79 @@ export function createTransport(origin: string, fetcher: typeof globalThis.fetch
       const result = await request(operation, signal, operations, true);
       if (result.kind !== "bytes") return malformed();
       return { bytes: result.bytes, contentType: result.contentType };
+    },
+    async postInterest(projectId, parentSignal, onDispatch) {
+      const path = `/api/projects/${pathId(projectId)}/engagements`;
+      const connectionId = "SUNSUM-CONNECTION:WS2-INVESTOR";
+      throwIfAborted(parentSignal);
+      const controller = new AbortController();
+      const relay = () => controller.abort(parentSignal.reason);
+      parentSignal.addEventListener("abort", relay, { once: true });
+      const timer = setTimeout(() => controller.abort(new ReadFault(readError(
+        "timeout", "The interest request exceeded its deadline; its outcome may be unknown.",
+        "deadline", connectionId,
+      ))), timeoutMs);
+      try {
+        const url = `${origin}${path}`;
+        throwIfAborted(parentSignal);
+        onDispatch();
+        const response = await abortable(fetcher(url, {
+          method: "POST",
+          body: "{}",
+          headers: { "content-type": "application/json" },
+          credentials: "same-origin",
+          cache: "no-store",
+          redirect: "error",
+          signal: controller.signal,
+        }), controller.signal);
+        if (response.redirected || (response.url !== "" && response.url !== url)) {
+          rejectRead("network", "A redirected interest response cannot confirm the outcome.", "redirect_not_admitted");
+        }
+        const refused = [400, 401, 403, 404, 422].includes(response.status);
+        let payload: unknown;
+        try {
+          const contentType = (response.headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase();
+          if (contentType !== "application/json") malformed();
+          payload = parseJson(await boundedBody(response, LIVE_READ_LIMITS.jsonBytes, controller.signal));
+        } catch (error) {
+          if (!(error instanceof ReadFault) || !refused) throw error;
+          throwIfAborted(controller.signal);
+          return {
+            kind: "refused",
+            error: { ...httpFault(response.status, { connectionId }).error,
+              message: "The service refused interest; its error details were unavailable." },
+          };
+        }
+        throwIfAborted(controller.signal);
+        if (refused) return {
+          kind: "refused",
+          error: { ...httpFault(response.status, { connectionId }, payload).error,
+            message: response.status === 401 ? "Sign in through the admitted session before registering interest." :
+              response.status === 404 ? "This project is no longer available for interest." :
+                response.status === 400
+                  ? "The service rejected the request format. Refresh the selected project; if this continues, ask the service owner to review the interest contract. No automatic retry is performed." :
+                  response.status === 422
+                    ? "The service could not validate this project interest. Confirm the project requirements with the service owner before another deliberate attempt." :
+                isObject(payload) && payload.code === "forbidden_tier"
+                  ? "Complete the existing investor onboarding before registering interest." :
+                  "The service refused this interest request. Its role, origin and validation rules remain in effect." },
+        };
+        if (response.status === 201) return { kind: "created", payload };
+        if (response.status === 409 && isObject(payload) && payload.code === "conflict") return { kind: "existing" };
+        throw httpFault(response.status, { connectionId }, payload);
+      } catch (error) {
+        if (error instanceof ReadFault) throw error;
+        throwIfAborted(controller.signal);
+        if (error instanceof TypeError) {
+          throw new ReadFault(readError("network",
+            "The interest response could not be received; reconcile existing engagements.", "network", connectionId));
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+        parentSignal.removeEventListener("abort", relay);
+        controller.abort();
+      }
     },
   };
 }

@@ -1,10 +1,12 @@
 /**
  * SYNTHETIC TEST DATA ONLY. No account, session, cookie, sign-in or real API passthrough.
- * Playwright: route.fulfill(fixtures.responseFor(request.url(), request.method())).
+ * Interest is test-scoped, unarmed by default, and never reaches an API.
  * Low-level builders permit deliberate malformed-response overrides; use the
  * factory for a coherent, role-scoped set of accepted WS2 endpoint responses.
  */
 import { JOURNEY_STAGES, type JourneyStageId } from "@/domain/journey";
+import type { EngagementState } from "@/backend/core/engagements/types";
+import type { EngagementPayload, EngagementPipelineItem } from "@/backend/core/engagements/workflows";
 import type {
   LiveRole, ProjectStage, SiteType, SubmissionStatus, ViabilityStatus,
 } from "@/features/live-read/types";
@@ -329,6 +331,7 @@ export interface SyntheticTrafficRequest {
   readonly method: string;
   readonly resourceType: string;
   readonly rsc?: boolean;
+  readonly postData?: string | null;
 }
 
 export interface SyntheticTrafficObservation extends SyntheticTrafficRequest {
@@ -349,20 +352,24 @@ export function syntheticTrafficViolation(
     if (error instanceof TypeError) return "invalid-url";
     throw error;
   }
-  if (request.method !== "GET") return "non-get";
   const dataRead = request.resourceType === "fetch" || request.resourceType === "xhr";
+  if (request.method !== "GET") {
+    if (fixtures === null || !dataRead || !url.pathname.startsWith("/api/")) return "non-get";
+    return fixtures.requestViolation(request.url, request.method, request.postData);
+  }
   if (url.protocol === "data:" && !dataRead && ["image", "font", "media"].includes(request.resourceType)) return null;
   if (url.protocol === "blob:" && url.origin === origin && request.method === "GET" && !dataRead) return null;
   if (url.origin !== origin) return "foreign-origin";
   if (url.username || url.password) return "invalid-url";
   if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
-    return fixtures === null ? "unconfigured-api-read" : fixtures.requestViolation(request.url, request.method);
+    return fixtures === null ? "unconfigured-api-read" : fixtures.requestViolation(request.url, request.method, request.postData);
   }
   if (dataRead) {
     if (url.pathname.startsWith("/_next/")) return null;
     const frameworkDocuments = [
       "/", "/app", "/join", "/need", "/opportunity", "/impact", "/nope", "/privacy", "/terms",
-      "/concepts", "/concepts/sunroom", "/concepts/gridline", "/dashboard/site-owner",
+      "/concepts", "/concepts/sunroom", "/concepts/gridline",
+      "/dashboard/site-owner", "/dashboard/operator", "/dashboard/investor",
     ];
     if (request.rsc === true && url.searchParams.has("_rsc") && frameworkDocuments.includes(url.pathname)) return null;
     return "non-api-data-read";
@@ -373,6 +380,7 @@ export function syntheticTrafficViolation(
 export type SyntheticResponseOverride = (
   path: string,
   response: SyntheticLiveReadResponse,
+  request: SyntheticTrafficObservation,
 ) => SyntheticLiveReadResponse | "network" | Promise<SyntheticLiveReadResponse | "network">;
 
 export interface SyntheticBrowserAudit {
@@ -381,6 +389,8 @@ export interface SyntheticBrowserAudit {
   readonly storageAttempts: SyntheticStorageAttempt[];
   readonly errors: string[];
   useFixtures(fixtures: SyntheticLiveReadFixtures, override?: SyntheticResponseOverride): void;
+  armInterest(projectId: string): void;
+  disarmInterest(): void;
   storageSnapshot(): Promise<SyntheticStorageSnapshot>;
 }
 
@@ -389,6 +399,7 @@ export interface SyntheticBrowserRequest {
   method(): string;
   resourceType(): string;
   headers(): Record<string, string>;
+  postData?(): string | null;
 }
 
 export interface SyntheticBrowserRoute {
@@ -423,7 +434,7 @@ export async function installSyntheticBrowserAudit(page: SyntheticAuditPage, ori
     const url = new URL(request.url());
     const input: SyntheticTrafficRequest = {
       url: request.url(), method: request.method(), resourceType: request.resourceType(),
-      rsc: request.headers()["rsc"] === "1",
+      rsc: request.headers()["rsc"] === "1", postData: request.postData?.() ?? null,
     };
     return {
       ...input, origin: url.origin, path: `${url.pathname}${url.search}`,
@@ -451,8 +462,8 @@ export async function installSyntheticBrowserAudit(page: SyntheticAuditPage, ori
     const url = new URL(request.url());
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
       if (fixtures === null) throw new Error("An unconfigured API request escaped the synthetic guard.");
-      const response = fixtures.responseFor(request.url(), request.method());
-      const selected = override === undefined ? response : await override(entry.path, response);
+      const response = fixtures.responseFor(request.url(), request.method(), entry.postData);
+      const selected = override === undefined ? response : await override(entry.path, response, entry);
       if (selected === "network") await route.abort("failed");
       else await route.fulfill(selected);
       return;
@@ -464,6 +475,14 @@ export async function installSyntheticBrowserAudit(page: SyntheticAuditPage, ori
     useFixtures(next, nextOverride) {
       fixtures = next.atOrigin(origin);
       override = nextOverride;
+    },
+    armInterest(projectId) {
+      if (fixtures === null) throw new Error("Interest requires an explicit synthetic scenario.");
+      fixtures.armInterest(projectId);
+    },
+    disarmInterest() {
+      if (fixtures === null) throw new Error("No synthetic interest scenario is installed.");
+      fixtures.disarmInterest();
     },
     storageSnapshot: () => page.evaluate(readSyntheticSaveAudit),
   };
@@ -478,10 +497,37 @@ export interface SyntheticLiveReadResponse {
 
 export interface SyntheticLiveReadFixtureOptions {
   readonly investorEngaged?: boolean;
+  readonly investorOnboarded?: boolean;
+  readonly engagements?: readonly SyntheticEngagementSeed[];
+  readonly interest?: SyntheticInterestScenario;
   readonly documentBytesAvailable?: boolean;
   readonly origin?: string;
   readonly collectionScenario?: "page-two";
   readonly exportPhase?: "preview-a" | "release-b";
+}
+
+export interface SyntheticEngagementSeed {
+  readonly projectId?: string;
+  readonly scope: "project" | "funding-need";
+  readonly state: EngagementState;
+  readonly isBinding?: boolean;
+  readonly changedAt?: string;
+}
+
+export type SyntheticInterestRefusal =
+  | "unauthenticated" | "forbidden_role" | "forbidden_tier"
+  | "forbidden_origin" | "not_found" | "invalid_body";
+
+export type SyntheticInterestOutcome =
+  | { readonly kind: "created" }
+  | { readonly kind: "conflict"; readonly state: "interested" | "committed" | "underwriting" | "approved" | "funded" }
+  | { readonly kind: "refused"; readonly code: SyntheticInterestRefusal }
+  | { readonly kind: "unknown"; readonly recorded: boolean };
+
+export interface SyntheticInterestScenario {
+  readonly investorId: string;
+  readonly projectId: string;
+  readonly outcome?: SyntheticInterestOutcome;
 }
 
 export type SyntheticFixtureIds = {
@@ -501,7 +547,7 @@ export interface SyntheticFixtureRecord {
 
 export type SyntheticRequestViolation =
   | "invalid-url" | "foreign-origin" | "non-get" | "unknown-endpoint"
-  | "role-endpoint" | "invalid-query";
+  | "role-endpoint" | "invalid-query" | "invalid-body" | "interest-not-armed";
 
 export interface SyntheticLiveReadFixtures {
   readonly classification: "SYNTHETIC_TEST_ONLY";
@@ -509,10 +555,13 @@ export interface SyntheticLiveReadFixtures {
   readonly origin: string;
   readonly ids: SyntheticFixtureIds;
   readonly records: readonly SyntheticFixtureRecord[];
+  // Initial immutable payloads; responseFor reads the current synthetic engagement state.
   readonly responses: Readonly<Record<string, SyntheticLiveReadResponse>>;
-  requestViolation(url: string, method?: string): SyntheticRequestViolation | null;
+  requestViolation(url: string, method?: string, postData?: string | null): SyntheticRequestViolation | null;
+  armInterest(projectId: string): void;
+  disarmInterest(): void;
   atOrigin(origin: string): SyntheticLiveReadFixtures;
-  responseFor(url: string, method?: string): SyntheticLiveReadResponse;
+  responseFor(url: string, method?: string, postData?: string | null): SyntheticLiveReadResponse;
 }
 
 function jsonResponse(body: unknown, status = 200): SyntheticLiveReadResponse {
@@ -532,6 +581,12 @@ const statuses = ["draft", "submitted", "screening", "info_requested", "accepted
 const stages = ["pre_development", "development", "construction", "commissioning", "operations"] as const satisfies readonly ProjectStage[];
 const siteTypes = ["rooftop", "land"] as const satisfies readonly SiteType[];
 const viabilities = ["potentially_viable", "more_information_required", "not_currently_eligible"] as const satisfies readonly ViabilityStatus[];
+const activeEngagementStates: readonly EngagementState[] = ["interested", "committed", "underwriting", "approved", "funded"];
+
+function isEmptyInterestBody(body: string | null | undefined): boolean {
+  // The client command is precisely {}, not a funding-need or arbitrary write.
+  return typeof body === "string" && body.length <= 32 && /^[ \t\r\n]*\{[ \t\r\n]*\}[ \t\r\n]*$/.test(body);
+}
 
 function validValues(params: URLSearchParams, key: string, allowed: readonly string[]): boolean {
   return params.getAll(key).every((value) => allowed.includes(value));
@@ -650,6 +705,8 @@ export function createSyntheticLiveReadFixtures(
   const ids = scenarioIds(0, options.exportPhase);
   const userId = fixtureRole === "site-owner" ? USER : fixtureRole === "operator" ? OTHER : INVESTOR_USER;
   const engaged = options.investorEngaged !== false;
+  const onboarded = options.investorOnboarded !== false;
+  let interestArmed = false;
   const name = options.exportPhase === "preview-a" ? "SYNTHETIC_PREVIEW_A_ONLY_PROJECT" :
     options.exportPhase === "release-b" ? "SYNTHETIC_RELEASE_B_ONLY_PROJECT" : "Synthetic project";
   const documentName = options.exportPhase === "preview-a" ? "SYNTHETIC_PREVIEW_A_ONLY.pdf" :
@@ -668,6 +725,50 @@ export function createSyntheticLiveReadFixtures(
       projectFixture(scenarioIds(63, undefined), "Continuity excluded type", "Excluded type.pdf", "land"),
     );
   }
+  if (options.interest !== undefined && (fixtureRole !== "investor" ||
+    options.interest.investorId !== ids.investorId ||
+    !entries.some((entry) => entry.ids.projectId === options.interest?.projectId))) {
+    throw new Error("Interest must name this fixture's synthetic investor and a loaded synthetic project.");
+  }
+  if (options.engagements !== undefined && options.engagements.length > 128) {
+    throw new Error("Synthetic engagement scenarios are bounded to 128 rows.");
+  }
+  let engagementSequence = 0;
+  function engagementRow(
+    entry: (typeof entries)[number],
+    scope: SyntheticEngagementSeed["scope"],
+    state: EngagementState,
+    rowId: string,
+    createdAt: string,
+    isBinding = false,
+    changedAt = createdAt,
+  ): EngagementPipelineItem {
+    return {
+      id: rowId, investor_id: ids.investorId, project_id: entry.ids.projectId,
+      funding_need_id: scope === "project" ? null : entry.ids.fundingNeedId,
+      state, state_changed_at: changedAt, is_binding: isBinding, created_at: createdAt,
+      project_name: entry.project.name, project_stage: entry.project.stage,
+      journey_stage_id: entry.summary.journeyStageId,
+    };
+  }
+  const nextEngagementId = () =>
+    `fe000001-0000-4000-8000-${(++engagementSequence).toString(16).padStart(12, "0")}`;
+  const investorEngagements: EngagementPipelineItem[] = options.engagements === undefined
+    ? (engaged ? entries.map((entry) =>
+      engagementRow(entry, "funding-need", "interested", entry.ids.engagementId, TIME)) : [])
+    : options.engagements.map((seed, index) => {
+      const entry = entries.find((candidate) => candidate.ids.projectId === (seed.projectId ?? ids.projectId));
+      if (!entry) throw new Error("An engagement seed must belong to a loaded synthetic project.");
+      const createdAt = new Date(Date.parse(TIME) + index * 1_000).toISOString();
+      return engagementRow(entry, seed.scope, seed.state, nextEngagementId(), createdAt,
+        seed.isBinding ?? false, seed.changedAt ?? createdAt);
+    });
+  const currentEngagement = (projectId: string) =>
+    investorEngagements.filter((row) => row.project_id === projectId).at(-1);
+  const canReadRoom = (projectId: string) => {
+    const current = currentEngagement(projectId);
+    return onboarded && current !== undefined && activeEngagementStates.includes(current.state);
+  };
   const pendingSite = syntheticSite({
     id: UNCONVERTED, site_type: "land", address_raw: "Synthetic unconverted site",
   });
@@ -698,14 +799,14 @@ export function createSyntheticLiveReadFixtures(
       return { journey_stage_id: stage.id, count: members.length, items: members };
     }),
   });
-  const portfolioCards = entries.map((entry) => syntheticPortfolioItem({
+  const portfolioCards = () => entries.map((entry) => syntheticPortfolioItem({
     project_id: entry.ids.projectId, name: entry.project.name,
     stage: entry.project.stage, journey_stage_id: entry.summary.journeyStageId,
     site_type: entry.summary.siteType, estimated_system_size_kw_low: 14,
     preliminary_project_type: "synthetic_project_type",
-    open_funding_needs_count: 1, my_engagement_state: engaged ? "interested" : undefined,
+    open_funding_needs_count: 1, my_engagement_state: currentEngagement(entry.ids.projectId)?.state,
   }));
-  const portfolioBody = (items: typeof portfolioCards, mandateMatch: boolean) => syntheticPortfolio({
+  const portfolioBody = (items: ReturnType<typeof portfolioCards>, mandateMatch: boolean) => syntheticPortfolio({
     items, project_count: items.length,
     total_estimated_capacity_kw: items.length * 17,
     mandate_match: mandateMatch,
@@ -729,26 +830,31 @@ export function createSyntheticLiveReadFixtures(
   })).filter((card) => fixtureRole !== "investor" || card.project_id !== null);
   const contentPath = (entry: (typeof entries)[number]) =>
     `/api/sites/${entry.ids.siteId}/documents/${entry.ids.documentId}/content`;
-  const exportedDocuments = fixtureRole === "investor" && !engaged ? [] : entries.map((entry) => ({
+  const exportedDocuments = () => entries.filter((entry) =>
+    fixtureRole !== "investor" || canReadRoom(entry.ids.projectId)).map((entry) => ({
     ...entry.releasedDocument,
     site_id: fixtureRole === "investor" ? null : entry.document.site_id,
     project_id: fixtureRole === "investor" ? null : entry.document.project_id,
     content_url: fixtureRole === "investor" ? null : contentPath(entry),
   }));
-  const manifest = syntheticExportBundle(fixtureRole, {
-    user_id: userId, projects: manifestRows, documents: exportedDocuments,
-    project_count: manifestRows.length, document_count: exportedDocuments.length,
+  const manifest = () => syntheticExportBundle(fixtureRole, {
+    user_id: userId, projects: manifestRows, documents: exportedDocuments(),
+    project_count: manifestRows.length, document_count: exportedDocuments().length,
     ...(options.exportPhase === undefined ? {} : {
       scope: options.exportPhase === "preview-a" ? "SYNTHETIC PREVIEW A SCOPE ONLY" : "SYNTHETIC RELEASE B SCOPE ONLY",
       generated_at: options.exportPhase === "preview-a" ? TIME : "2026-09-21T01:00:00Z",
     }),
   });
-  const investorEngagements = entries.map((entry) => syntheticEngagement({
-    id: entry.ids.engagementId, project_id: entry.ids.projectId, funding_need_id: entry.ids.fundingNeedId,
-    project_name: entry.project.name, project_stage: entry.project.stage, journey_stage_id: entry.summary.journeyStageId,
-  }));
   const all: Record<string, SyntheticLiveReadResponse> = {
-    "/api/me": jsonResponse(syntheticIdentity(fixtureRole, { user_id: userId })),
+    "/api/me": jsonResponse(syntheticIdentity(fixtureRole, {
+      user_id: userId,
+      ...(fixtureRole === "investor" ? {
+        onboarded, investor: {
+          id: ids.investorId, organization_name: "Synthetic cooperative",
+          onboarding_completed_at: onboarded ? TIME : null,
+        },
+      } : {}),
+    })),
     "/api/me/sites": jsonResponse(ownerSites),
     "/api/me/outstanding": jsonResponse([]),
     "/api/submissions": jsonResponse([pendingSubmission]),
@@ -756,7 +862,7 @@ export function createSyntheticLiveReadFixtures(
     [`/api/submissions/${UNCONVERTED}`]: jsonResponse(syntheticSubmissionDetail({
       site: pendingSite, owner, assessment: null, assessment_history: [], documents: [], activity: [],
     })),
-    "/api/portfolio": jsonResponse(portfolioBody(portfolioCards, false)),
+    "/api/portfolio": jsonResponse(portfolioBody(portfolioCards(), false)),
     "/api/investors/me/profile": jsonResponse(syntheticInvestorProfile({
       user_id: INVESTOR_USER, investor_type: "impact_investor", capital_type: "grant",
       ticket_size_min: 5_000, ticket_size_max: 50_000,
@@ -765,25 +871,23 @@ export function createSyntheticLiveReadFixtures(
       decision_criteria: ["Synthetic review criterion"],
       deal_room_profile: "SYNTHETIC TEST ONLY investor profile",
       visible_portfolio_scope: ["Synthetic neighbourhood"],
+      geographies: [], onboarding_completed_at: onboarded ? TIME : null,
       created_at: TIME, updated_at: TIME,
     })),
-    "/api/me/engagements": jsonResponse(engaged ? investorEngagements : []),
-    "/api/export?format=json": jsonResponse(manifest),
+    "/api/me/engagements": jsonResponse(investorEngagements),
+    "/api/export?format=json": jsonResponse(manifest()),
   };
   for (const entry of entries) {
     all[`/api/submissions/${entry.ids.siteId}`] = jsonResponse(syntheticSubmissionDetail({
       site: entry.site, owner, assessment: entry.current, assessment_history: [entry.original, entry.current],
       documents: [entry.document], activity: [entry.activity],
     }));
-    all[`/api/projects/${entry.ids.projectId}/engagements`] = jsonResponse(engaged ? [{
-      id: entry.ids.engagementId, investor_id: INVESTOR, project_id: entry.ids.projectId,
-      funding_need_id: entry.ids.fundingNeedId, state: "interested",
-      state_changed_at: TIME, is_binding: false, created_at: TIME,
-    }] : []);
+    all[`/api/projects/${entry.ids.projectId}/engagements`] = jsonResponse(
+      investorEngagements.filter((row) => row.project_id === entry.ids.projectId).map(engagementReceipt));
     all[`/api/projects/${entry.ids.projectId}/funding-needs`] = jsonResponse([syntheticFundingNeed({
       id: entry.ids.fundingNeedId, project_id: entry.ids.projectId, created_at: TIME,
     })]);
-    all[`/api/projects/${entry.ids.projectId}/deal-room`] = engaged ? jsonResponse(syntheticDealRoom({
+    all[`/api/projects/${entry.ids.projectId}/deal-room`] = jsonResponse(syntheticDealRoom({
       project: entry.project, journey_stage_id: entry.summary.journeyStageId,
       site: { id: entry.ids.siteId, locality: "Synthetic neighbourhood", site_type: entry.summary.siteType,
         ownership_status: null, approximate_area_sqm: null, electricity_usage_kwh_annual: null, has_existing_solar: null },
@@ -792,7 +896,7 @@ export function createSyntheticLiveReadFixtures(
       timeline: [{ id: entry.ids.activityId, action: entry.activity.action, from_value: entry.activity.from_value,
         to_value: entry.activity.to_value, created_at: entry.activity.created_at }],
       documents: [entry.releasedDocument],
-    })) : errorResponse(403, "forbidden_tier");
+    }));
     all[contentPath(entry)] = options.documentBytesAvailable === false ? errorResponse(404, "not_found") : Object.freeze({
       status: 200, contentType: "application/pdf", body: PDF,
       headers: Object.freeze({ "cache-control": "no-store", "x-sunsum-fixture": "SYNTHETIC_TEST_ONLY" }),
@@ -816,19 +920,33 @@ export function createSyntheticLiveReadFixtures(
     ],
   };
   const allowed = new Set(["/api/me", "/api/export?format=json", ...rolePaths[fixtureRole]]);
-  const responses = Object.freeze(Object.fromEntries(Object.entries(all).filter(([path]) => allowed.has(path))));
+  const responses = Object.freeze(Object.fromEntries(Object.entries(all)
+    .filter(([path]) => allowed.has(path))
+    .map(([path, response]): [string, SyntheticLiveReadResponse] => {
+      const entry = entries.find((candidate) => path === `/api/projects/${candidate.ids.projectId}/deal-room`);
+      return [path, entry && !canReadRoom(entry.ids.projectId) ? errorResponse(403, "forbidden_tier") : response];
+    })));
 
-  function requestViolation(url: string, method = "GET"): SyntheticRequestViolation | null {
-    if (method !== "GET") return "non-get";
+  function requestViolation(url: string, method = "GET", postData?: string | null, requestOrigin = origin): SyntheticRequestViolation | null {
     let parsed: URL;
     try {
-      parsed = new URL(url, origin);
+      parsed = new URL(url, requestOrigin);
     } catch (error) {
       if (error instanceof TypeError) return "invalid-url";
       throw error;
     }
-    if (parsed.origin !== origin) return "foreign-origin";
+    if (parsed.origin !== requestOrigin) return "foreign-origin";
     if (parsed.username || parsed.password || parsed.hash) return "invalid-url";
+    if (method !== "GET") {
+      const interest = options.interest;
+      if (method !== "POST" || interest === undefined ||
+        parsed.pathname !== `/api/projects/${interest.projectId}/engagements`) return "non-get";
+      if (fixtureRole !== "investor" || !onboarded) return "role-endpoint";
+      if (parsed.search) return "invalid-query";
+      if (!isEmptyInterestBody(postData)) return "invalid-body";
+      return interestArmed ? null : "interest-not-armed";
+    }
+    if (postData !== undefined && postData !== null) return "invalid-body";
     const key = `${parsed.pathname}${parsed.search}`;
     if (responses[key] !== undefined) return null;
     if (!allowed.has(parsed.pathname)) {
@@ -842,24 +960,45 @@ export function createSyntheticLiveReadFixtures(
     return "invalid-query";
   }
 
-  function responseFor(url: string, method = "GET"): SyntheticLiveReadResponse {
-    const violation = requestViolation(url, method);
+  function responseFor(url: string, method = "GET", postData?: string | null, requestOrigin = origin): SyntheticLiveReadResponse {
+    const violation = requestViolation(url, method, postData, requestOrigin);
     if (violation !== null) {
       if (violation === "non-get") return errorResponse(405, "invalid_body");
+      if (violation === "invalid-body") return errorResponse(400, "invalid_body");
+      if (violation === "interest-not-armed") return errorResponse(403, "synthetic_interest_not_armed");
       if (violation === "foreign-origin") return errorResponse(403, "forbidden_origin");
       if (violation === "role-endpoint") return errorResponse(403, "forbidden_role");
       return violation === "unknown-endpoint" ? errorResponse(404, "not_found") : errorResponse(400, "invalid_query");
     }
-    const parsed = new URL(url, origin);
+    const parsed = new URL(url, requestOrigin);
+    if (method === "POST") return interestResponse();
+    if (fixtureRole === "investor" && !onboarded &&
+      parsed.pathname !== "/api/me" && parsed.pathname !== "/api/investors/me/profile") {
+      return errorResponse(403, "forbidden_tier");
+    }
+    if (parsed.pathname === "/api/me/engagements") return jsonResponse(investorEngagements);
+    if (parsed.pathname === "/api/export") return jsonResponse(manifest());
+    const projectEntry = entries.find((entry) => parsed.pathname.startsWith(`/api/projects/${entry.ids.projectId}/`));
+    if (projectEntry && parsed.pathname.endsWith("/engagements")) {
+      return jsonResponse(investorEngagements.filter((row) =>
+        row.project_id === projectEntry.ids.projectId).map(engagementReceipt));
+    }
+    if (projectEntry && parsed.pathname.endsWith("/deal-room")) {
+      if (!canReadRoom(projectEntry.ids.projectId)) return errorResponse(403, "forbidden_tier");
+      const room = all[parsed.pathname];
+      if (!room) throw new Error("A permitted synthetic room must have a bounded response.");
+      return room;
+    }
     const exact = responses[`${parsed.pathname}${parsed.search}`];
-    if (exact !== undefined) return exact;
+    if (exact !== undefined && parsed.pathname !== "/api/portfolio") return exact;
     const params = parsed.searchParams;
     if (parsed.pathname === "/api/portfolio") {
       const requestedStages = params.getAll("stage");
-      const included = portfolioCards.filter((item) =>
+      const included = portfolioCards().filter((item) =>
         (!requestedStages.length || requestedStages.includes(item.stage)) &&
         (params.get("viability") === null || params.get("viability") === item.viability_status) &&
-        (params.get("project_type") === null || params.get("project_type") === "synthetic_project_type"));
+        (params.get("project_type") === null || params.get("project_type") === "synthetic_project_type") &&
+        (params.get("mandate_match") !== "true" || item.stage === "pre_development"));
       return jsonResponse(portfolioBody(included, params.get("mandate_match") === "true"));
     }
     if (parsed.pathname === "/api/submissions" || parsed.pathname === "/api/pipeline") {
@@ -881,15 +1020,60 @@ export function createSyntheticLiveReadFixtures(
     return errorResponse(400, "invalid_query");
   }
 
-  return Object.freeze({
-    classification: "SYNTHETIC_TEST_ONLY",
-    role: fixtureRole,
-    origin,
-    ids,
-    records: Object.freeze(entries.map((entry) => Object.freeze(entry.summary))),
-    responses,
-    requestViolation,
-    atOrigin: (nextOrigin: string) => createSyntheticLiveReadFixtures(fixtureRole, { ...options, origin: nextOrigin }),
-    responseFor,
-  });
+  function interestResponse(): SyntheticLiveReadResponse {
+    const interest = options.interest;
+    const entry = entries.find((candidate) => candidate.ids.projectId === interest?.projectId);
+    if (!interest || !entry) throw new Error("Unscoped interest escaped the synthetic policy.");
+    const outcome: SyntheticInterestOutcome = interest.outcome ?? { kind: "created" };
+    if (outcome.kind === "refused") {
+      const status: Record<SyntheticInterestRefusal, number> = {
+        unauthenticated: 401, forbidden_role: 403, forbidden_tier: 403,
+        forbidden_origin: 403, not_found: 404, invalid_body: 400,
+      };
+      return errorResponse(status[outcome.code], outcome.code);
+    }
+    const existing = investorEngagements.filter((row) =>
+      row.project_id === interest.projectId && row.funding_need_id === null).at(-1);
+    if (existing !== undefined && activeEngagementStates.includes(existing.state)) return errorResponse(409, "conflict");
+    if (outcome.kind === "unknown" && !outcome.recorded) return errorResponse(503, "service_unavailable");
+    const state = outcome.kind === "conflict" ? outcome.state : "interested";
+    const row = engagementRow(entry, "project", state, nextEngagementId(),
+      SYNTHETIC_LIVE_READ_OBSERVED_AT, state !== "interested");
+    investorEngagements.push(row);
+    if (outcome.kind === "conflict") return errorResponse(409, "conflict");
+    if (outcome.kind === "unknown") return errorResponse(503, "service_unavailable");
+    return jsonResponse(engagementReceipt(row), 201);
+  }
+
+  const records = Object.freeze(entries.map((entry) => Object.freeze(entry.summary)));
+  function atOrigin(nextOrigin: string): SyntheticLiveReadFixtures {
+    const target = new URL(nextOrigin);
+    if (!["http:", "https:"].includes(target.protocol) || target.username || target.password ||
+      target.pathname !== "/" || target.search || target.hash) throw new Error("Synthetic fixtures require an exact HTTP(S) origin.");
+    return Object.freeze({
+      classification: "SYNTHETIC_TEST_ONLY",
+      role: fixtureRole, origin: target.origin, ids, records, responses,
+      requestViolation: (url: string, method?: string, postData?: string | null) =>
+        requestViolation(url, method, postData, target.origin),
+      responseFor: (url: string, method?: string, postData?: string | null) =>
+        responseFor(url, method, postData, target.origin),
+      armInterest(projectId: string) {
+        if (!options.interest || projectId !== options.interest.projectId) {
+          throw new Error("Only the scenario's chosen synthetic project may be armed before a deliberate click.");
+        }
+        interestArmed = true;
+      },
+      disarmInterest() { interestArmed = false; },
+      atOrigin,
+    });
+  }
+  return atOrigin(origin);
+}
+
+function engagementReceipt(row: EngagementPipelineItem): EngagementPayload {
+  return {
+    id: row.id, investor_id: row.investor_id, project_id: row.project_id,
+    funding_need_id: row.funding_need_id, state: row.state,
+    state_changed_at: row.state_changed_at, is_binding: row.is_binding, created_at: row.created_at,
+  };
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { ActionLink } from "@/components/ui/ActionLink";
 import { PUBLIC_STORIES, STORY_LINKS, type PublicStoryTopic } from "../content/stories";
 import { VppEducation } from "./VppEducation";
@@ -6,9 +7,10 @@ import styles from "./CommunityContext.module.css";
 
 interface PublicStoryPageProps {
   topic: PublicStoryTopic;
+  audio?: ReactNode;
 }
 
-export function PublicStoryPage({ topic }: PublicStoryPageProps) {
+export function PublicStoryPage({ topic, audio }: PublicStoryPageProps) {
   const story = PUBLIC_STORIES[topic];
 
   return (
@@ -39,6 +41,7 @@ export function PublicStoryPage({ topic }: PublicStoryPageProps) {
             below are not a claim of current projects or guaranteed outcomes.
           </p>
         </header>
+        {audio}
 
         <div className={styles.prose}>
           {story.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}

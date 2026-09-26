@@ -1,6 +1,16 @@
 import type { ConnectionId } from "./registry";
 import type { ReadError, ReadResult } from "./types";
 
+const serviceCodes = [
+  "invalid_query", "invalid_body", "unauthenticated", "forbidden_origin",
+  "forbidden_role", "forbidden_owner", "forbidden_tier", "not_found",
+  "conflict", "validation_failed", "service_unavailable",
+] as const;
+
+export function serviceErrorCode(value: unknown): (typeof serviceCodes)[number] | null {
+  return serviceCodes.find((code) => code === value) ?? null;
+}
+
 export function readError(
   kind: ReadError["kind"],
   message: string,

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  createLiveReadClient, formatReadExport,
+  createWorkspaceClient, formatReadExport,
   type LiveReadConfiguration, type LiveRole, type ReadResult,
 } from "@/features/live-read";
 import {
@@ -12,12 +12,15 @@ import {
   syntheticLocalOrigin, syntheticTrafficViolation,
   type SyntheticAuditPage, type SyntheticBrowserRequest, type SyntheticBrowserRoute,
   type SyntheticLiveReadFixtureOptions, type SyntheticLiveReadResponse, type SyntheticStorageAttempt,
+  type SyntheticInterestRefusal, type SyntheticInterestScenario,
 } from "../fixtures/live-read-contracts";
 
 afterEach(() => vi.unstubAllGlobals());
 
 const configuration: LiveReadConfiguration = {
+  mode: "connected",
   canAttemptReads: true,
+  canAttemptInterest: true,
   canAttemptExports: true,
   canAttemptDocumentDownloads: true,
   apiBasePath: "/api",
@@ -34,7 +37,10 @@ function setup(role: LiveRole, options: SyntheticLiveReadFixtureOptions = {}) {
   const fixtures = createSyntheticLiveReadFixtures(role, options);
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    const reply = fixtures.responseFor(url, init?.method);
+    if (init?.body !== undefined && typeof init.body !== "string") {
+      throw new Error("Synthetic contracts only admit a literal JSON command body.");
+    }
+    const reply = fixtures.responseFor(url, init?.method, init?.body);
     return new Response(reply.body, {
       status: reply.status,
       headers: { ...reply.headers, "content-type": reply.contentType },
@@ -43,7 +49,7 @@ function setup(role: LiveRole, options: SyntheticLiveReadFixtureOptions = {}) {
   return {
     fixtures,
     fetcher,
-    client: take(createLiveReadClient(configuration, { origin: "https://synthetic.invalid", fetch: fetcher })),
+    client: take(createWorkspaceClient(configuration, { origin: "https://synthetic.invalid", fetch: fetcher })),
   };
 }
 
@@ -164,6 +170,53 @@ describe("shared SYNTHETIC WS2 wire contracts", () => {
     expect(excluded.summary.projectCount).toBe(0);
   });
 
+  it("uses exact repeated investor stages with viability, project_type and explicit mandate_match", async () => {
+    const { client, fetcher } = setup("investor", { collectionScenario: "page-two" });
+    const query = {
+      stages: ["pre_development", "operations"], viability: "potentially_viable",
+      projectType: "synthetic_project_type", mandateMatch: false,
+    } as const;
+    const wider = take(await client.readSnapshot({ query }));
+    const matched = take(await client.readSnapshot({ query: { ...query, mandateMatch: true } }));
+    expect(wider.records).toHaveLength(64);
+    expect(matched.records).toHaveLength(63);
+    expect(matched.records.every((record) => record.projectStage === "pre_development")).toBe(true);
+    const requests = fetcher.mock.calls.map(([input]) => new URL(String(input)))
+      .filter((url) => url.pathname === "/api/portfolio");
+    expect(requests).toHaveLength(2);
+    for (const [index, url] of requests.entries()) {
+      expect([...url.searchParams.entries()].sort(([left], [right]) => left.localeCompare(right))).toEqual([
+        ["mandate_match", index === 0 ? "false" : "true"], ["project_type", "synthetic_project_type"],
+        ["stage", "pre_development"], ["stage", "operations"],
+        ["viability", "potentially_viable"],
+      ]);
+      expect(url.searchParams.has("site_type")).toBe(false);
+      expect(url.searchParams.has("page")).toBe(false);
+    }
+  });
+
+  it("sends one exact repeated-status query to pipeline and submissions, searching raw address rather than display name", async () => {
+    const { client, fetcher } = setup("operator");
+    const snapshot = take(await client.readSnapshot({ query: {
+      statuses: ["submitted", "accepted"], siteType: "rooftop",
+      viability: "potentially_viable", location: "Synthetic private address / Synthetic project",
+    } }));
+    expect(snapshot.records).toHaveLength(1);
+    expect(snapshot.records[0]?.projectId).toBe(IDS.projectId);
+    const requests = fetcher.mock.calls.map(([input]) => new URL(String(input)))
+      .filter((url) => ["/api/pipeline", "/api/submissions"].includes(url.pathname));
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.search).toBe(requests[1]?.search);
+    for (const url of requests) {
+      expect(url.searchParams.getAll("status")).toEqual(["submitted", "accepted"]);
+      expect(url.searchParams.get("type")).toBe("rooftop");
+      expect(url.searchParams.get("viability")).toBe("potentially_viable");
+      expect(url.searchParams.get("location")).toBe("Synthetic private address / Synthetic project");
+      expect([...new Set(url.searchParams.keys())].sort()).toEqual(["location", "status", "type", "viability"]);
+      expect(url.href).not.toContain(" ");
+    }
+  });
+
   it("returns explicit errors rather than falling through to an API or accepting auth/writes", () => {
     const fixtures = createSyntheticLiveReadFixtures("operator");
     expect(fixtures.responseFor("/api/notifications").status).toBe(404);
@@ -208,6 +261,91 @@ describe("shared SYNTHETIC WS2 wire contracts", () => {
 
   describe("TEST-1 synthetic request allowlists and independent browser audit", () => {
     const origin = "http://127.0.0.1:3117";
+    const interest: SyntheticInterestScenario = { investorId: IDS.investorId, projectId: IDS.projectId };
+    const interestPath = `/api/projects/${IDS.projectId}/engagements`;
+
+    it("keeps the default fixture GET-only and requires a named actor/project plus deliberate arming", () => {
+      for (const role of ["site-owner", "operator", "investor"] as const) {
+        expect(createSyntheticLiveReadFixtures(role).requestViolation(interestPath, "POST", "{}")).toBe("non-get");
+      }
+      expect(() => createSyntheticLiveReadFixtures("operator", { interest })).toThrow(/synthetic investor/);
+      expect(() => createSyntheticLiveReadFixtures("investor", {
+        interest: { ...interest, investorId: IDS.ownerUserId },
+      })).toThrow(/synthetic investor/);
+      expect(() => createSyntheticLiveReadFixtures("investor", {
+        interest: { ...interest, projectId: IDS.unconvertedSiteId },
+      })).toThrow(/loaded synthetic project/);
+      const fixtures = createSyntheticLiveReadFixtures("investor", { origin, investorEngaged: false, interest });
+      expect(fixtures.requestViolation(interestPath, "POST", "{}")).toBe("interest-not-armed");
+      expect(() => fixtures.armInterest(IDS.unconvertedSiteId)).toThrow(/chosen synthetic project/);
+      fixtures.armInterest(IDS.projectId);
+      expect(fixtures.requestViolation(interestPath, "POST", "{}")).toBeNull();
+      expect(fixtures.requestViolation(interestPath, "GET")).toBe("role-endpoint");
+      expect(fixtures.requestViolation(interestPath, "DELETE", "{}")).toBe("non-get");
+      expect(fixtures.requestViolation("/api/auth/demo-switch", "POST", '{"role":"investor"}')).toBe("non-get");
+      expect(fixtures.requestViolation(`/api/projects/${IDS.unconvertedSiteId}/engagements`, "POST", "{}")).toBe("non-get");
+      expect(fixtures.requestViolation(`${interestPath}?scope=project`, "POST", "{}")).toBe("invalid-query");
+      expect(fixtures.requestViolation(`https://outside.invalid${interestPath}`, "POST", "{}")).toBe("foreign-origin");
+      for (const body of [undefined, null, "", "null", "[]", '{"funding_need_id":null}', '{"state":"funded"}', '{"a":1}', "\u00a0{}\u00a0", `${" ".repeat(33)}{}`]) {
+        expect(fixtures.requestViolation(interestPath, "POST", body)).toBe("invalid-body");
+      }
+      const incomplete = createSyntheticLiveReadFixtures("investor", { interest, investorOnboarded: false });
+      incomplete.armInterest(IDS.projectId);
+      expect(incomplete.requestViolation(interestPath, "POST", "{}")).toBe("role-endpoint");
+      expect(incomplete.responseFor("/api/investors/me/profile").status).toBe(200);
+      expect(JSON.parse(incomplete.responseFor("/api/investors/me/profile").body)).toMatchObject({ onboarding_completed_at: null });
+      expect(incomplete.responseFor("/api/me/engagements").status).toBe(403);
+    });
+
+    it("observes the explicit command body independently and cannot override an unarmed or expanded write into success", async () => {
+      const observers: ((request: SyntheticBrowserRequest) => void)[] = [];
+      const handlers: ((route: SyntheticBrowserRoute) => Promise<void>)[] = [];
+      const page: SyntheticAuditPage = {
+        on() {},
+        context: () => ({
+          on(_event, listener) { observers.push(listener); },
+          async exposeBinding() {},
+          async addInitScript() {},
+          async route(_pattern, handler) { handlers.push(handler); },
+        }),
+        async evaluate() { return { attempts: [], canaries: SYNTHETIC_SAVE_CANARIES }; },
+      };
+      const audit = await installSyntheticBrowserAudit(page, origin);
+      const fixtures = createSyntheticLiveReadFixtures("investor", { investorEngaged: false, interest });
+      const override = vi.fn((_path: string, response: SyntheticLiveReadResponse) => response);
+      audit.useFixtures(fixtures, override);
+      const onRequest = observers[0];
+      const handle = handlers[0];
+      if (!onRequest || !handle) throw new Error("Both independent audit paths are required.");
+      const request = (body: string): SyntheticBrowserRequest => ({
+        url: () => `${origin}${interestPath}`, method: () => "POST",
+        resourceType: () => "fetch", headers: () => ({ "content-type": "application/json" }),
+        postData: () => body,
+      });
+      const abort = vi.fn(async () => {});
+      const fulfill = vi.fn(async () => {});
+      const dispatch = async (body: string) => {
+        const command = request(body);
+        onRequest(command);
+        await handle({ request: () => command, abort, fulfill, continue: async () => { throw new Error("API passthrough"); } });
+      };
+      await dispatch("{}");
+      audit.armInterest(IDS.projectId);
+      await dispatch('{"funding_need_id":null}');
+      expect(abort).toHaveBeenCalledTimes(2);
+      expect(override).not.toHaveBeenCalled();
+      expect(fulfill).not.toHaveBeenCalled();
+      await dispatch("{}");
+      expect(fulfill).toHaveBeenCalledWith(expect.objectContaining({ status: 201 }));
+      expect(override).toHaveBeenCalledTimes(1);
+      expect(audit.calls.map(({ method, postData, violation }) => ({ method, postData, violation }))).toEqual([
+        { method: "POST", postData: "{}", violation: "interest-not-armed" },
+        { method: "POST", postData: '{"funding_need_id":null}', violation: "invalid-body" },
+        { method: "POST", postData: "{}", violation: null },
+      ]);
+      expect(audit.unexpected).toHaveLength(2);
+      expect(JSON.parse(fixtures.responseFor("/api/me/engagements").body)).toHaveLength(1);
+    });
 
     it("pins the exact local origin and rejects wrong roles, paths, methods and queries", () => {
       const fixtures = createSyntheticLiveReadFixtures("investor", { origin });
@@ -227,6 +365,132 @@ describe("shared SYNTHETIC WS2 wire contracts", () => {
       expect(fixtures.requestViolation(`${origin}/api/portfolio?stage=operations&mandate_match=false`)).toBeNull();
       expect(fixtures.requestViolation(`${origin}/api/export?format=json&extra=true`)).toBe("invalid-query");
       expect(fixtures.requestViolation(`${origin}/api/projects/${IDS.projectId}/funding-needs?extra=true`)).toBe("invalid-query");
+    });
+
+    describe("explicit local interest state and authoritative GET reconciliation", () => {
+      const interest: SyntheticInterestScenario = { investorId: IDS.investorId, projectId: IDS.projectId };
+      const path = `/api/projects/${IDS.projectId}/engagements`;
+      const room = `/api/projects/${IDS.projectId}/deal-room`;
+
+      it("changes only the named synthetic project's project-level state after a 201, shared across origin adapters", () => {
+        const fixtures = createSyntheticLiveReadFixtures("investor", {
+          investorEngaged: false, collectionScenario: "page-two", interest,
+        });
+        const local = fixtures.atOrigin("http://127.0.0.1:3117");
+        expect(JSON.parse(local.responseFor("/api/me/engagements").body)).toEqual([]);
+        expect(local.responseFor(room).status).toBe(403);
+        local.armInterest(IDS.projectId);
+        expect(JSON.parse(local.responseFor("/api/me/engagements").body)).toEqual([]);
+        const created = local.responseFor(path, "POST", "{}");
+        expect(created.status).toBe(201);
+        const receipt: unknown = JSON.parse(created.body);
+        expect(receipt).toEqual({
+          id: expect.any(String), investor_id: IDS.investorId, project_id: IDS.projectId,
+          funding_need_id: null, state: "interested", is_binding: false,
+          state_changed_at: expect.any(String), created_at: expect.any(String),
+        });
+        expect(JSON.parse(fixtures.responseFor("/api/me/engagements").body)).toEqual([
+          expect.objectContaining({
+            investor_id: IDS.investorId, project_id: IDS.projectId,
+            funding_need_id: null, state: "interested", is_binding: false, project_name: "Synthetic project",
+          }),
+        ]);
+        expect(fixtures.responseFor(room).status).toBe(200);
+        const other = fixtures.records.find((record) => record.id !== IDS.projectId);
+        if (!other) throw new Error("The scoped scenario needs another synthetic project.");
+        expect(fixtures.responseFor(`/api/projects/${other.id}/deal-room`).status).toBe(403);
+        expect(local.responseFor(path, "POST", "{}").status).toBe(409);
+        expect(JSON.parse(fixtures.responseFor("/api/me/engagements").body)).toHaveLength(1);
+        expect(createSyntheticLiveReadFixtures("investor", { investorEngaged: false }).responseFor(room).status).toBe(403);
+        local.disarmInterest();
+        expect(fixtures.requestViolation(path, "POST", "{}")).toBe("interest-not-armed");
+      });
+
+      it("drives the narrow public client command with a backend-shaped receipt and independent GET provenance", async () => {
+        const { client, fixtures, fetcher } = setup("investor", { investorEngaged: false, interest });
+        const snapshot = take(await client.readSnapshot());
+        fixtures.armInterest(IDS.projectId);
+        const result = await client.expressInterest(IDS.projectId, { scope: snapshot.scope });
+        expect(result).toMatchObject({
+          kind: "created",
+          receipt: { method: "POST", path, dispatched: true, projectId: IDS.projectId, investorId: IDS.investorId },
+          engagement: { fundingNeedId: null, state: "interested", isBinding: false },
+        });
+        const current = take(await client.readMyEngagements({ scope: snapshot.scope }));
+        expect(current.engagements).toEqual([
+          expect.objectContaining({ projectId: IDS.projectId, fundingNeedId: null, state: "interested", isBinding: false }),
+        ]);
+        expect(current.provenance.operations.length).toBeGreaterThan(0);
+        expect(current.provenance.operations.every((operation) => operation.method === "GET")).toBe(true);
+        const commands = fetcher.mock.calls.filter(([, init]) => init?.method !== "GET");
+        expect(commands).toHaveLength(1);
+        expect(commands[0]?.[1]).toMatchObject({ method: "POST", body: "{}" });
+        const headers = new Headers(commands[0]?.[1]?.headers);
+        expect(headers.get("content-type")).toBe("application/json");
+        expect(headers.has("idempotency-key")).toBe(false);
+      });
+
+      it("keeps funding-need eligibility separate from project-level duplicate semantics and service-emitted order", () => {
+        const fundingOnly = createSyntheticLiveReadFixtures("investor", {
+          interest, engagements: [{ scope: "funding-need", state: "funded", isBinding: true }],
+        });
+        expect(fundingOnly.responseFor(room).status).toBe(200);
+        fundingOnly.armInterest(IDS.projectId);
+        expect(fundingOnly.responseFor(path, "POST", "{}").status).toBe(201);
+        expect(JSON.parse(fundingOnly.responseFor("/api/me/engagements").body)).toEqual([
+          expect.objectContaining({ funding_need_id: IDS.fundingNeedId, state: "funded", is_binding: true }),
+          expect.objectContaining({ funding_need_id: null, state: "interested", is_binding: false }),
+        ]);
+        const mixed = createSyntheticLiveReadFixtures("investor", {
+          interest, engagements: [
+            { scope: "project", state: "funded", isBinding: true, changedAt: "2026-09-23T00:00:00Z" },
+            { scope: "funding-need", state: "withdrawn", changedAt: "2026-09-20T00:00:00Z" },
+          ],
+        });
+        expect(mixed.responseFor(room).status).toBe(403);
+        mixed.armInterest(IDS.projectId);
+        expect(mixed.responseFor(path, "POST", "{}").status).toBe(409);
+        expect(JSON.parse(mixed.responseFor("/api/me/engagements").body)).toHaveLength(2);
+        expect(mixed.responseFor(room).status).toBe(403);
+      });
+
+      it("represents a concurrent 409 as an existing binding engagement, not another creation", () => {
+        const fixtures = createSyntheticLiveReadFixtures("investor", {
+          investorEngaged: false, interest: { ...interest, outcome: { kind: "conflict", state: "committed" } },
+        });
+        fixtures.armInterest(IDS.projectId);
+        expect(fixtures.responseFor(path, "POST", "{}")).toMatchObject({ status: 409 });
+        expect(JSON.parse(fixtures.responseFor("/api/me/engagements").body)).toEqual([
+          expect.objectContaining({ state: "committed", is_binding: true, funding_need_id: null }),
+        ]);
+      });
+
+      it.each([
+        ["unauthenticated", 401], ["forbidden_role", 403], ["forbidden_tier", 403],
+        ["forbidden_origin", 403], ["not_found", 404], ["invalid_body", 400],
+      ] satisfies readonly (readonly [SyntheticInterestRefusal, number])[])("keeps %s refusal distinct and does not create fixture state", (code, status) => {
+        const fixtures = createSyntheticLiveReadFixtures("investor", {
+          investorEngaged: false, interest: { ...interest, outcome: { kind: "refused", code } },
+        });
+        fixtures.armInterest(IDS.projectId);
+        const response = fixtures.responseFor(path, "POST", "{}");
+        expect(response.status).toBe(status);
+        expect(JSON.parse(response.body)).toMatchObject({ code });
+        expect(JSON.parse(fixtures.responseFor("/api/me/engagements").body)).toEqual([]);
+        expect(fixtures.responseFor(room).status).toBe(403);
+      });
+
+      it.each([true, false])("can lose a response with recorded=%s; only subsequent scoped GETs describe current state", (recorded) => {
+        const fixtures = createSyntheticLiveReadFixtures("investor", {
+          investorEngaged: false, interest: { ...interest, outcome: { kind: "unknown", recorded } },
+        });
+        fixtures.armInterest(IDS.projectId);
+        expect(fixtures.responseFor(path, "POST", "{}").status).toBe(503);
+        const read = fixtures.responseFor("/api/me/engagements");
+        expect(JSON.parse(read.body)).toHaveLength(recorded ? 1 : 0);
+        expect(fixtures.responseFor(room).status).toBe(recorded ? 200 : 403);
+        expect(fixtures.responseFor("/api/me/engagements").body).toBe(read.body);
+      });
     });
 
     it.each([

@@ -2,9 +2,9 @@ import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { isIntentOptionId } from "@/domain/intents";
 import { Assistant } from "@/features/assistant";
-import { DesignLab, allowedView, isRole, readAppRoute, resolveConfiguration, staticHref, SUNROOM_PATH, STATIC_NAVIGATION_EVENT } from "@/features/design-lab";
+import { DesignLab, allowedView, isRole, readAppRoute, resolveConfiguration, staticHref, sunroomHref, SUNROOM_PATH, STATIC_NAVIGATION_EVENT } from "@/features/design-lab";
 import { CreateProfileFlow } from "@/features/onboarding";
-import { ENTRY_PATHS, LandingPage, PublicShell, entryPathHref } from "@/features/participation";
+import { ENTRY_PATHS, LandingPage, PageAudioPlayer, PageAudioProvider, PublicShell, entryPathHref, pageAudio } from "@/features/participation";
 import { SiteOwnerDashboard } from "@/features/site-owner-dashboard";
 import { PublicStoryPage } from "@/features/community-context";
 import StaticLink from "./Link";
@@ -28,7 +28,13 @@ function subscribeRoute(listener: () => void) {
 
 function PublicPage({ children }: { children: ReactNode }) {
   const options = ENTRY_PATHS.map((path) => ({ href: entryPathHref(path), label: path.label }));
-  return <PublicShell headerAction={<Assistant options={options} />}>{children}</PublicShell>;
+  return <PageAudioProvider><PublicShell headerAction={<Assistant options={options} />}
+    footerAction={<StaticLink href="/dashboard/site-owner">Site owner illustration</StaticLink>}
+    workspaceLinks={[
+      { id: "site-owner", href: sunroomHref({ role: "site-owner", view: "sites" }), label: "Fictional site owner workspace" },
+      { id: "financier", href: sunroomHref({ role: "investor", view: "portfolio" }), label: "Fictional investor workspace" },
+      { id: "operator", href: sunroomHref({ role: "operator", view: "queue" }), label: "Fictional operator workspace" },
+    ]}>{children}</PublicShell></PageAudioProvider>;
 }
 
 function StaticApp() {
@@ -65,7 +71,8 @@ function StaticScene({ route }: { route: URL }) {
   if (pathname === "/") return <PublicPage><LandingPage /></PublicPage>;
   if (pathname === "/need" || pathname === "/opportunity" || pathname === "/impact") {
     const topic = pathname === "/need" ? "need" : pathname === "/opportunity" ? "opportunity" : "impact";
-    return <PublicPage><PublicStoryPage topic={topic} /></PublicPage>;
+    return <PublicPage><PublicStoryPage topic={topic}
+      audio={<PageAudioPlayer audio={pageAudio(topic, import.meta.env.BASE_URL)} />} /></PublicPage>;
   }
   if (pathname === "/join") {
     const intents = [...new Set(route.searchParams.getAll("start").filter(isIntentOptionId))];

@@ -6,9 +6,14 @@ $PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot '..\DeploymentSafety.psm1') -Force
 
-function Assert-Throws([scriptblock] $Action, [string] $Message) {
+function Assert-Throws([scriptblock] $Action, [string] $Message, [string] $ExpectedMessage) {
     $threw = $false
-    try { & $Action | Out-Null } catch { $threw = $true }
+    try { & $Action | Out-Null } catch {
+        $threw = $true
+        if ($ExpectedMessage -and $_.Exception.Message -cne $ExpectedMessage) {
+            throw "Wrong failure for '$Message': $($_.Exception.Message)"
+        }
+    }
     if (-not $threw) { throw $Message }
 }
 
@@ -90,7 +95,11 @@ foreach ($address in @(
     Assert-Throws { Assert-ExactPublicIpv4 $address } "Accepted unsafe IPv4 input: $address"
 }
 
-foreach ($name in @('package.json', 'package-lock.json', 'next.config.ts', 'app/page.tsx', 'src/backend/database.ts', 'src/backend/infrastructure/database/credentials.ts', 'public/icon.svg')) {
+foreach ($name in @(
+    'package.json', 'package-lock.json', 'next.config.ts', 'app/page.tsx', 'src/backend/database.ts',
+    'src/backend/infrastructure/database/credentials.ts', 'public/icon.svg',
+    'public/audio/need.mp3', 'public/audio/opportunity.mp3', 'public/audio/impact.mp3', 'AUDIO-CREDITS.txt'
+)) {
     if (-not (Test-AppServiceArchivePath $name)) { throw "Rejected expected archive entry: $name" }
 }
 foreach ($name in @(
@@ -99,7 +108,11 @@ foreach ($name in @(
     '.git/config', '.npmrc', 'tests/unit/test.ts', 'src/.env.local',
     'src/secrets/token.json', 'src/credentials/service.json', 'public/credentials.json', 'src/config.local.json',
     'src/cert.pem', 'src/x.test.ts', 'src/__tests__/x.ts',
-    '../package.json', '/package.json', 'app/../.env', 'app\\page.tsx'
+    '../package.json', '/package.json', 'app/../.env', 'app\\page.tsx',
+    'public/audio/Need.mp3', 'public/audio/need.MP3', 'public/audio/other.mp3',
+    'public/uploads/need.mp3', 'src/audio/need.mp3', 'public/audio/../need.mp3',
+    'public/audio/private/impact.mp3', 'public/audio/need.mp3.key',
+    'audio-credits.txt', 'docs/ws1/audio-credits.txt'
 )) {
     if (Test-AppServiceArchivePath $name) { throw "Accepted unsafe archive entry: $name" }
 }
@@ -135,7 +148,10 @@ Assert-Throws { Assert-FirewallApproval $invalid @target } 'Accepted a scalar in
 
 $fixture = Join-Path $PSScriptRoot ".validation\$([guid]::NewGuid().ToString('N'))"
 try {
-    foreach ($directory in @('app', 'src', 'src\secrets', 'node_modules', '.azure', 'tooling')) {
+    foreach ($directory in @(
+        'app', 'src', 'src\secrets', 'src\features\participation\content',
+        'public\audio', 'docs\ws1', 'node_modules', '.azure', 'tooling'
+    )) {
         $null = New-Item -ItemType Directory -Path (Join-Path $fixture "source\$directory") -Force
     }
     $source = Join-Path $fixture 'source'
@@ -156,23 +172,63 @@ try {
     }.GetEnumerator() | ForEach-Object {
         Set-Content -LiteralPath (Join-Path $source $_.Key) -Value $_.Value -Encoding utf8NoBOM
     }
+    $tracks = @{}
+    foreach ($topic in @('need', 'opportunity', 'impact')) {
+        $audioPath = Join-Path $source "public\audio\$topic.mp3"
+        [System.IO.File]::WriteAllBytes($audioPath, [System.Text.Encoding]::UTF8.GetBytes("synthetic-package-audio:$topic"))
+        $tracks[$topic] = @{
+            path = "audio/$topic.mp3"; title = "$topic packaging fixture"; attribution = 'Synthetic test bytes, not a recording.'
+            mime = 'audio/mpeg'; bytes = (Get-Item -LiteralPath $audioPath).Length
+            sha256 = (Get-FileHash -LiteralPath $audioPath -Algorithm SHA256).Hash
+            durationSeconds = 1; sampleRateHz = 44100; channels = 1
+        }
+    }
+    @{ schemaVersion = 1; tracks = $tracks } | ConvertTo-Json -Depth 5 |
+        Set-Content -LiteralPath (Join-Path $source 'src\features\participation\content\pageAudioAssets.json') -Encoding utf8NoBOM
+    $credits = @('THIRD-PARTY AUDIO - NOT COVERED BY THE MIT CODE LICENSE', 'Synthetic packaging fixtures, not recordings.')
+    foreach ($topic in @('need', 'opportunity', 'impact')) {
+        $credits += @($tracks[$topic].title, $tracks[$topic].attribution)
+    }
+    $credits | Set-Content -LiteralPath (Join-Path $source 'docs\ws1\audio-credits.txt') -Encoding utf8NoBOM
     $zipPath = Join-Path $fixture 'package.zip'
     $package = & (Join-Path $PSScriptRoot '..\New-AppServicePackage.ps1') -SourceRoot $source -OutputPath $zipPath
-    if ($package.Files -ne 6 -or $package.SHA256 -notmatch '^[A-F0-9]{64}$') {
+    if ($package.Files -ne 11 -or $package.SHA256 -notmatch '^[A-F0-9]{64}$' -or $package.Audio.Count -ne 3) {
         throw 'The real packaging script did not enforce its source allowlist.'
     }
     $snapshot = New-DeploymentSnapshot -Path $zipPath -ExpectedSha256 $package.SHA256.ToLowerInvariant()
     foreach ($wrongName in @('Package.json', 'package-Lock.json', 'Tsconfig.json', 'app/Layout.tsx', 'APP/layout.tsx', 'collision')) {
         $caseZip = Join-Path $fixture "$([guid]::NewGuid().ToString('N')).zip"
-        $archive = [System.IO.Compression.ZipFile]::Open($caseZip, [System.IO.Compression.ZipArchiveMode]::Create)
+        Copy-Item -LiteralPath $zipPath -Destination $caseZip
+        $archive = [System.IO.Compression.ZipFile]::Open($caseZip, [System.IO.Compression.ZipArchiveMode]::Update)
         try {
-            foreach ($required in @('package.json', 'package-lock.json', 'tsconfig.json', 'app/layout.tsx')) {
-                $entryName = if ($required -ieq $wrongName) { $wrongName } else { $required }
-                $null = $archive.CreateEntry($entryName)
+            if ($wrongName -eq 'collision') {
+                # Both names pass the path allowlist; only duplicate detection rejects this.
+                $null = $archive.CreateEntry('app/Layout.tsx')
+            } else {
+                $required = @('package.json', 'package-lock.json', 'tsconfig.json', 'app/layout.tsx') |
+                    Where-Object { $_ -ieq $wrongName }
+                $original = $archive.GetEntry($required)
+                if ($null -eq $original) { throw 'The valid casing fixture is missing its original entry.' }
+                $content = [System.IO.MemoryStream]::new()
+                try {
+                    $entryStream = $original.Open()
+                    try { $entryStream.CopyTo($content) } finally { $entryStream.Dispose() }
+                    $original.Delete()
+                    $output = $archive.CreateEntry($wrongName).Open()
+                    try {
+                        $content.Position = 0
+                        $content.CopyTo($output)
+                    } finally { $output.Dispose() }
+                } finally { $content.Dispose() }
             }
-            if ($wrongName -eq 'collision') { $null = $archive.CreateEntry('Package.json') }
         } finally { $archive.Dispose() }
-        Assert-Throws { & (Join-Path $PSScriptRoot '..\Test-AppServicePackage.ps1') -Path $caseZip } 'Wrong-case required files or case collisions were accepted.'
+        $expected = if ($wrongName -ceq 'app/Layout.tsx') {
+            'Archive is missing required file with exact Linux casing: app/layout.tsx'
+        } else {
+            'Archive contains an unexpected, duplicate or unsafe path.'
+        }
+        Assert-Throws { & (Join-Path $PSScriptRoot '..\Test-AppServicePackage.ps1') -Path $caseZip } `
+            'Wrong-case required files or case collisions were accepted.' $expected
     }
     $snapshotDirectory = $snapshot.Directory
     try {
@@ -1195,7 +1251,7 @@ $record = New-DeploymentApproval -Path $ApprovalPath -ExpectedSha256 $ApprovalSh
 }
 try {
     $archive = & (Join-Path $PSScriptRoot 'Test-AppServicePackage.ps1') -Path $PackagePath
-    if ($archive.SHA256 -cne $ExpectedSha256 -or $archive.Files -ne 6) { throw 'Entry did not bind the validated source ZIP.' }
+    if ($archive.SHA256 -cne $ExpectedSha256 -or $archive.Files -ne 11) { throw 'Entry did not bind the validated source ZIP.' }
     $global:ApplicationEntryCalls.Add(@{ Apply=[bool]$Apply; PackagePath=$PackagePath; Reference=$ApprovalReference; Mode=$ExpectedAccessMode; Target=$WebAppName; Subscription=[string]$SubscriptionId; Group=$ResourceGroupName })
     if ($Apply -and $global:ApplicationEntryFail) { throw 'Simulated build/upload failure.' }
 } finally { Remove-DeploymentSnapshot $record }

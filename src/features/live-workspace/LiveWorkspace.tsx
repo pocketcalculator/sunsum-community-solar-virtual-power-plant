@@ -1,27 +1,36 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { LiveReadConfiguration } from "@/domain/live-configuration";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { workspaceSourceMode, type LiveReadConfiguration } from "@/domain/live-configuration";
 import type { WorkspaceView } from "@/domain/workspace-routes";
-import type { DocumentReference, LiveSnapshot, ReadError } from "@/features/live-read";
+import { workspaceQueryString, type WorkspaceQuery } from "@/domain/workspace-filters";
+import type { WorkspaceRoleControlRenderer } from "@/components/workspace/sessionControl";
+import { eligibleDealRoomProjects, type DocumentReference, type LiveSnapshot, type ReadError } from "@/features/live-read";
 import { CollectionView } from "./CollectionView";
+import { CollectionHistory } from "./collectionHistory";
 import { ConnectionSetup } from "./ConnectionSetup";
 import { ConnectionsView } from "./ConnectionsView";
 import { ActivityView, DetailView, DocumentsView } from "./DetailView";
 import { COMMON_NAVIGATION, contextHref, isCollectionView, permittedView, ROLE_NAVIGATION, workspaceContext, type WorkspaceContext } from "./navigation";
-import { INITIAL_COLLECTION, recordName } from "./presentation";
-import { ReadFailure, SectionHeading, WriteBoundary } from "./ReadStatus";
+import { projectRow, recordName, type CollectionState } from "./presentation";
+import { ReadFacts, ReadFailure, SectionHeading, WriteBoundary } from "./ReadStatus";
+import { ProjectInterest } from "./ProjectInterest";
 import { ReportsView } from "./ReportsView";
 import { CompareView, EngagementsView, LearningView, NextWork, ProfileView, SnapshotSummary } from "./RoleViews";
 import { useFileDownloads } from "./useFileDownloads";
 import { useWorkspaceReads } from "./useWorkspaceReads";
+import { useProjectInterest } from "./useProjectInterest";
 import { WorkspaceShell } from "./WorkspaceShell";
 import styles from "./Workspace.module.css";
 
 interface LiveWorkspaceProps {
   configuration: LiveReadConfiguration;
   initialHref: string;
+  renderRoleControl?: WorkspaceRoleControlRenderer;
 }
+
+type WorkspaceNavigate = (view: WorkspaceView) => void;
+type RegisterNavigation = (handler: WorkspaceNavigate) => () => void;
 
 const TITLES: Partial<Record<WorkspaceView, string>> = {
   overview: "Your sites, in context",
@@ -39,54 +48,121 @@ const TITLES: Partial<Record<WorkspaceView, string>> = {
   intake: "Submission needs the existing workflow",
 };
 
-export function LiveWorkspace({ configuration, initialHref }: LiveWorkspaceProps) {
-  const reads = useWorkspaceReads(configuration);
-  const unavailableError = reads.error ?? reads.admissionError;
+export function LiveWorkspace({ configuration, initialHref, renderRoleControl }: LiveWorkspaceProps) {
   const [context, setContext] = useState(() => workspaceContext(initialHref));
-  const changeContext = useCallback((next: WorkspaceContext) => {
-    setContext(next);
-    const state: unknown = window.history.state;
-    window.history.pushState({
-      ...(typeof state === "object" && state !== null && !Array.isArray(state) ? state : {}),
-      sunsumCollectionView: next.collectionView,
-    }, "", contextHref(next));
+  const scopedNavigation = useRef<WorkspaceNavigate | null>(null);
+  const registerNavigation = useCallback<RegisterNavigation>((handler) => {
+    scopedNavigation.current = handler;
+    return () => {
+      if (scopedNavigation.current === handler) scopedNavigation.current = null;
+    };
   }, []);
+  const retireContext = useCallback(() => {
+    const next: WorkspaceContext = { view: null, projectId: null, scopeId: null, taskId: null, collectionView: null };
+    const state: unknown = window.history.state;
+    window.history.replaceState({
+      ...(typeof state === "object" && state !== null && !Array.isArray(state) ? state : {}),
+      sunsumCollectionView: null, sunsumCollectionState: null,
+    }, "", contextHref(next));
+    setContext(next);
+  }, []);
+  const reads = useWorkspaceReads(configuration, retireContext);
+  const { actorKey, query, refresh } = reads;
+  const interest = useProjectInterest({
+    client: reads.client, snapshot: reads.loading ? null : reads.snapshot, actorKey: reads.actorKey,
+    onEngagements: reads.acceptEngagements, onFailure: reads.handleScopedFailure,
+  });
+  const [history, setHistory] = useState(() => ({ actorKey, memory: new CollectionHistory() }));
+  if (history.actorKey !== actorKey) setHistory({ actorKey, memory: new CollectionHistory() });
+  const memory = history.memory;
+  const collection = useSyncExternalStore(memory.subscribe, memory.getSnapshot, memory.getSnapshot);
+  const [historyNotice, setHistoryNotice] = useState(false);
+  const unavailableError = reads.error ?? reads.admissionError;
+  const changeContext = useCallback((next: WorkspaceContext, replace = false, nextQuery: WorkspaceQuery = query) => {
+    const state: unknown = window.history.state;
+    const retained = typeof state === "object" && state !== null && !Array.isArray(state) ? state : {};
+    if (!replace && actorKey !== null && context.collectionKey === undefined) {
+      window.history.replaceState({
+        ...retained, sunsumCollectionView: context.collectionView, sunsumCollectionState: memory.remember(query),
+      }, "", contextHref(context));
+    }
+    const key = memory.remember(nextQuery, replace ? context.collectionKey : undefined);
+    const destination = { ...next, collectionKey: key };
+    const nextState = {
+      ...retained,
+      sunsumCollectionView: destination.collectionView, sunsumCollectionState: key,
+    };
+    if (replace) window.history.replaceState(nextState, "", contextHref(destination));
+    else window.history.pushState(nextState, "", contextHref(destination));
+    setContext(destination);
+    setHistoryNotice(false);
+  }, [memory, actorKey, query, context]);
+  const changeCollection = (next: CollectionState) => {
+    memory.setCollection(next);
+    changeContext(context, true);
+  };
   useEffect(() => {
-    const back = () => setContext(workspaceContext(window.location.href, window.history.state));
+    const back = () => {
+      const next = workspaceContext(window.location.href, window.history.state);
+      const saved = memory.restore(next.collectionKey);
+      setHistoryNotice(next.collectionKey !== undefined && saved === null);
+      setContext(next);
+      if (saved && workspaceQueryString(saved.query) !== workspaceQueryString(query)) void refresh(saved.query);
+    };
     window.addEventListener("popstate", back);
     return () => window.removeEventListener("popstate", back);
-  }, []);
+  }, [memory, query, refresh]);
+  const sourceMode = workspaceSourceMode(configuration);
+  const roleControl = sourceMode === "server-demo" ? renderRoleControl?.({
+    role: reads.snapshot?.role ?? null,
+    disabled: reads.loading || reads.sessionSwitching || interest.pending !== null,
+    onSwitchStart: reads.startSessionSwitch,
+    onSwitchSettled: reads.settleSessionSwitch,
+  }) : undefined;
 
-  if (reads.snapshot && reads.client) return <ScopedWorkspace
-    key={`${reads.snapshot.identity.userId}:${reads.snapshot.identity.role}`}
-    snapshot={reads.snapshot} reads={reads} configuration={configuration}
-    context={context} onContext={changeContext} />;
-
-  const view = permittedView(null, context.view);
-  return <WorkspaceShell role={null} view={view}
-    navigation={[{ view: "overview", label: "Workspace" }, ...COMMON_NAVIGATION]}
-    onNavigate={(next) => changeContext({ ...context, view: next, projectId: null })}
-    onRefresh={() => void reads.refresh()} refreshing={reads.loading} canRefresh={configuration.canAttemptReads}>
-    {view === "help" ? <LearningView /> : view === "connections" ? <ConnectionsView provenance={null} /> : <>
+  const role = reads.snapshot?.role ?? null;
+  const view = permittedView(role, context.view);
+  return <WorkspaceShell role={role} view={view}
+    roleControl={roleControl} sourceMode={sourceMode}
+    navigation={role ? [...ROLE_NAVIGATION[role], ...COMMON_NAVIGATION] :
+      [{ view: "overview", label: "Workspace" }, ...COMMON_NAVIGATION]}
+    onNavigate={(next) => {
+      if (reads.snapshot && reads.client && scopedNavigation.current) scopedNavigation.current(next);
+      else changeContext({ ...context, view: next, projectId: null });
+    }}
+    onRefresh={() => void refresh()} refreshing={reads.loading || reads.sessionSwitching}
+    canRefresh={configuration.canAttemptReads && !reads.sessionSwitching && interest.pending === null}>
+    {reads.snapshot && reads.client ? <ScopedWorkspace
+      key={reads.actorKey}
+      snapshot={reads.snapshot} reads={reads} configuration={configuration}
+      context={context} onContext={changeContext} collection={collection} onCollection={changeCollection}
+      registerNavigation={registerNavigation} interest={interest} historyNotice={historyNotice} /> :
+      view === "help" ? <LearningView /> : view === "connections" ? <ConnectionsView provenance={null} /> : <>
       <SectionHeading eyebrow="Existing-service workspace" title="Your workspace, honestly connected">
-        No fictional records replace unavailable service reads.
+        {sourceMode === "server-demo" ? "Explicit fictional server demo. Choose a seeded demo role; failures never become replacement samples." :
+          "No fictional records replace unavailable service reads."}
       </SectionHeading>
       {!configuration.canAttemptReads ? <ConnectionSetup configuration={configuration} /> :
-        unavailableError ? <ReadFailure error={unavailableError} /> :
+        unavailableError ? <ReadFailure error={unavailableError} sourceMode={sourceMode} /> :
           <section className={styles.panel} role="status"><h2>Reading your permitted workspace</h2>
             <p>The service is confirming your session and returning only the records it permits.</p></section>}
     </>}
   </WorkspaceShell>;
 }
 
-function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }: {
+function ScopedWorkspace({ snapshot, reads, configuration, context, onContext, collection, onCollection,
+  registerNavigation, interest, historyNotice }: {
   snapshot: LiveSnapshot;
   reads: ReturnType<typeof useWorkspaceReads>;
   configuration: LiveReadConfiguration;
   context: WorkspaceContext;
-  onContext: (context: WorkspaceContext) => void;
+  onContext: (context: WorkspaceContext, replace?: boolean, query?: WorkspaceQuery) => void;
+  collection: CollectionState;
+  onCollection: (state: CollectionState) => void;
+  registerNavigation: RegisterNavigation;
+  interest: ReturnType<typeof useProjectInterest>;
+  historyNotice: boolean;
 }) {
-  const [collection, setCollection] = useState(INITIAL_COLLECTION);
   const [comparison, setComparison] = useState<readonly [string, string]>(["", ""]);
   const [downloadState, setDownloadState] = useState<{ key: string; pending: boolean; error: ReadError | null }>({ key: "", pending: false, error: null });
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -104,7 +180,16 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
   const target = findRecord(context.projectId ?? context.scopeId);
   const targetId = target?.id ?? null;
   const detailOpen = context.projectId !== null && isCollection;
-  const needsDetail = Boolean(target && (detailOpen || view === "documents" || view === "activity"));
+  const eligibleRooms = useMemo(() => snapshot.role === "investor" && snapshot.engagements.ok
+    ? eligibleDealRoomProjects(snapshot.engagements.data) : new Set<string>(), [snapshot]);
+  const targetProjectId = target?.projectId ?? null;
+  const [requestedRoom, setRequestedRoom] = useState<string | null>(() =>
+    target?.projectId && eligibleRooms.has(target.projectId) ? target.projectId : null);
+  const roomAdmitted = snapshot.role !== "investor" ||
+    (target?.projectId !== null && target?.projectId !== undefined &&
+      eligibleRooms.has(target.projectId) && requestedRoom === target.projectId);
+  const needsDetail = !reads.loading && Boolean(target && roomAdmitted &&
+    (detailOpen || view === "documents" || view === "activity"));
   const targetKey = target ? JSON.stringify(target.detail) : null;
   const scopedDetail = needsDetail && reads.detailKey === targetKey ? reads.detail : null;
   const scopedDetailError = needsDetail && reads.detailKey === targetKey ? reads.detailError : null;
@@ -138,7 +223,9 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
   useEffect(() => {
     const back = () => {
       cancelNavigationReads();
-      historyDestination.current = workspaceContext(window.location.href, window.history.state);
+      const destination = workspaceContext(window.location.href, window.history.state);
+      historyDestination.current = destination;
+      setRequestedRoom(destination.projectId ?? destination.scopeId);
     };
     window.addEventListener("popstate", back);
     return () => window.removeEventListener("popstate", back);
@@ -146,7 +233,8 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
   // Native history listeners may commit context and cancellation separately.
   useEffect(() => {
     const destination = historyDestination.current;
-    if (!destination || contextHref(destination) !== contextHref(context)) return;
+    if (!destination || contextHref(destination) !== contextHref(context) ||
+      destination.collectionKey !== context.collectionKey || reads.loading) return;
     historyDestination.current = null;
     if (!isCollection || detailOpen) return;
     const root = collectionRoot.current;
@@ -157,28 +245,34 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
     const selected = Array.from(root?.querySelectorAll<HTMLButtonElement>("[data-project-open]") ?? [])
       .find((button) => button.dataset.projectOpen === targetId);
     (retained ?? selected ?? document.getElementById("workspace-content"))?.focus();
-  }, [context, detailOpen, isCollection, targetId, navigation.generation]);
+  }, [context, detailOpen, isCollection, targetId, navigation.generation, reads.loading]);
 
-  const scheduleFocus = (focus: () => void) => {
+  const scheduleFocus = useCallback((focus: () => void) => {
     focusFrame.current = requestAnimationFrame(() => {
       focusFrame.current = null;
       focus();
     });
-  };
-  const navigate = (next: WorkspaceView) => {
+  }, []);
+  const navigate = useCallback((next: WorkspaceView) => {
     if (next === view && context.projectId === null) return;
     if (isCollection) {
       returnFocus.current = collectionFocus.current;
     }
     cancelNavigationReads();
-    onContext({ ...context, view: next, projectId: null, scopeId: target?.id ?? null, collectionView });
+    if (targetProjectId && eligibleRooms.has(targetProjectId) && (next === "documents" || next === "activity")) {
+      setRequestedRoom(targetProjectId);
+    }
+    onContext({ ...context, view: next, projectId: null, scopeId: targetId, collectionView });
     scheduleFocus(() => document.getElementById("workspace-content")?.focus());
-  };
+  }, [view, context, isCollection, cancelNavigationReads, eligibleRooms, targetProjectId,
+    onContext, targetId, collectionView, scheduleFocus, setRequestedRoom]);
+  useLayoutEffect(() => registerNavigation(navigate), [registerNavigation, navigate]);
   const openRecord = (id: string) => {
     const record = findRecord(id);
     if (!record) return;
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     cancelNavigationReads();
+    setRequestedRoom(record.projectId && eligibleRooms.has(record.projectId) ? record.projectId : null);
     const destination = isCollection ? view : snapshot.role === "operator" ? "pipeline" : snapshot.role === "investor" ? "portfolio" : "sites";
     onContext({ ...context, view: destination, projectId: record.id, scopeId: record.id, collectionView: destination });
     scheduleFocus(() => document.getElementById("live-record-detail")?.focus());
@@ -187,8 +281,13 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
     cancelNavigationReads();
     onContext({ ...context, view: collectionView, projectId: null, scopeId: target?.id ?? null, collectionView });
     scheduleFocus(() => {
-      if (returnFocus.current?.isConnected) returnFocus.current.focus();
-      else document.getElementById("workspace-content")?.focus();
+      const previous = returnFocus.current;
+      const previousId = previous?.closest<HTMLElement>("[data-project-id]")?.dataset.projectId;
+      const retained = previous && collectionRoot.current?.contains(previous) && !previous.closest("[hidden]") &&
+        (previousId === undefined || previousId === targetId) ? previous : null;
+      const selected = Array.from(collectionRoot.current?.querySelectorAll<HTMLButtonElement>("[data-project-open]") ?? [])
+        .find((button) => button.dataset.projectOpen === targetId);
+      (retained ?? selected ?? document.getElementById("workspace-content"))?.focus();
     });
   };
   const download = async (reference: DocumentReference) => {
@@ -201,14 +300,52 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
     if (request.signal.aborted || request !== downloadController.current) return;
     setDownloadState({ key: contextKey, pending: false, error: result.ok ? null : result.error });
     if (result.ok) save(result.data);
-    else reads.handleScopedFailure(result.error);
+    else reads.handleScopedFailure(result.error, snapshot.scope);
   };
+  const applyQuery = (query: WorkspaceQuery) => {
+    if (interest.pending !== null) return;
+    cancelNavigationReads();
+    setRequestedRoom(null);
+    onCollection({ ...collection, page: 1 });
+    onContext({ ...context, projectId: null, scopeId: null }, true, query);
+    void reads.refresh(query);
+  };
+  const interestProjectId = target?.projectId;
+  const interestControl = !reads.loading && snapshot.role === "investor" && interestProjectId
+    ? <ProjectInterest key={interestProjectId} projectId={interestProjectId} snapshot={snapshot}
+        result={interest.results[interestProjectId]} error={interest.errors[interestProjectId]}
+        pending={interest.pending !== null} allowed={configuration.canAttemptInterest === true}
+        onRegister={(acknowledged) => {
+          setRequestedRoom(null);
+          void interest.register(interestProjectId, acknowledged);
+        }}
+        onReconcile={() => void interest.reconcile(interestProjectId)} />
+    : null;
+  const row = target ? projectRow(target) : null;
 
-  const recordContent = !target ? <div className={styles.panel}>
+  const recordContent = reads.loading ? <div className={styles.panel} role="status">Updating the permitted collection...</div> :
+    !target ? <div className={styles.panel}>
     <h2>Choose a permitted record first</h2>
     <p>No selected record was found in this loaded scope. No broader endpoint is used to fill it.</p>
     <button type="button" className={styles.button} onClick={() => navigate(snapshot.role === "operator" ? "pipeline" : snapshot.role === "investor" ? "portfolio" : "sites")}>Return to permitted collection</button>
-  </div> : scopedDetailError ? <ReadFailure error={scopedDetailError} /> : !scopedDetail ?
+  </div> : snapshot.role === "investor" && !roomAdmitted ? <section className={styles.panel} aria-label="Tier-zero project context">
+    <h2>Portfolio context</h2>
+    <ReadFacts items={[
+      { label: "Project", value: recordName(target) },
+      { label: "Location", value: target.locality ?? "Not supplied" },
+      { label: "Stage", value: row?.stage ?? "Not supplied" },
+      { label: "Capacity", value: row?.capacity ?? "Not supplied" },
+      { label: "Screening", value: row?.screening ?? "Not supplied" },
+      { label: "Project type", value: target.preliminaryProjectType ?? "Not supplied" },
+    ]} />
+    <p>No exact address, owner identity or private evidence is added to this tier-zero view.</p>
+    {target.projectId && eligibleRooms.has(target.projectId) ? <button type="button" className={styles.button}
+      onClick={() => {
+        setRequestedRoom(target.projectId);
+        scheduleFocus(() => document.getElementById("live-record-detail")?.focus());
+      }}>Open permitted deal room</button> :
+      <p>The deal room is locked until a current eligible engagement is confirmed. No interest is expressed automatically.</p>}
+  </section> : scopedDetailError ? <ReadFailure error={scopedDetailError} /> : !scopedDetail ?
     <div className={styles.panel} role="status">Reading the selected record within your current access...</div> :
     view === "documents" ? <DocumentsView documents={scopedDetail.documents}
       allowDownloads={configuration.canAttemptDocumentDownloads} downloading={activeDownload.pending}
@@ -217,17 +354,14 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
         <DetailView detail={scopedDetail} allowDownloads={configuration.canAttemptDocumentDownloads}
           downloading={activeDownload.pending} onDownload={(reference) => void download(reference)} />;
 
-  return <WorkspaceShell role={snapshot.role} view={view}
-    navigation={[...ROLE_NAVIGATION[snapshot.role], ...COMMON_NAVIGATION]}
-    onNavigate={navigate} onRefresh={() => void reads.refresh()}
-    refreshing={reads.loading} canRefresh={configuration.canAttemptReads}>
-    <div className={styles.stack}>
+  return <div className={styles.stack}>
       {view !== "connections" && view !== "help" && <SectionHeading
-        eyebrow={snapshot.role === "site-owner" ? "Site owner / live reads" : `${snapshot.role} / live reads`}
-        title={detailOpen && target ? recordName(target) : TITLES[view] ?? "Your permitted workspace"}>
-        Stored information, current access and clear next context. No workflow changes are performed.
+        eyebrow={`${snapshot.role} / ${workspaceSourceMode(configuration) === "server-demo" ? "fictional server demo" : "connected workspace"}`}
+        title={!reads.loading && detailOpen && target ? recordName(target) : TITLES[view] ?? "Your permitted workspace"}>
+        Stored information and current access. Investors may explicitly register nonbinding interest; other workflow changes remain unavailable.
       </SectionHeading>}
-      {snapshot.completeness === "partial" && <p className={styles.warning} role="status">This is a partial snapshot. A secondary read is out of reach right now; missing sections are not empty success.</p>}
+      {historyNotice && <p className={styles.warning} role="status">The old collection preferences are no longer in memory. The displayed current filters apply; no broader read was substituted.</p>}
+      {!reads.loading && snapshot.completeness === "partial" && <p className={styles.warning} role="status">This is a partial snapshot. A secondary read is out of reach right now; missing sections are not empty success.</p>}
       {activeDownload.pending && <p role="status">Reading the permitted original...</p>}
       {activeDownload.error && <ReadFailure error={activeDownload.error} label="Original download status" />}
       {!isCollection && view !== "help" && view !== "connections" && <button type="button"
@@ -236,40 +370,44 @@ function ScopedWorkspace({ snapshot, reads, configuration, context, onContext }:
       {detailOpen && <section id="live-record-detail" tabIndex={-1} className={styles.stack} aria-label="Stored record detail">
         <button type="button" className={styles.button} onClick={backToCollection}>Back to collection</button>
         {recordContent}
+        {interestControl}
       </section>}
 
       <div ref={collectionRoot} hidden={!isCollection || detailOpen} className={styles.stack}
         onFocusCapture={(event) => { if (event.target instanceof HTMLElement) collectionFocus.current = event.target; }}>
-        {(view === "queue" || view === "overview") && <NextWork snapshot={snapshot} onOpen={openRecord} />}
-        {(view === "overview" || view === "queue" || view === "portfolio" || view === "pipeline") && <SnapshotSummary snapshot={snapshot} />}
+        {!reads.loading && (view === "queue" || view === "overview") && <NextWork snapshot={snapshot} onOpen={openRecord} />}
+        {!reads.loading && (view === "overview" || view === "queue" || view === "portfolio" || view === "pipeline") && <SnapshotSummary snapshot={snapshot} />}
         <div className={styles.actions}>
           <button type="button" className={styles.textButton} onClick={() => navigate("compare")}>Compare stored fields</button>
           <button type="button" className={styles.textButton} onClick={() => navigate("reports")}>Open reports</button>
         </div>
-        <CollectionView records={snapshot.records} state={collection} onChange={setCollection}
-          selectedId={target?.id ?? null} onSelect={(id) => {
+        <CollectionView records={reads.loading ? [] : snapshot.records} state={collection} onChange={onCollection}
+          role={snapshot.role} query={reads.query} onQuery={applyQuery} projectTypes={reads.projectTypes}
+          pending={reads.loading} actionPending={interest.pending !== null}
+          selectedId={reads.loading ? null : target?.id ?? null} onSelect={(id) => {
             cancelNavigationReads();
             onContext({ ...context, projectId: null, scopeId: id, collectionView });
           }}
           onOpen={openRecord} />
+        {isCollection && !detailOpen && interestControl}
       </div>
 
       {(view === "documents" || view === "activity") && <div className={styles.stack}>
         <p className={styles.muted}>{target ? `Context: ${recordName(target)}` : "Select a permitted record from the collection to read its information."}</p>
         {recordContent}
+        {interestControl}
       </div>}
-      {(view === "profile" || view === "mandate") && <ProfileView snapshot={snapshot} />}
-      {view === "engagements" && <EngagementsView snapshot={snapshot} onOpen={openRecord} />}
-      {view === "reports" && reads.client && <ReportsView key={contextKey} client={reads.client} snapshot={snapshot}
+      {!reads.loading && (view === "profile" || view === "mandate") && <ProfileView snapshot={snapshot} />}
+      {!reads.loading && view === "engagements" && <EngagementsView snapshot={snapshot} onOpen={openRecord} />}
+      {!reads.loading && view === "reports" && reads.client && <ReportsView key={contextKey} client={reads.client} snapshot={snapshot}
         navigationSignal={navigation.controller.signal}
-        allowed={configuration.canAttemptExports} onFailure={reads.handleScopedFailure} />}
-      {view === "compare" && <CompareView records={snapshot.records} ids={comparison} onChange={setComparison} />}
+        allowed={configuration.canAttemptExports} onFailure={(error) => reads.handleScopedFailure(error, snapshot.scope)} />}
+      {!reads.loading && view === "compare" && <CompareView records={snapshot.records} ids={comparison} onChange={setComparison} />}
       {view === "help" && <LearningView />}
       {view === "connections" && <ConnectionsView provenance={snapshot.provenance} />}
       {view === "intake" && <section className={styles.panel}><h2>No new site is submitted here</h2>
         <WriteBoundary action="Creating or submitting a site" />
         <button type="button" className={styles.button} onClick={() => navigate("sites")}>Read existing sites</button>
       </section>}
-    </div>
-  </WorkspaceShell>;
+    </div>;
 }

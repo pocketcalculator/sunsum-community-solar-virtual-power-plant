@@ -80,6 +80,7 @@ export default defineConfig(({ mode }) => {
         }, null, 2),
       });
       this.emitFile({ type: "asset", fileName: "LICENSE.txt", source: readFileSync(path("./LICENSE"), "utf8") });
+      this.emitFile({ type: "asset", fileName: "AUDIO-CREDITS.txt", source: readFileSync(path("./docs/ws1/audio-credits.txt")) });
       this.emitFile({ type: "asset", fileName: "icon.svg", source: readFileSync(path("./app/icon.svg"), "utf8") });
     },
     closeBundle() {

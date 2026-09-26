@@ -1,28 +1,13 @@
 import type { ConnectionId, WS2_CONTRACT_REVISION } from "@/domain/connections";
 import type { JourneyStageId } from "@/domain/journey";
+import type { WorkspaceSourceMode } from "@/domain/live-configuration";
+import type { ProjectStage, SiteType, SubmissionStatus, ViabilityStatus, WorkspaceQuery } from "@/domain/workspace-filters";
 
 export type { LiveReadConfiguration } from "@/domain/live-configuration";
 export type { JourneyStageId } from "@/domain/journey";
+export type { ProjectStage, SiteType, SubmissionStatus, ViabilityStatus } from "@/domain/workspace-filters";
 
 export type LiveRole = "site-owner" | "operator" | "investor";
-export type SubmissionStatus =
-  | "draft"
-  | "submitted"
-  | "screening"
-  | "info_requested"
-  | "accepted"
-  | "rejected";
-export type ProjectStage =
-  | "pre_development"
-  | "development"
-  | "construction"
-  | "commissioning"
-  | "operations";
-export type SiteType = "rooftop" | "land";
-export type ViabilityStatus =
-  | "potentially_viable"
-  | "more_information_required"
-  | "not_currently_eligible";
 export type EngagementState =
   | "interested"
   | "committed"
@@ -74,17 +59,10 @@ export interface ReadOptions {
 export interface ScopedReadOptions extends ReadOptions {
   readonly scope: ReadScope;
 }
-export interface SnapshotQuery {
-  readonly statuses?: readonly SubmissionStatus[];
-  readonly siteType?: SiteType;
-  readonly location?: string;
-  readonly viability?: ViabilityStatus;
-  readonly stages?: readonly ProjectStage[];
-  readonly mandateMatch?: boolean;
-  readonly projectType?: string;
-}
+export type SnapshotQuery = WorkspaceQuery;
 export interface SnapshotReadOptions extends ReadOptions {
   readonly query?: SnapshotQuery;
+  readonly scope?: ReadScope;
 }
 export type DetailReference =
   | { readonly kind: "owner-site"; readonly siteId: string }
@@ -111,6 +89,8 @@ export interface ReadOperation {
 }
 export interface ReadProvenance {
   readonly source: "WS2";
+  readonly mode?: Exclude<WorkspaceSourceMode, "unavailable">;
+  readonly store?: "database-configured" | "mock-configured";
   readonly contractRevision: typeof WS2_CONTRACT_REVISION;
   readonly deployedRevision: null;
   readonly retrievedAt: string;
@@ -467,4 +447,42 @@ export interface LiveReadClient {
   ): Promise<ReadResult<ReadDownload>>;
   readExport(options: ScopedReadOptions): Promise<ReadResult<LiveExportManifest>>;
   invalidate(): void;
+}
+
+export interface ReadEngagements {
+  readonly identity: LiveIdentity;
+  readonly scope: ReadScope;
+  readonly engagements: readonly ReadEngagement[];
+  readonly provenance: ReadProvenance;
+}
+
+export interface InterestOptions extends ScopedReadOptions {
+  readonly acknowledgeUnknownOutcome?: boolean;
+}
+
+export interface InterestReceipt {
+  readonly method: "POST";
+  readonly path: string;
+  readonly projectId: string;
+  readonly investorId: string;
+  readonly scope: ReadScope;
+  readonly mode: "connected" | "server-demo";
+  readonly dispatched: boolean;
+  readonly observedAt: string;
+  readonly contractRevision: typeof WS2_CONTRACT_REVISION;
+  readonly deployedRevision: null;
+}
+
+export type InterestResult =
+  | { readonly kind: "created"; readonly receipt: InterestReceipt; readonly engagement: ReadEngagement }
+  | { readonly kind: "existing"; readonly receipt: InterestReceipt; readonly engagement: ReadEngagement | null }
+  | {
+      readonly kind: "not-sent" | "refused" | "unknown";
+      readonly receipt: InterestReceipt | null;
+      readonly error: ReadError;
+    };
+
+export interface WorkspaceClient extends LiveReadClient {
+  readMyEngagements(options: ScopedReadOptions): Promise<ReadResult<ReadEngagements>>;
+  expressInterest(projectId: string, options: InterestOptions): Promise<InterestResult>;
 }

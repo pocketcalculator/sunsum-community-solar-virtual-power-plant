@@ -1,210 +1,311 @@
 # Connect and deliver SunSum
 
-## Choose the right artifact
+This guide covers the locally reconciled follow-up to externally merged PR62,
+using upstream `449f6b0660609af3c80946f618c5e73828a36768`. **An implemented backend
+API is not automatically enabled by this frontend.** The approved scope remains existing
+reads, explicit project interest and server-demo-only session switching.
+No source-main push/merge or Azure deployment was performed by this work.
 
-| Artifact | What it does | What it does not do |
+## Choose an experience
+
+| Experience | Entry | Prerequisites |
 | --- | --- | --- |
-| Next application source ZIP | Runs the public site and `/app` on the existing Linux/Node host | Provision Azure, establish identity, run migrations or perform frontend workflow writes |
-| `build/vibehub` static bundle | Runs the fictional Sunroom demo, including deliberate browser-local workflows | Reach private services or authenticate participants |
-| Operator handoff | Provides the README, this guide, connection index, configuration names and existing deployment helpers | Supply credentials or authorize deployment |
+| Static synthetic | Public landing, then explicit fictional Sunroom | No credentials, API base or session adapter |
+| Developer/demo mode | Next `/app`, `server-demo` | Explicit mock store, exact `enabled` demo sentinel, configured test-only signing, same-origin `/api` |
+| Connected workspace | Next `/app`, `connected` | Separately approved db-backed environment, demo auth off, legitimate sign-in/mapping and current service identity |
 
-**WORKFLOW_WRITES_NOT_IMPLEMENTED:** the connected frontend does not submit
-sites, save profiles/notes, upload files, express or withdraw interest, mark
-notices read, assign/review projects, rerun assessments, change stages,
-publish, send messages or execute financial/legal actions. Existing backend
-write endpoints are unchanged; this release does not call them.
+Use Node 22.22.2+ within major 22, npm 10 and the committed lockfile; restore with
+`npm ci` from a full checkout. `package.json`/`package-lock.json` own exact
+dependency versions. Package helpers require PowerShell 7.2+. Do not bypass the
+configured feed or replace reviewed lock entries by guessing newer versions.
+Use separate terminals for the modes and restart the server when changing
+configuration. No example below supplies a real credential or production session.
 
-An **out of reach right now** connection describes the available handoff,
-configuration or access, not whether another workstream has implemented it.
-Use the [connection index](connections.md) to find its owning boundary.
-
-## Run the demo first
-
-Use Node 22.22.2 or newer within the Node 22 line, and npm 10. From a full
-repository checkout, not the application source ZIP:
+## Static synthetic quick start
 
 ```powershell
-npm ci
+$env:SUNSUM_PUBLIC_DATA_MODE = 'preview'
+Remove-Item Env:SUNSUM_PUBLIC_API_BASE_URL -ErrorAction SilentlyContinue
 npm run build:demo
 npm run preview:demo
 ```
 
-Open `http://127.0.0.1:4183`. The no-hash root opens Sunroom; `#/` opens the
-public site. Need, Opportunity, Impact, participation and the original owner
-illustration have hash routes in the same bundle. All requests and assets
-must work under the actual Pages directory, not only at a domain root.
+Open `http://127.0.0.1:4183`: bare root and `#/` show the **public landing**.
+Choose **Open Sunroom workspace** or open `#/concepts/sunroom` explicitly.
+The shared `/app` action becomes `#/app`, which canonicalizes to that workspace.
+`#/need`, `#/opportunity`, `#/impact`, `#/join` and the original
+`#/dashboard/site-owner` illustration remain separate routes.
 
-The static build refuses a connected data mode or live API base. It does not
-inherit credentials from a deployment configuration. Unset
-`SUNSUM_PUBLIC_API_BASE_URL` and use `SUNSUM_PUBLIC_DATA_MODE=preview` when
-building it. No environment file is required for this path.
+Vite rejects dynamic modes and any nonempty API base, including static env-file
+values. `SYNTHETIC_DEMO_ONLY` describes the artifact; the environment spelling
+remains `preview`. All assets must work under the actual hosting prefix.
+Sunroom's fictional local storage/recovery is distinct from the public `/join`
+flow, which saves nothing. Never enter real personal information.
 
-Fresh demos use 50 fictional Sunroom records. Existing saved scenarios are
-preserved, including smaller ones. Demo state uses `sunsum-design-lab-v2`,
-with the existing v1 migration and explicit corrupt-save recovery. Theme is
-a separate nonsensitive preference. The demo's reset affects its own
-fictional state; it is not a service/database reset.
+## Server-demo quick start
 
-## Run the Next application
+This uses existing APIs with in-memory fixtures, **not production sign-in**.
+See [server-demo.env.example](server-demo.env.example).
 
 ```powershell
-npm run build
-npm run start -- --hostname 127.0.0.1 --port 3000
+$env:SUNSUM_PUBLIC_DATA_MODE = 'server-demo'
+$env:SUNSUM_PUBLIC_API_BASE_URL = '/api'
+$env:SUNSUM_STORE = 'mock'
+$env:SUNSUM_DEMO_AUTH = 'enabled'
+$env:SUNSUM_BLOB = 'memory'
+$env:SUNSUM_VIABILITY = 'demo'
+$env:SUNSUM_LIVE_READ_AUTH_APPROVED = 'false'
+$env:SUNSUM_LIVE_EXPORT_APPROVED = 'false'
+$env:SUNSUM_LIVE_DOCUMENTS_APPROVED = 'false'
+$env:SUNSUM_SESSION_SECRET = node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))"
+npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
-Open `http://127.0.0.1:3000` for the public site and `/app` for the connected
-workspace. Without the approved configuration, `/app` shows an explicit
-connection state. It must not look populated with fictional projects.
+Open `http://127.0.0.1:3000/app`. The header says **Developer/demo mode**.
+Deliberate role selection uses the existing seeded-session adapter; `GET /api/me`
+confirms identity. Switching retires old reads/actions before refreshing scope.
+Anyone reaching the demo endpoint can select a seeded role, so keep this example
+loopback-bound and never mix it with real records.
 
-The dynamic `/concepts` aliases and `/dashboard/site-owner` lead to `/app`.
-They preserve bounded navigation context, never the caller's requested role.
-The static owner illustration remains a labeled preview rather than a
-failed-read fallback.
+The generated signing value stays in the terminal, not output/source. Workspace
+admission requires explicit signing; the backend's development ephemeral-secret
+fallback is insufficient. Use exactly `enabled`, not `true`/`1`. No legitimate
+connected-sign-in approval, database rollout or seeding command is needed.
 
-## Connect existing reads
+## Connected quick start
 
-### 1. Confirm the existing service and owner
+**The current infrastructure dev target intentionally stays `SUNSUM_STORE=mock`.**
+Do not switch it to db mode as a UI or GIS workaround. This example applies
+only to a separately approved database-backed environment.
 
-WS2 is the existing workflow/API boundary. The preferred topology is the
-same Next application origin, with `/api` route handlers already in this
-repository. Do not add a second database client, proxy, rules engine or
-authentication service to connect this UI.
+Signed-session validation exists, but a production sign-in integration and
+approved participant mapping must still be supplied by the service owner.
+Configuration flags do not implement that flow or grant access. Without it,
+the public pages can run, but a genuine connected participant cannot sign in
+through the developer role control.
 
-For each enabled family, record the accepted source/deployed revision,
-read operation/schema, role and record scope, allowed purpose/export,
-provenance, freshness, size/pagination and ordinary error behavior.
-`docs/api/openapi.yaml` and actual handlers are the source references.
-Version labels alone are insufficient where documents disagree.
+Use [live-read.env.example](live-read.env.example) as a names-only reference.
+The service owner supplies existing server-only signing and database configuration
+through the approved secure process; do not mint a cookie, borrow an identity,
+create a user or use demo-switch as a connected recovery path.
 
-### 2. Confirm legitimate identity before enabling the reader
+```powershell
+# Separately approved database-backed environment only; not fixture-only dev.
+$env:SUNSUM_PUBLIC_DATA_MODE = 'connected'
+$env:SUNSUM_PUBLIC_API_BASE_URL = '/api'
+$env:SUNSUM_STORE = 'db'
+$env:SUNSUM_DEMO_AUTH = 'false'
+# True only after the legitimate sign-in/mapping handoff:
+$env:SUNSUM_LIVE_READ_AUTH_APPROVED = 'true'
+$env:SUNSUM_LIVE_EXPORT_APPROVED = 'false'
+$env:SUNSUM_LIVE_DOCUMENTS_APPROVED = 'false'
+# Existing SUNSUM_SESSION_SECRET, DATABASE_URL and SUNSUM_DB_AUTH come from the owner.
+npm run dev -- --hostname 127.0.0.1 --port 3000
+```
 
-The existing signed HttpOnly `sunsum_session` and service user row establish
-identity and role. The role pill, public participation answer, query string,
-configuration switch and outer Easy Auth gate do not.
+The header is **Connected workspace** when admitted, otherwise **Connection
+unavailable**. Source/role labels are not grants. Known seeded identities remain
+refused even if an old demo cookie survives disabling demo auth. Failure never
+selects another source mode or fills the UI with samples.
 
-Have the existing service owner supply the approved sign-in path and
-participant-to-application mapping through their normal secure process.
-Do not call `/api/auth/demo-switch`, mint a cookie, copy a signing secret,
-create a user or borrow an operator identity for this release.
+### Connect existing reads
 
-`SUNSUM_LIVE_READ_AUTH_APPROVED=true` records the owner's sign-in/mapping
-handoff. It is an admission gate, **not an authenticator**. Leave it unset
-until the legitimate path exists. A real read still needs a service-accepted
-session. Expired or denied sessions stay expired or denied.
+Both `/app` and the public layout use
+`app\app\configuration.ts` -> `getWorkspaceConfiguration()`.
+The pure resolver projects only public-safe flags; `source` values
+`database-configured`, `mock-configured`, `not-confirmed` are configuration
+evidence, not observed deployment.
 
-### 3. Apply configuration through the existing owner
-
-Use [the names-only example](live-read.env.example). These settings are
-read by the Next application, not by Pages:
-
-| Setting | Purpose |
+| Setting / capability | Meaning |
 | --- | --- |
-| `SUNSUM_PUBLIC_DATA_MODE=connected` | Explicitly selects the connected entry; no silent preview default |
-| `SUNSUM_PUBLIC_API_BASE_URL=/api` | Existing same-origin API prefix; no external host |
-| `SUNSUM_STORE=db` | Existing WS2 database store; any other source mode is not admitted as live |
-| `SUNSUM_DEMO_AUTH=false` | Existing demo sign-in remains disabled |
-| `SUNSUM_LIVE_READ_AUTH_APPROVED=true` | Owner confirmed existing legitimate participant sign-in/mapping |
-| `SUNSUM_LIVE_EXPORT_APPROVED=true` | Optional, separate approval for authorized export/disclosure; otherwise off |
-| `SUNSUM_LIVE_DOCUMENTS_APPROVED=true` | Optional original-file disclosure approval; owner/operator service checks still apply |
-| `SUNSUM_SESSION_SECRET` | Existing server-only session configuration; share presence, never its value |
-| `DATABASE_URL`, `SUNSUM_DB_AUTH` | Existing application store contract, owned by WS2/WS3 |
+| `SUNSUM_PUBLIC_DATA_MODE` / `SUNSUM_PUBLIC_API_BASE_URL` | Explicit dynamic mode and existing same-origin `/api`; no alternate proxy/host |
+| `SUNSUM_STORE` / `SUNSUM_DEMO_AUTH` | `mock` + exact `enabled` for server-demo; `db` + disabled demo auth for connected |
+| `SUNSUM_SESSION_SECRET` | Configured server-only signing, at least 32 characters; expose presence, not value |
+| `SUNSUM_LIVE_READ_AUTH_APPROVED` | Existing legitimate sign-in/mapping handoff, not authentication or a blanket write grant |
+| `canAttemptInterest` | Derived admission for one command; no new `SUNSUM_LIVE_INTEREST_*` flag or generic `canWrite` |
+| `SUNSUM_LIVE_EXPORT_APPROVED` / `SUNSUM_LIVE_DOCUMENTS_APPROVED` | Independent disclosure gates, off by default; viewing/interest never enables them |
+| `DATABASE_URL`, `SUNSUM_DB_AUTH` | Application persistence; separate `PG*`/`SUNSUM_DATABASE_AUTH` tooling is not interchangeable |
 
-The frontend sees only safe admission/provenance flags, never the session
-secret or database value. `PG*` and `SUNSUM_DATABASE_AUTH` configure separate
-operator tooling; they do not replace `DATABASE_URL`/`SUNSUM_DB_AUTH`.
-Retain existing managed identity and verified TLS. No setting change is
-performed by the frontend or package helper.
+Start with the current authorized `GET /api/me`, then permitted projections.
+Keep the reviewed contract pin, frontend source revision, configured store,
+retrieval time and deployed revision distinct. Existing consumed contracts are
+pinned to inspected upstream `449f6b0660609af3c80946f618c5e73828a36768`;
+no new endpoint is enabled merely by that pin.
 
-### 4. Observe actual permitted reads
+### Client extension seam
 
-Start with `GET /api/me`, then the role's existing projections. A working
-homepage, configured provider or HTTP 200 does not certify real data.
-WS2 can otherwise select its fixture store. Keep source/configuration
-evidence, record vintage and last successful read separate.
+Import only the public `src\features\live-read\index.ts`.
 
-The reader uses same-origin credentials, no-store behavior, bounded operations
-and response-shape validation. Late responses cannot replace another viewer's
-data. Live records are not persisted in demo storage. Unknown numbers, times,
-actors and counts stay unknown rather than becoming zero, midnight or a
-made-up name.
+| API | Contract |
+| --- | --- |
+| `createWorkspaceClient(configuration, options?)` | Returns `ReadResult<WorkspaceClient>`; handle `ok/error` before using `data` |
+| `createLiveReadClient(configuration, options?)` | Same implementation, with interest forced off for legacy read-only callers |
+| `expressInterest(projectId, InterestOptions)` | Required current `scope`; optional `signal`/`acknowledgeUnknownOutcome`; wire body is exactly `{}` |
+| `readMyEngagements(ScopedReadOptions)` | Scoped, GET-only authoritative refresh/reconciliation |
 
-Investor lower tiers do not expose exact coordinates, owner identity or
-private notes/inputs/documents. Do not fetch operator detail to fill a gap.
-Deal rooms require an **existing** engagement; the UI does not POST interest
-to unlock them. Original document bytes are owner/operator scoped in the
-inspected contract, and a metadata record may correctly return 404 for bytes.
-`SUNSUM_LIVE_DOCUMENTS_APPROVED` defaults off independently of summary
-exports. Do not enable it until the existing owner has admitted that
-original-file disclosure; reading metadata alone is not permission to copy bytes.
+`ReadScope` is a lifetime/correlation handle, not authentication. Read/export
+provenance carries mode/store, contract revision, retrieval time and
+`deployedRevision: null`. `ReadProvenance.operations` is GET-only; mutation
+receipts are separate.
 
-Exports require a separate disclosure decision in addition to viewing access.
-The existing JSON/CSV export is a projection/document manifest, **not a
-binary document bundle**. Do not invent original downloads, SAS links,
-recipient delivery or signing.
+### Queries, interest and disclosure
 
-Saved JSON and CSV carry the adopted WS2 contract revision and observation
-time separately from the service's generation timestamp. The deployed
-revision remains unknown: JSON uses `null` and CSV leaves its named metadata
-value blank. Raw service URLs and original-download references are not
-serialized. A project-only document remains metadata even when the service's
-export includes a contextual site ID; it is not a working original-file route.
+Role UI means the shared workspace's collections/details/actions plus authorized
+dashboard aliases, not just filters. Investor queries use repeated `stage`,
+`viability`, exact `project_type` and explicit `mandate_match` (default on).
+Operator pipeline/submissions use repeated `status`, `type=rooftop/land`,
+`viability` and applied `location`. Page size 25/50/100, sorting and cards/list
+stay local. Only the current actor/query may publish results or clear loading.
+Keep sensitive queries/records out of URLs, history and browser storage.
 
-### 5. Leave unsupported families explicit
+Interest requires a current onboarded investor, a loaded permitted portfolio
+project, fresh identity/onboarding/engagement checks and an explicit click.
+Before dispatch, the client also re-reads the portfolio using the exact current
+service query; a disappeared project or failed read is not permission to write.
+Confirmed 201 receipts require both creation and state-change timestamps.
 
-The separate WS4 candidate, map/geocoder, AI image evidence and external
-financial/GIS sources are connection seams, not automatic integrations.
-Stored authorized results may be displayed; no new assessment, paid model,
-geocode, image analysis, POST calculation or private parcel ingestion occurs.
-An unavailable family does not prevent the rest of the application or demo
-from being delivered.
+| Outcome | Required interpretation |
+| --- | --- |
+| Matching 201 / expected 409 | Created nonbinding interest / existing engagement; refresh authoritative state without inventing funding |
+| Auth/role/onboarding/origin/not-found refusal | Respect refusal and retire scope as appropriate; no demo recovery or automatic onboarding |
+| Canceled before dispatch | Not sent |
+| Timeout, loss/abort after dispatch, 5xx or invalid success receipt | Unknown outcome; bounded authorized GET reconciliation, not rollback or automatic replay |
 
-## Find a connection quickly
+An empty/failed reconciliation does not prove failure. A deliberate new attempt
+must acknowledge the unresolved outcome and repeat preflight. Project-level
+interest is distinct from funding-need-specific rows; preserve the service's
+engagement ordering/binding state. Reading detail does not itself express interest.
 
-Search from the repository root:
+If a mismatched receipt retires access, use **Refresh permitted reads**, then
+reselect a newly authorized project before checking its interest status.
+Only unresolved-command bookkeeping survives temporary retirement in RAM,
+hidden until the same actor is freshly authorized by the same client.
+A different actor or client/configuration lifetime discards that bookkeeping;
+it does not retain authorized records, persist a command or trigger a retry.
 
-```powershell
-git grep -n 'SUNSUM-CONNECTION:'
-git grep -n 'WORKFLOW_WRITES_NOT_IMPLEMENTED'
-git grep -n 'OUT_OF_REACH_RIGHT_NOW'
-```
+**UI originals remain site-only** for permitted owner/operator scope behind the
+independent gate. PR70 implements project-content GET in the backend, including
+eligible tier-one investor access, but this frontend does not call it. There is
+no GET project-document-list route. Metadata, POST registration, PUT bytes and
+GET content are distinct; missing bytes may produce 404. No upload mutation is
+enabled. Exports remain normalized manifests, not binary document bundles or
+proof that a contextual site ID supplies a working original route.
 
-The pure typed registry in
-[`src/domain/connections.ts`](../../src/domain/connections.ts) is the canonical
-capability metadata; [connections.md](connections.md) is the human entry point. Keep
-source implementation, current connection status and observed deployment
-separate. Do not scatter speculative TODO endpoints throughout components.
+## Implemented backend does not mean enabled frontend
+
+Session auth (PR27) and operator override (PR41) are implemented; legitimate
+production sign-in and real WS4/model verification remain separate.
+See [source-backed capabilities](contracts.md#merged-service-code-and-runtime-evidence).
+
+| Backend capability | Current frontend boundary |
+| --- | --- |
+| Profile POST and operator contact/sign-up-list read | Neither is called by this frontend |
+| Project-document registration/upload/content GET | No new writes or project-original reads; UI originals stay site-only |
+| Candidate-parcel GET (merged PR71) | No GIS reader, renderer/provider request or audit allowance is enabled |
+
+`POST /api/profiles` is anonymous, origin-checked intake, not sign-in. A 201 is
+an intake receipt; server-derived `role_id` may be null and grants no session or
+workspace access. The current public `ProfileDraft` no longer collects an account
+method/password, while the backend requires `account_method` and rejects password
+and caller `role_id`. It is **not** a simple snake_case serialization. Any later
+save needs an explicit scope/UX/mapping decision; never invent a sign-in choice.
+Preview-role mapping may differ from backend derivation. Both dynamic and static
+`/join` remain no-save under this approval.
+
+## Backend GeoJSON map boundary
+
+PR71 is merged in the reconciled upstream; its final head `5be551b` changes
+authentication-code handling, not the role/provenance conclusions below.
+`GET /api/sites/candidate-parcels` admits authenticated **`site_owner` or
+`operator`**, with **no per-owner filtering**. It is not an operator-only API,
+and a frontend button cannot narrow the server's policy. It remains unadmitted
+in this frontend.
+
+The route accepts no query parameters and returns `application/geo+json`,
+`no-store`, Polygon/MultiPolygon XY geometry in EPSG:4326 and five nullable
+properties: `parcel_id`, `site_address`, `city`, `state`, `postal_code`.
+It defaults to **three synthetic parcels**, independently of the core store.
+`fetched_at`/`stale` does not disclose source mode, completeness or source revision.
+Neither 200, `stale=false` nor `SUNSUM_STORE=db` proves live GIS data.
+
+Before any future admission, owners must resolve disclosure/join policy,
+source labeling, completeness and cache behavior, including authorization-denial
+and concurrent-failure cases. These source/cache policies have not been validated
+against a live provider. Do not send bbox, layer, field-list, token, paging or
+map-pan queries, or reinterpret parcel IDs as site/project IDs.
+
+| Concern | Boundary |
+| --- | --- |
+| Basemap/reference cache | Cache only as provider licensing permits; no assumed mirror right |
+| Parcel overlay | Candidate collection, not owned/submitted projects; selection creates no site or viability result |
+| Site-specific enrichment | Repeated new/changed-site GIS/WS4 work is a separate contract; the bulk parcel GET does not implement it |
+
+Parcel/admin/account credentials and parcel-access tokens remain backend-side.
+A separate basemap-only, referrer-restricted browser key is optional, **not
+provisioned or authorized for use here**. Backend owners must assess supported
+[API-key scopes](https://developers.arcgis.com/documentation/security-and-authentication/api-key-authentication/),
+[app OAuth](https://developers.arcgis.com/documentation/security-and-authentication/app-authentication/)
+or [user OAuth](https://developers.arcgis.com/documentation/security-and-authentication/user-authentication/)
+for the actual product/tenant; legacy `generateToken` results are not a blanket
+authentication verdict.
+
+The backend has an on-demand cache; that is not an agreed freshness SLA or
+permission for frontend polling. A hybrid/change-driven/scheduled policy remains
+a proposal. Geometry/address and incomplete zoning/land-class inputs do not prove
+viability. Reuse the existing `src\backend\viability` -> `core\sites` boundary;
+the model owner's required layers and actual DTO agreement remain separate.
+
+The editing seam remains `MAPS-LOCATION` in the sole registry, the public
+`live-read` client and `MapLimit.tsx` / `CollectionView.tsx`. Do not introduce a
+second proxy/registry or wire these services without admission. No real parcel
+geometry/properties belong in source, fixtures or bundles; appraisal is not
+investment data. Format/hash receipts grant no disclosure rights, and EPSG:4326
+is the interface requirement, not a claim that a CRS member was read from a
+private attachment.
+
+## Blob configuration is not operational proof
+
+The source-supported [Blob selector](../../src/backend/blob/index.ts) is
+independent of `SUNSUM_STORE`. Unset `SUNSUM_BLOB` selects memory; invalid modes
+fail. `SUNSUM_BLOB=azure` requires `AZURE_STORAGE_ACCOUNT_NAME` and the Entra
+branch: `DefaultAzureCredential` when `NODE_ENV=development`, managed identity
+otherwise. Only the emulator path auto-creates containers.
+
+These settings do not prove deployed values, permissions, containers or bytes.
+Do not change cloud configuration to repair an unverified condition or weaken
+fixture-only dev. Registration can succeed while bytes remain absent; a 201
+does not prove persistent database/blob storage.
+
+## Public audio and editing
+
+The [edit map](../../README.md#where-to-edit) locates current modules.
+[pageAudioAssets.json](../../src/features/participation/content/pageAudioAssets.json)
+is the single schema-1 mapping for the three approved clips and their nine public
+fields. Next serves `/audio/<topic>.mp3`; static uses `audio/<topic>.mp3` under
+the physical hosting prefix, not hash navigation.
+
+Use deliberate Play/Pause and independent Mute/Unmute; navigation stops playback
+and errors leave narrative readable. The [third-party notice](audio-credits.txt)
+must travel unchanged as root `AUDIO-CREDITS.txt` in both ZIPs. It is separate
+from MIT code; titles/attributions match the canonical manifest. Follow
+[media replacement steps](media-credits.md); never publish private provenance.
 
 ## Package without Azure
 
-Use PowerShell 7.2+ from the repository root. No Azure login is needed:
+Use a new output for each reviewed artifact. Packagers are network-free:
 
 ```powershell
 $artifact = & .\infrastructure\scripts\New-AppServicePackage.ps1 `
   -OutputPath '.azure\artifacts\sunsum-reviewed.zip'
-
 & .\infrastructure\scripts\Test-AppServicePackage.ps1 -Path $artifact.Path
-$artifact | Select-Object Path, Files, UncompressedBytes, SHA256
 ```
 
-Choose a **new output filename each time**; the helper refuses overwriting
-a reviewed artifact. It includes allowlisted working-tree source, so review
-the actual tree, not only HEAD. A source ZIP is not the compiled Pages
-directory and is not a Next standalone build.
+That packages allowlisted working-tree application files, the three MP3s and
+manifest, plus `docs\ws1\audio-credits.txt` mapped to `AUDIO-CREDITS.txt`.
+It is not a compiled Next standalone or the static demo.
 
-The guard requires the root manifest/lock/config and `app/layout.tsx`,
-rejects unsafe paths/links/duplicates and limits entries and bytes. Keep
-secrets, `.env`, `.npmrc`, `.azure`, `.git`, dependencies, build caches and
-private sources out. Verify all required runtime assets exist in the ZIP;
-do not broaden the allowlist to include unrelated research or operator data.
-
-Deliver the ZIP and hash together with the source revision, this guide,
-README, connection index, safe configuration example and matching helper
-scripts. Operator docs and helpers belong **outside the application ZIP**.
-Anyone receiving the package should be able to identify the exact source
-and reproduce the build without a private research folder.
-
-To assemble both bundles and the operator handoff from a **clean reviewed
-commit**, build the demo and run:
+For both ZIPs and operator material, use a full checkout at a clean reviewed
+commit and a matching static build. Select static `preview` with no API base:
 
 ```powershell
 npm run build:demo
@@ -212,18 +313,42 @@ pwsh -NoProfile -File .\scripts\New-UiRelease.ps1 `
   -OutputDirectory '.azure\artifacts\reviewed-ui-release'
 ```
 
-This creates `sunsum-app-source.zip`, `sunsum-synthetic-demo.zip`, an
-`operator` folder and `release-manifest.json` with hashes. It refuses an
-existing output directory or dirty source worktree and makes no Azure call.
-It also checks that every static file still matches the build stamp; a
-stale, added, removed or changed file requires a fresh build.
-The helper does not certify a running service; read the release's connection
-status separately.
+The output is `sunsum-app-source.zip`, `sunsum-synthetic-demo.zip`, `operator`
+and `release-manifest.json`. Source/static revisions and every stamped file must
+match; required media and credits must have identical reviewed bytes. Vite emits
+the notice before stamping. No downloads, substitutes or historical manifest
+rewrites are allowed.
+
+The operator kit includes the backend README and API/OpenAPI references as
+well as the setup, mode, media and deployment guidance. CI additionally emits
+`ci-acceptance.json`, binding its full source SHA, event/merge SHA, run ID and
+both ZIP hashes. That receipt distinguishes an actual packaged-source Linux
+build from a source-only packaging result.
+
+Each archive is independently limited to **64 MiB compressed/uncompressed,
+32 MiB per entry and 10,000 entries**. Preserve path, link, duplicate, credential,
+exact-case and digest guards. Missing/mismatched media or notice fails; do not
+drop files or raise caps.
+
+### Release manifest schema 2
+
+| Field | Meaning |
+| --- | --- |
+| `sourceRevision` / `backendContractRevision` | Actual reviewed frontend source / inspected consumed-contract pin `449f6b0660609af3c80946f618c5e73828a36768` |
+| `deployedRevision` | `null`; packaging did not observe deployment |
+| `application.mode` / allowed mutations | `DYNAMIC_WORKSPACE`; explicit connected interest, plus seeded-session switching only in server-demo |
+| `demo.mode` / allowed mutations | `SYNTHETIC_DEMO_ONLY`; no backend mutations or service/session transport |
+| File/size/hash inventories and `operator` | Actual artifact and separate handoff receipts, not runtime acceptance |
+| `audio` | Exact paths/bytes/digests, measured properties, `THIRD_PARTY_NOT_MIT` and shared `audio.credits` notice digest |
+| Engine requirements / `limits` / `AzureCalls` | Manifest-derived engines, unchanged budgets and `0` Azure calls |
+
+Use matching revision/helper receipts. Respect `.gitattributes`, including
+PowerShell CRLF, when comparing actual archive bytes with raw Git blobs.
+Never reinterpret schema-1 historical manifests or rewrite earlier exports.
 
 ### Use a delivered release without repackaging
 
-From the directory containing `release-manifest.json`, retain the reviewed
-application ZIP and bind its digest before using the fixed-artifact uploader:
+Keep the reviewed ZIPs unchanged. From their containing directory:
 
 ```powershell
 $release = Get-Content -LiteralPath '.\release-manifest.json' -Raw | ConvertFrom-Json
@@ -232,162 +357,58 @@ $artifact = [pscustomobject]@{
   SHA256 = $release.application.sha256
 }
 if ((Get-FileHash -LiteralPath $artifact.Path -Algorithm SHA256).Hash -ine $artifact.SHA256) {
-  throw 'The delivered source ZIP does not match its reviewed manifest.'
+  throw 'The application ZIP does not match its reviewed manifest.'
 }
 & .\operator\infrastructure\scripts\Test-AppServicePackage.ps1 -Path $artifact.Path
 ```
 
-Run the deployment example below with the helper under
-`.\operator\infrastructure\scripts\` when using this delivered folder.
-Do not regenerate the ZIP to deploy an already approved artifact.
+Extract the app into a new directory and copy operator contents there with
+relative paths intact. Restore dependencies, configure an admitted dynamic mode,
+then use `npm run build` / `npm run start`. This app ZIP excludes the Vite entry:
+`build:demo` and release assembly require the full checkout.
 
-For local development, extract the source ZIP into a **new** directory,
-then copy the operator folder's contents into that directory while keeping
-their relative paths. The original ZIP remains unchanged. This makes the
-included guide, helpers and source-code links usable together. Restore
-dependencies and build from that extracted application directory.
-Additional workstream documentation is available in the reviewed repository:
-use `sourceRepository` and `sourceRevision` from the manifest to open
-`<sourceRepository>/tree/<sourceRevision>`, rather than assume current main
-still describes the same artifact. Hashes identify files; they do not supply
-deployment authority or participant credentials.
-
-The application source ZIP intentionally excludes the separate Vite entry and
-its build configuration. Run Next's `npm run build` / `npm run start` there;
-do not run `build:demo` against that extracted application.
-
-To preview the **already compiled** demo locally, first extract
-`sunsum-synthetic-demo.zip` into a new sibling directory named `sunsum-demo`.
-From the extracted application directory after `npm ci --include=dev`, use
-the included Vite preview command without downloading another tool:
+For an already compiled demo extracted to sibling `sunsum-demo`, use the
+restored app's existing Vite without downloading another tool:
 
 ```powershell
 npx --no-install vite preview --outDir '..\sunsum-demo' `
   --host 127.0.0.1 --port 4183 --strictPort
 ```
 
-Open `http://127.0.0.1:4183`. This serves the delivered static files; it does
-not connect the demo to Next or its APIs. Alternatively, publish those
-extracted demo files to an approved static host. Do not rely on opening
-`index.html` through `file://`, because browser module loading needs HTTP.
+Use HTTP, not `file://`. Look up further source docs through the manifest's
+repository/revision, not moving main. Hashes supply neither credentials nor
+deployment authority.
 
-## Deploy code to the approved existing host
+## Future deployment reference only
 
-**SUNSUM-DEPLOYMENT:EXISTING-TARGET.** The original hosting model is Linux
-App Service, source ZIP, Oryx and ordinary Next start:
+The retained host contract is Linux App Service source ZIP/Oryx, ordinary
+`npm ci --include=dev && npm run build` and
+`npm run start -- --hostname 0.0.0.0`. Existing-target settings, identity,
+quota, TLS and approvals remain operator work. The
+[approval example](code-approval.example.json) deliberately contains invalid
+placeholders; a filled receipt alone is not authority.
 
-```text
-Build: npm ci --include=dev && npm run build
-Start: npm run start -- --hostname 0.0.0.0
-```
-
-Next consumes platform `PORT`. `NODE|22-lts` alone does not confirm the
-required Node patch. Confirm the existing runtime, build/startup, TLS,
-publishing settings, quota and app identity with the authorized owner.
-This release does not repair those settings, create resources or upgrade
-a tier. Never run an infrastructure workflow to work around code-publish
-access.
-
-**SUNSUM-DEPLOYMENT:ARTIFACT-APPROVAL.** The owner must approve the exact
-existing subscription/resource group/app, source revision, ZIP/hash,
-deployment identity and code replacement/restart effects. The committed
-deployment config may name a different test target: never accept it blindly.
-A database password, GIS credential, repo push permission or infrastructure
-OIDC secret name is not app-code publishing authority.
-
-The fixed-artifact uploader validates both the package and a target-bound
-approval document. Its no-apply mode makes no Azure call:
-
-Use [the names-only approval template](code-approval.example.json) to record
-the **actual owner-approved** values outside source, for example in
-`.azure\dev\code-approval.json`. Preserve exactly those seven fields. The
-placeholders deliberately fail validation. A filled JSON file is a receipt,
-not an authorization grant; obtain approval through the existing owner process
-and then record that file's SHA-256 with `Get-FileHash`.
-
-```powershell
-pwsh -NoProfile -File .\infrastructure\scripts\Deploy-AppServiceCode.ps1 `
-  -SubscriptionId $env:AZURE_SUBSCRIPTION_ID `
-  -ResourceGroupName $env:AZURE_RESOURCE_GROUP `
-  -WebAppName $env:AZURE_WEB_APP_NAME `
-  -PackagePath $artifact.Path -ExpectedSha256 $artifact.SHA256 `
-  -ApprovalPath '.azure\dev\code-approval.json' `
-  -ApprovalSha256 '<reviewed-approval-sha256>' `
-  -ApprovalReference '<actual-code-review-reference>' `
-  -ExpectedAccessMode ApprovedSignIn
-```
-
-These placeholders are not approval or executable values. Use the matching
-[existing operating guide](../../infrastructure/docs/app-service-postgres.md)
-for the approval shape and the actual reviewed access mode. Add `-Apply`
-**only after** separate deployment authorization. The normal
-`Deploy-Application -Apply` wrapper repackages current source; use the
-fixed-artifact path when approval binds a particular ZIP.
-
-The uploader replaces code with `--clean true` and may restart the app.
-Preserve a compatible previous source ZIP and its review/hash for code
-rollback. No migration, schema rollback or database reset is included.
-A timeout may mean the deployment is still running: reconcile the existing
-deployment/logs before retrying. Never blind-retry or create a new app.
-
-If authority, configuration or access is out of reach, the correct outcome is
-**package delivered, not deployed**, with the missing owner handoff named.
-Do not describe local builds or a healthy homepage as operational readiness.
-
-### Command effects
-
-| Command | Effect |
-| --- | --- |
-| `npm run build:demo` / `preview:demo` | Builds or serves local synthetic files; no service workflow |
-| `npm run build` / `start` | Builds or serves Next; permitted reads still require separate configuration/session |
-| `New-AppServicePackage.ps1` | Creates a new local source ZIP; no Azure call |
-| `Test-AppServicePackage.ps1` | Inspects the ZIP locally; no Azure call |
-| `New-UiRelease.ps1` | Creates separate local bundles, operator docs and hash manifest |
-| `Deploy-AppServiceCode.ps1` without `-Apply` | Validates the exact ZIP and target-bound approval locally |
-| `Deploy-AppServiceCode.ps1 -Apply` | Replaces existing app code, cleans old files and may restart the approved target |
-| Infrastructure apply, database migration/seed/reset | Not part of this release; do not run as a connection shortcut |
+Preserve the existing [operating guide](../../infrastructure/docs/app-service-postgres.md),
+main-push automation and infrastructure guards. Any future authorized upload
+must reconcile asynchronous status for the **matching deployment ID**.
+A timeout or another deployment's success is not proof about this upload;
+do not blindly replay, create a replacement host or change tiers/settings.
+Deployment, migrations, seed/reset and cloud-workflow dispatch are not part
+of this delivery.
 
 ## Troubleshooting
 
-| Symptom | Meaning and safe next action |
+| Symptom | Safe interpretation |
 | --- | --- |
-| Out of reach right now | Use the connection ID to find the missing contract, configuration or access handoff |
-| 401 | Use the legitimate existing sign-in at this origin; do not create a demo identity |
-| 403 or locked deal room | Respect role/record/tier denial; required workflow writes are outside this release |
-| Homepage loads, workspace does not | Public HTML does not establish session, store, Blob or provider readiness |
-| Fixture data from a service | Confirm `SUNSUM_STORE=db` and source provenance; HTTP success is insufficient |
-| Cross-origin/CORS error | Use the selected same-origin topology; do not expose tokens or weaken CORS/CSRF |
-| Metadata without a file | Bytes may not exist; do not upload a placeholder or fabricate a download |
-| Map unavailable | Keep the permitted list useful; no invented live coordinates or unauthorized geocoder |
-| Export unavailable | Viewing is not export authority; confirm the separate disclosure boundary |
-| ZIP/host guard rejects input | Have the owner review the exact mismatch; no automatic settings/tier repair |
-| Deploy timed out | Reconcile remote status before another upload; rollback is separate and code-only |
-| Pages cannot call `/api` | Expected: it is the synthetic static artifact, not the connected application |
-
-## Handoff checklist
-
-- Source PR/revision, separate artifact names and SHA-256 receipts are provided.
-- Each connection has an owner, contract/source reference and honest status.
-- Legitimate participant sign-in and export scope are confirmed or explicitly
-  out of reach; no credential values are in source or the public bundle.
-- Existing target, deployment approval and compatible rollback artifact are
-  supplied before any apply; otherwise package-only is stated.
-- The demo URL is labeled synthetic and contains no private records/assets.
-
-## Vocabulary
-
-**WS2** owns workflow records and authorization; **WS4** supplies assessment
-work. A **read** retrieves existing permitted state. A **workflow write**
-changes it or generates/persists new results. **Metadata** describes a file;
-it is not its bytes. **Source-implemented** means code exists, not that it
-is deployed/configured. **Live-read** names the attempted service mode,
-not a promise that every capability is operating.
-
-**Site owners** offer and follow their sites. **Operators** coordinate review
-and development work. **Investors** browse only the portfolio and detail
-their service grants allow. None of these names implies funding, title,
-consent or a role grant by the interface.
-
-**Pages** serves the static fictional demo. The **dynamic host** runs Next
-and the existing same-origin APIs. Downloading the app ZIP does not deploy
-it or supply its database, identity or provider configuration.
+| Dependency restore fails | Use reviewed lock entries and the approved feed; do not guess replacements or bypass policy |
+| Unavailable/mixed mode | Check exact source/store/demo-auth/signing prerequisites; no fallback |
+| Local fixture dev shows no connected access | Use explicit server-demo; do not weaken the guarded mock store |
+| 401, seeded identity or role refusal | Use legitimate connected sign-in or respect the source mode; do not mint/borrow a session |
+| Unknown interest result | Authorized GET reconciliation only; no inferred failure or automatic replay |
+| Profile intake API exists but `/join` saves nothing | Expected scope; account-method/serializer/consent changes need explicit adoption |
+| Project document GET exists but UI offers no download | UI originals are site-only; do not invent a project-doc list or route admission |
+| Metadata exists but bytes return 404 | Registration and upload are separate; storage availability needs evidence |
+| Parcel API returns three rows or `stale=false` | Not live-source/completeness proof; GIS is not enabled in this frontend |
+| Media/credits mismatch | Restore the exact approved source/manifest/notice and rebuild; no substitution |
+| ZIP guard rejects input | Review the mismatch; retain caps, required assets and safety checks |
+| Pages cannot call `/api` | Expected: static has no session/API adapter |

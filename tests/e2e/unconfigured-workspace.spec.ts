@@ -33,7 +33,9 @@ test("the actual /app entry stays unconfigured and retains both synthetic saves 
   await page.goto("/app");
   await expect(page.getByRole("heading", { name: "Your service connection is out of reach right now" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Refresh permitted reads", exact: true })).toBeDisabled();
-  await expect(page.getByText("Live reads only", { exact: true })).toBeVisible();
+  await expect(page.getByText("Connection unavailable", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-mode="unavailable"]')).toHaveCount(1);
+  for (const control of await page.getByRole("radio").all()) await expect(control).toBeDisabled();
   await expect(page.getByRole("switch", { name: "Dark appearance" })).toBeEnabled();
   await expect(page.locator("[data-concept]")).toHaveCount(0);
   expect(audit.calls).toEqual([]);

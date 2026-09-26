@@ -31,6 +31,13 @@ describe("landing page", () => {
     ).toHaveAttribute("href", "/join");
   });
 
+  it("offers an explicit workspace entrance without replacing the public arrival", () => {
+    render(<LandingPage />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Community solar, with communities at the center.");
+    expect(screen.getByRole("link", { name: "Open Sunroom workspace" })).toHaveAttribute("href", "/app");
+    expect(screen.getByRole("link", { name: "Why local needs come first" })).toHaveAttribute("href", "/need");
+  });
+
   it("explains the delivery journey as an ordered list of stages", () => {
     render(<LandingPage />);
     const journey = document.getElementById("journey");
@@ -65,12 +72,14 @@ describe("landing page", () => {
     );
   });
 
-  it("distinguishes public no-save pages from authorized read-only workspace access", () => {
+  it("distinguishes public no-save pages from scoped authorized workspace actions", () => {
     const { container } = render(<LandingPage />);
     expect(container.querySelector("form")).toBeNull();
     expect(screen.getByText("No project records are requested by these public pages")).toBeVisible();
     expect(screen.getByRole("link", { name: "Open workspace" })).toHaveAttribute("href", "/app");
     expect(container.textContent).not.toMatch(/workspaces themselves are not built|nowhere to store/);
+    expect(screen.getByRole("heading", { name: "Scoped service actions" })).toBeVisible();
+    expect(container.textContent).toContain("nonbinding-interest action requires service permission");
   });
 
   it("links the illustration to the actual story routes and supplies About and FAQ anchors", () => {

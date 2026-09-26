@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { DASHBOARD_LOCATIONS, MAX_SELECTED_LOCATIONS, RETURN_POINTS } from "@/features/site-owner-dashboard/model/mockDashboard";
+import { DASHBOARD_LOCATIONS, MAX_SELECTED_LOCATIONS, RETURN_POINTS } from "@/features/site-owner-dashboard";
 import { formatNumber, makeDraft, money, roleSites } from "./model";
 import { useLab } from "./store";
 import { Button, Card, Empty, Field, Icon, Pill } from "./ui";

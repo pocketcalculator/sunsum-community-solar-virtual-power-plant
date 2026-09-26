@@ -1,19 +1,15 @@
 import { JOURNEY_STAGES } from "@/domain/journey";
+export {
+  SUBMISSION_STATUSES as submissionStatuses,
+  PROJECT_STAGES as projectStages,
+  SITE_TYPES as siteTypes,
+  VIABILITY_STATUSES as viabilityStatuses,
+} from "@/domain/workspace-filters";
 
 import { LIVE_READ_LIMITS } from "./constants";
 import { malformed, rejectRead } from "./errors";
 import type { LiveRole, ReadRange } from "./types";
 
-export const submissionStatuses = [
-  "draft", "submitted", "screening", "info_requested", "accepted", "rejected",
-] as const;
-export const projectStages = [
-  "pre_development", "development", "construction", "commissioning", "operations",
-] as const;
-export const siteTypes = ["rooftop", "land"] as const;
-export const viabilityStatuses = [
-  "potentially_viable", "more_information_required", "not_currently_eligible",
-] as const;
 export const engagementStates = [
   "interested", "committed", "underwriting", "approved", "funded", "declined", "withdrawn",
 ] as const;

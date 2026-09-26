@@ -10,9 +10,19 @@ export function MapLimit() {
     <div>
       <p className={styles.eyebrow}>Location, without guesswork</p>
       <h2 id="map-limit-heading">A permitted map source is out of reach right now</h2>
-      <p>The list below remains useful. No fictional geography, new geocoding,
-        private parcels or another role&apos;s precise coordinates fill this space.</p>
-      <p className={styles.muted}>Map and location-source admission are separate from access to project records.</p>
+      <p>The backend now offers a GeoJSON <code>FeatureCollection</code> in EPSG:4326
+        to authenticated site owners and operators. This workspace does not call that parcel endpoint yet:
+        runtime provenance, disclosure and the project-join contract still need configured admission.
+        This is not a live feed.</p>
+      <p>Parcel credentials and ESRI provider/account tokens stay on the backend, including short-lived or
+        referer-bound tokens. This browser integration does not request, receive or store them.
+        Basemap setup and provider entitlements have not been verified for this frontend.</p>
+      <p>The list remains useful. No private parcel sample, invented geography or another
+        role&apos;s precise coordinates fill this space.</p>
+      <p className={styles.muted}>The endpoint defaults to synthetic parcels; freshness metadata alone
+        does not prove live GIS. No automatic map polling is configured.
+        The editing seam is <code>SUNSUM-CONNECTION:MAPS-LOCATION</code>;
+        endpoint and disclosure admission remain separate from project access.</p>
     </div>
   </section>;
 }

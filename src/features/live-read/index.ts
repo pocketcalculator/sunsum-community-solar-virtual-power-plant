@@ -9,5 +9,7 @@ export type {
   ConnectionRole,
 } from "./registry";
 export { LIVE_READ_LIMITS } from "./constants";
-export { createLiveReadClient } from "./client";
+export { createLiveReadClient, createWorkspaceClient, workspaceActorKey } from "./client";
+export { currentProjectInterest, eligibleDealRoomProjects } from "./interest";
 export { formatReadExport } from "./export";
+export { serviceErrorCode } from "./errors";

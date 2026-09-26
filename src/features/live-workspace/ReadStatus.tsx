@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import type { ReadError } from "@/features/live-read";
+import type { WorkspaceSourceMode } from "@/domain/live-configuration";
+import { serviceErrorCode, type ReadError } from "@/features/live-read";
 import styles from "./Workspace.module.css";
 
 const errorTitles: Record<ReadError["kind"], string> = {
@@ -7,23 +8,33 @@ const errorTitles: Record<ReadError["kind"], string> = {
   unauthenticated: "Your existing service sign-in is needed",
   denied: "This information is outside your current access",
   missing: "This record or original file is unavailable",
-  invalid: "This request cannot use the accepted read contract",
+  invalid: "This request cannot use the accepted service contract",
   malformed: "The service response could not be understood",
   network: "The service could not be reached",
-  timeout: "The permitted read took too long",
-  canceled: "The read was canceled",
+  timeout: "The service request took too long",
+  canceled: "This request was canceled",
   stale: "Your service context changed",
   "too-large": "This response exceeds the accepted read limits",
   unavailable: "This service is out of reach right now",
 };
 
-export function ReadFailure({ error, label }: { error: ReadError; label?: string }) {
+export function ServiceErrorCode({ value }: { value: string | null }) {
+  const code = serviceErrorCode(value);
+  return code === null ? null : <p className={styles.muted}>Service code: <code>{code}</code></p>;
+}
+
+export function ReadFailure({ error, label, sourceMode = "connected" }: {
+  error: ReadError; label?: string; sourceMode?: WorkspaceSourceMode;
+}) {
   return (
     <section className={styles.warning} role="status" aria-label={label ?? "Read status"}>
       <strong>{errorTitles[error.kind]}</strong>
       <p>{error.message}</p>
+      <ServiceErrorCode value={error.code} />
       {error.kind === "unauthenticated" && <p>
-        Use the existing owner-approved sign-in, then refresh. No demo account is created here.
+        {sourceMode === "server-demo"
+          ? "Choose a seeded role using the explicit server-demo control. Its records and identity are fictional."
+          : "Use the existing owner-approved sign-in, then refresh. No demo account is created here."}
       </p>}
       {error.kind === "denied" && <p>
         Refresh after the service owner confirms access. Changing a role label does not grant permission.
@@ -45,7 +56,7 @@ export function SectionHeading({ eyebrow, title, children }: {
 
 export function WriteBoundary({ action }: { action: string }) {
   return <p className={styles.muted}>
-    <strong>{action}</strong> is not implemented in this live-read frontend.
+    <strong>{action}</strong> is not implemented in this connected frontend.
     The existing service workflow remains unchanged.
   </p>;
 }

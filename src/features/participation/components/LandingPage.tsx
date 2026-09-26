@@ -22,9 +22,9 @@ const PREREQUISITES = [
       "An established session and service permissions determine access. Choosing a public participation path does not sign you in or grant a role.",
   },
   {
-    title: "Read-only boundaries",
+    title: "Scoped service actions",
     detail:
-      "Available information is shown with its context and limitations. This release does not save workflow changes, submit projects or control equipment.",
+      "Available information retains its source and limitations. An offered nonbinding-interest action requires service permission; other workflow changes and equipment control remain unavailable.",
   },
 ] as const;
 
@@ -81,7 +81,7 @@ export function LandingPage() {
         id="prerequisites"
         eyebrow="Beyond this introduction"
         title="An authorized workspace is a separate step"
-        description="Connected workspace reads require authorized access. A separately labeled synthetic demo uses fictional scenarios, not proof of a live connection."
+        description="Connected workspace actions require authorized access. A separately labeled synthetic demo uses fictional scenarios, not proof of a live connection."
       >
         <ul className={styles.prerequisites} role="list" style={columns}>
           {PREREQUISITES.map((item) => (
@@ -94,7 +94,7 @@ export function LandingPage() {
 
         <Callout tone="caution" title="This public preview has clear limits">
           <ul className={styles.plainList} role="list">
-            <li>No accounts, verification codes or stored submissions</li>
+            <li>The profile preview creates no account, verification code or stored submission</li>
             <li>No project records are requested by these public pages</li>
             <li>No device control, guaranteed savings or financial commitments</li>
           </ul>

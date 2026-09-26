@@ -9,22 +9,14 @@ export const metadata: Metadata = {
     template: "%s · Sunsum",
   },
   description:
-    "Explore community solar and read permitted project information. The separate interactive demo uses fictional data; connected workflow writes are not implemented.",
+    "Explore community solar and your permitted workspace. Service actions require authorized access; the separate synthetic demo uses fictional browser-local data.",
   applicationName: "Sunsum",
 };
 
-interface RootLayoutProps {
-  children: ReactNode;
-}
-
-export default function RootLayout({ children }: RootLayoutProps) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    // The theme script sets `data-theme` here before React runs, so this
-    // element is expected to differ from what the server sent.
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <ThemeScript />
-      </head>
+      <head><ThemeScript /></head>
       <body>{children}</body>
     </html>
   );

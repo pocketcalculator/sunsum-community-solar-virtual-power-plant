@@ -22,12 +22,13 @@ demo seam.
 > `Sec-Fetch-Site`, falling back to `Origin`, and a cross-site write is refused
 > `403 forbidden_origin`.
 >
-> `POST /profiles` is the `/join` sign-up form and is open by design — the
+> `POST /profiles` supports pre-account participation intake and is open by design — the
 > caller has no account yet, which is the point. It makes the cross-site check
 > itself rather than inheriting it from an identity step, accepts no
 > credential, and writes a `participant_profiles` row that grants no access and
 > that nothing in the authorization path reads. `GET /profiles` is the operator
 > read of that list, and is role-checked in both the route and core.
+> The current public `/join` preview does not call this write endpoint.
 >
 > What is not production-ready is the sign-in endpoint. `POST /auth/demo-switch`
 > hands out one of three **seeded** identities and verifies no credential, so
@@ -83,9 +84,9 @@ it is misplaced.
 
 | Service     | Directory      | Endpoints                                                                    | Status  |
 | ----------- | -------------- | ---------------------------------------------------------------------------- | ------- |
-| **S-IAM**   | `identity/`    | `/auth/*`, `/me`                                                             | seam    |
+| **S-IAM**   | `identity/`    | `/auth/demo-switch`, `/auth/logout`, `/me`                                  | session authentication implemented; production sign-in seam |
 | **S-SITE**  | `sites/`       | `/sites/*`, `/me/sites`, `/submissions/*`, `/me/outstanding`                 | done    |
-| **S-ASSESS**| `assessments/` | `/sites/{id}/assessments/override`                                           | to do   |
+| **S-ASSESS**| `projects/`    | `/sites/{id}/assessment/override`                                            | operator override implemented |
 | **S-PROJ**  | `projects/`    | `/pipeline`, `/projects/{id}`, `/projects/{id}/stage`, `.../visibility`      | done    |
 | **S-INV**   | `investors/`   | `/portfolio`, `/investors/me/profile`                                        | done    |
 | **S-ENG**   | `engagements/` | `/projects/{id}/engagements`, `/me/engagements`, funding needs; engagement state and diligence later | partial |
@@ -95,8 +96,21 @@ it is misplaced.
 | —           | `participants/`| `/profiles`                                                                  | done    |
 | —           | `export/`      | `/export`                                                                    | done    |
 
+S-IAM request/session authentication shipped in
+[PR27](https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/pull/27).
+That is different from production participant sign-in, which remains the
+explicit seam described above. A configured or working demo session does not
+establish legitimate participant access.
+
+The S-ASSESS operator override shipped in
+[PR41](https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/pull/41).
+Its core/handler implementation currently lives under `projects/`, and the
+route uses singular `assessment`. This implemented override is not evidence
+that the external WS4 model's actual output has been agreed or that a real
+site-to-GIS-to-viability flow has been exercised.
+
 `participants/` is not one of the design document's services either. It serves
-the `/join` sign-up form, which happens before a participant has any role, so
+pre-account intake, which happens before a participant has an authenticated role, so
 it sits outside the role-scoped services rather than inside one of them.
 
 `export/` is not one of the design document's services. It is a composed read
@@ -107,9 +121,12 @@ through the other services' use-cases — `getOwnerSites`, `getPortfolio` with
 what a role may see, and a change to a visibility rule reaches the export
 without anyone remembering to update it.
 
-S-VIA, the viability engine, is deliberately absent: the charter puts it in a
-separate Python deployable, so it will be reached as a client from
-`assessments/`, not added as a directory here.
+S-VIA, the viability engine itself, remains a separate Python deployable.
+The existing `viability/` HTTP client translates inputs/results for the
+`core/sites` workflows; a local bridge and declared contract do not prove that
+the WS4 implementation matches them. Backend, WS4 and frontend must confirm
+the actual payload, units, provenance and failure states before claiming
+real end-to-end viability. No new `assessments/` directory is implied.
 
 Create a service directory the first time it has something in it, in both
 layers, each with an `index.ts`. An empty directory is not worth the import.

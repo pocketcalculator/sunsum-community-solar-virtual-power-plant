@@ -21,7 +21,7 @@ describe("neutral canonical connection metadata", () => {
       "SUNSUM-CONNECTION:FINANCE-GIS-EXTERNAL-DATA",
     ]);
     expect(liveRegistry).toBe(CONNECTION_REGISTRY);
-    expect(WS2_CONTRACT_REVISION).toBe("73695a052a6324434b36bebbdd0c834b455471b7");
+    expect(WS2_CONTRACT_REVISION).toBe("449f6b0660609af3c80946f618c5e73828a36768");
     expect(Object.isFrozen(CONNECTION_REGISTRY)).toBe(true);
     for (const entry of CONNECTION_REGISTRY) {
       expect(Object.isFrozen(entry)).toBe(true);
@@ -43,11 +43,31 @@ describe("neutral canonical connection metadata", () => {
     }
     for (const entry of CONNECTION_REGISTRY.slice(0, 5)) {
       expect(entry.status).toBe("READ_ADMISSION_REQUIRED");
-      expect(entry.acceptedOperations.every((operation) => operation.startsWith("GET /api/"))).toBe(true);
+      expect(entry.acceptedOperations.every((operation) => operation.startsWith("GET /api/") ||
+        (entry.id === "SUNSUM-CONNECTION:WS2-INVESTOR" && operation === "POST /api/projects/{projectId}/engagements"))).toBe(true);
     }
     const operations = CONNECTION_REGISTRY.flatMap((entry) => entry.acceptedOperations);
     expect(operations).not.toContain("GET /api/projects/{projectId}");
     expect(operations.some((entry) => /notifications|utility|auth\/|calculate|screening/.test(entry))).toBe(false);
+    expect(operations.filter((entry) => entry.startsWith("POST"))).toEqual(["POST /api/projects/{projectId}/engagements"]);
+  });
+
+  it("keeps the backend GeoJSON seam unconnected and all ESRI tokens out of the browser", () => {
+    const map = CONNECTION_REGISTRY.find((entry) => entry.id === "SUNSUM-CONNECTION:MAPS-LOCATION");
+    expect(map).toMatchObject({
+      status: "OUT_OF_REACH_RIGHT_NOW", acceptedOperations: [], configNames: [], sourceCommit: null,
+    });
+    expect(map?.disclosure).toContain("GeoJSON FeatureCollection (EPSG:4326)");
+    expect(map?.disclosure).toContain("browser never receives parcel credentials or ESRI provider/account tokens");
+    expect(map?.disclosure).toContain("short-lived or referer-bound tokens");
+    expect(map?.nextHandoff).toContain("GET /api/sites/candidate-parcels for site owners and operators");
+    expect(map?.nextHandoff).toContain("not admitted by this frontend");
+    expect(map?.nextHandoff).toContain("authentication");
+    expect(map?.nextHandoff).toContain("project-join contract");
+    expect(map?.nextHandoff).toContain("approved property projection");
+    expect(map?.nextHandoff).toContain("reports freshness, not source provenance");
+    expect(map?.nextHandoff).toContain("not an agreed refresh schedule");
+    expect(map?.nextHandoff).toContain("no polling by default");
   });
 
   it("keeps the domain registry import-free and the live module isolated from fixtures and services", () => {
@@ -58,7 +78,10 @@ describe("neutral canonical connection metadata", () => {
       .map((name) => readFileSync(join(directory, name), "utf8")).join("\n");
     expect(source).not.toMatch(/from\s+["'][^"']*(?:backend|design-lab|services|fixtures)/);
     expect(source).not.toMatch(/process\.env|localStorage|sessionStorage|document\.cookie|createObjectURL/);
-    expect(source).not.toMatch(/method:\s*["'](?:POST|PATCH|PUT|DELETE)/);
+    expect(source).not.toMatch(/method:\s*["'](?:PATCH|PUT|DELETE)/);
+    expect(source).toContain('method: "POST"');
+    expect(source).toContain('body: "{}"');
+    expect(source).toContain("postInterest(");
     expect(source).toContain('import type { LiveReadConfiguration } from "@/domain/live-configuration"');
   });
 

@@ -1,7 +1,8 @@
 import { JOURNEY_STAGES } from "@/domain/journey";
 import { CollectionResults } from "@/components/workspace";
-import type { ReadRecord } from "@/features/live-read";
+import type { LiveRole, ReadRecord, SnapshotQuery } from "@/features/live-read";
 import { MapLimit } from "./MapLimit";
+import { ServerFilters } from "./ServerFilters";
 import { projectRow, recordName, selectReadRecords, type CollectionState, type CollectionSort } from "./presentation";
 import styles from "./Workspace.module.css";
 
@@ -12,9 +13,16 @@ interface CollectionViewProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onOpen: (id: string) => void;
+  role?: LiveRole;
+  query?: SnapshotQuery;
+  onQuery?: (query: SnapshotQuery) => void;
+  projectTypes?: readonly string[];
+  pending?: boolean;
+  actionPending?: boolean;
 }
 
-export function CollectionView({ records, state, onChange, selectedId, onSelect, onOpen }: CollectionViewProps) {
+export function CollectionView({ records, state, onChange, selectedId, onSelect, onOpen,
+  role, query, onQuery, projectTypes = [], pending = false, actionPending = false }: CollectionViewProps) {
   const filtered = selectReadRecords(records, state);
   const pages = Math.max(1, Math.ceil(filtered.length / state.pageSize));
   const page = Math.min(Math.max(1, state.page), pages);
@@ -27,6 +35,9 @@ export function CollectionView({ records, state, onChange, selectedId, onSelect,
     <div className={styles.split} data-testid="live-collection-with-guidance">
       <section className={styles.panel} aria-label="Permitted record collection">
         <h2>Your permitted collection</h2>
+        {role && query && onQuery && <ServerFilters role={role} query={query}
+          projectTypes={projectTypes} disabled={actionPending} onApply={onQuery} />}
+        <h3>Loaded record controls</h3>
         <div className={styles.filters}>
           <label className={styles.field}>Search permitted records
             <input value={state.query} onChange={(event) => update({ query: event.target.value })} placeholder="Name or location" />
@@ -56,7 +67,7 @@ export function CollectionView({ records, state, onChange, selectedId, onSelect,
           </label>
         </div>
         <div className={styles.toolbar}>
-          <p aria-live="polite">{filtered.length === 0 ? "No loaded records match these filters." :
+          <p aria-live="polite">{pending ? "Updating authorized service results..." : filtered.length === 0 ? "No loaded records match these filters." :
             `${(page - 1) * state.pageSize + 1}-${Math.min(page * state.pageSize, filtered.length)} of ${filtered.length} matching loaded records`}</p>
           <div className={styles.actions} aria-label="Collection display">
             <button type="button" className={styles.button} aria-pressed={state.display === "list"}
@@ -65,10 +76,10 @@ export function CollectionView({ records, state, onChange, selectedId, onSelect,
               onClick={() => onChange({ ...state, display: "cards" })}>Cards</button>
           </div>
         </div>
-        {state.page > pages && <p role="status" className={styles.muted}>The loaded collection changed. Showing its last available page.</p>}
+        {!pending && state.page > pages && <p role="status" className={styles.muted}>The loaded collection changed. Showing its last available page.</p>}
         {selected && !selectedVisible && <p className={styles.muted}>Selected: {recordName(selected)}. It is outside this page or filter; your selection is retained.</p>}
-        <CollectionResults rows={visible.map(projectRow)} selectedId={selectedId}
-          onSelect={onSelect} onOpen={onOpen} display={state.display} label="Permitted projects and sites" />
+        {!pending && <CollectionResults rows={visible.map(projectRow)} selectedId={selectedId}
+          onSelect={onSelect} onOpen={onOpen} display={state.display} label="Permitted projects and sites" />}
         <div className={styles.toolbar}>
           <label className={styles.field}>Records per page
             <select value={state.pageSize} onChange={(event) => {
@@ -79,14 +90,14 @@ export function CollectionView({ records, state, onChange, selectedId, onSelect,
             </select>
           </label>
           <div className={styles.actions}>
-            <button type="button" className={styles.button} disabled={page <= 1}
+            <button type="button" className={styles.button} disabled={pending || page <= 1}
               onClick={() => onChange({ ...state, page: page - 1 })}>Previous page</button>
-            <span>Page {page} of {pages}</span>
-            <button type="button" className={styles.button} disabled={page >= pages}
+            <span>{pending ? "Loading pages..." : `Page ${page} of ${pages}`}</span>
+            <button type="button" className={styles.button} disabled={pending || page >= pages}
               onClick={() => onChange({ ...state, page: page + 1 })}>Next page</button>
           </div>
         </div>
-        <p className={styles.muted}>Filters apply to loaded, permitted records. They do not grant access or claim a complete account-wide total.</p>
+        <p className={styles.muted}>Loaded-record controls and pages apply locally to the service-filtered collection. They do not grant access or claim a complete account-wide total.</p>
       </section>
       <aside className={styles.panel} aria-label="Contextual read guidance">
         <p className={styles.eyebrow}>Deterministic help</p>

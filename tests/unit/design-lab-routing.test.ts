@@ -29,8 +29,10 @@ describe("portable demo routing", () => {
     expect(readAppRoute({ pathname, search: query, hash: "" }, false).pathname).toBe(pathname);
   });
 
-  it.each(["", "#lab-content"])("opens Sunroom when the hosted hash %j is not an app route", (hash) => {
-    expect(readAppRoute({ pathname: "/app/demo/", search: "", hash }, true).pathname).toBe("/concepts/sunroom");
+  it.each(["", "#about", "#faq", "#lab-content"])("opens the public arrival for a bare hosted URL or fragment %j", (hash) => {
+    const route = readAppRoute({ pathname: "/app/demo/", search: "", hash }, true);
+    expect(route.pathname).toBe("/");
+    expect(route.hash).toBe(hash);
   });
 
   it("keeps an explicit hosted #/ on the original public landing", () => {
