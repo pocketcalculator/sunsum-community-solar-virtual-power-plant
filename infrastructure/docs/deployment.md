@@ -128,9 +128,9 @@ files; Azure CLI authentication is still required for cloud operations.
 ### GitHub Actions infrastructure workflow and OIDC credentials
 
 Pushes to `main` that change `infrastructure/templates/`, `infrastructure/config/`,
-`infrastructure/scripts/` or
+`infrastructure/scripts/`, `.github/actions/` or
 [`.github/workflows/deploy-azure2.yaml`](../../.github/workflows/deploy-azure2.yaml)
-automatically start the **Deploy SunSum Test Infrastructure** workflow. Its
+automatically start the **Validate and Deploy SunSum Test Infrastructure** workflow.
 `validate` job builds Bicep, validates the resource-group deployment and runs
 what-if without creating Azure resources. After validation succeeds, GitHub
 pauses the `deploy` job at the `azure-infrastructure` environment. An authorized
