@@ -763,7 +763,7 @@ try {
             if ($args -notcontains '--async' -or $args[[array]::IndexOf($args, '--async') + 1] -cne 'true') {
                 throw 'Source ZIP upload must use asynchronous Kudu processing.'
             }
-            if ($args -notcontains '--timeout' -or $args[[array]::IndexOf($args, '--timeout') + 1] -ne 3600000) {
+            if ($args -notcontains '--timeout' -or $args[[array]::IndexOf($args, '--timeout') + 1] -ne 3600) {
                 throw 'Source ZIP upload must set a bounded Azure CLI deployment timeout.'
             }
             $global:AzureCodeSnapshotPath = [string]$args[[array]::IndexOf($args, '--src-path') + 1]
