@@ -1090,7 +1090,7 @@ in the same configuration read before the ZIP is uploaded. An enabled
 settings stop the source ZIP upload and require a separately reviewed correction,
 including when the foundation uses Existing web mode.
 It then uses `az webapp deploy --type zip --clean true --async true
---track-status false --timeout 3600
+--track-status false --timeout 3600`
 settings. It follows deployment with at most 40 remote deployment-status checks
 (15-second retry delay), then at most 12 public-preview checks (10-second
 request timeout, 10-second retry delay), rather than relying on unbounded
