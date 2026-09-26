@@ -38,7 +38,7 @@ export default defineConfig({
   projects,
   webServer: {
     command: `"${process.execPath}" "${launcher}" ${port}`,
-    url: `${baseURL}/api/me`,
+    url: baseURL,
     reuseExistingServer: false,
     timeout: 90_000,
     stdout: "pipe",
