@@ -252,14 +252,15 @@ describe("the bounded Azure preparation contract", () => {
     expect(legacyGate).toBeLessThan(deployJob.indexOf("- uses: actions/checkout@"));
     expect(deployJob.slice(legacyGate, deployJob.indexOf("- uses: actions/checkout@"))).toContain("exit 1");
     expect(deployJob).toContain("first-time/F1 parameter contract is incompatible");
-    const preflight = "      - name: Check reviewed deployment artifacts availability";
+    const preflight = "      - name: Check reviewed deployment artifacts and digests";
     const preflightIndex = deployJob.indexOf(preflight);
     expect(preflightIndex).toBeGreaterThanOrEqual(0);
     const deploymentSteps = deployJob.slice(preflightIndex + preflight.length).split("\n      - ").slice(1);
-    expect(workflow).toContain('missing_artifacts="AZURE_RESOURCES_PARAMETERS_JSON"');
+    expect(workflow).toContain("missing_artifacts=()");
+    expect(workflow).toContain('missing_artifacts+=("AZURE_RESOURCES_PARAMETERS_JSON")');
     expect(workflow).toContain('AZURE_PROVISION_APPROVAL_JSON');
     expect(workflow).toContain(
-      "Missing reviewed deployment artifact secrets: $missing_artifacts. Provision these secrets before dispatching an Azure deployment.",
+      "Missing reviewed deployment artifact secrets: $missing_artifacts_list. Provision these secrets before dispatching an Azure deployment.",
     );
     expect(workflow).toContain("exit 1");
     expect(deploymentSteps.length).toBeGreaterThan(0);

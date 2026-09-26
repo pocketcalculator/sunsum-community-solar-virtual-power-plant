@@ -140,23 +140,56 @@ jobs:
       # An explicitly dispatched deployment must fail loudly rather than
       # silently skip the actual Azure steps when the reviewed artifacts are
       # missing; a green run here must mean infrastructure was provisioned.
-      - name: Check reviewed deployment artifacts availability
+      - name: Check reviewed deployment artifacts and digests
         id: deployment-artifacts
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           PARAMETERS_JSON: ${{ secrets.AZURE_RESOURCES_PARAMETERS_JSON }}
           APPROVAL_JSON: ${{ secrets.AZURE_PROVISION_APPROVAL_JSON }}
+          PARAMETERS_SHA256: ${{ inputs.parameters_sha256 }}
+          APPROVAL_SHA256: ${{ inputs.approval_sha256 }}
         run: |
           set -euo pipefail
-          missing_artifacts=""
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "::error::Deploy job requires workflow_dispatch so reviewed SHA-256 inputs are present."
+            exit 1
+          fi
+          missing_artifacts=()
           if [ -z "${PARAMETERS_JSON:-}" ]; then
-            missing_artifacts="AZURE_RESOURCES_PARAMETERS_JSON"
+            missing_artifacts+=("AZURE_RESOURCES_PARAMETERS_JSON")
           fi
           if [ -z "${APPROVAL_JSON:-}" ]; then
-            missing_artifacts="${missing_artifacts}${missing_artifacts:+, }AZURE_PROVISION_APPROVAL_JSON"
+            missing_artifacts+=("AZURE_PROVISION_APPROVAL_JSON")
           fi
-          if [ -n "$missing_artifacts" ]; then
-            echo "::error::Missing reviewed deployment artifact secrets: $missing_artifacts. Provision these secrets before dispatching an Azure deployment."
+          if [ "${#missing_artifacts[@]}" -gt 0 ]; then
+            printf -v missing_artifacts_list '%s, ' "${missing_artifacts[@]}"
+            missing_artifacts_list="${missing_artifacts_list%, }"
+            echo "::error::Missing reviewed deployment artifact secrets: $missing_artifacts_list. Provision these secrets before dispatching an Azure deployment."
+            exit 1
+          fi
+          sha256_pattern='^[a-fA-F0-9]{64}$'
+          validate_reviewed_digest() {
+            local input_name="$1"
+            local secret_name="$2"
+            local secret_value="$3"
+            local supplied_sha256="$4"
+            local actual_sha256
+            if [[ ! "$supplied_sha256" =~ $sha256_pattern ]]; then
+              echo "::error::$input_name must be the 64-character hexadecimal SHA-256 digest of $secret_name, not an approval reference or label."
+              return 1
+            fi
+            actual_sha256="$(printf '%s' "$secret_value" | sha256sum | awk '{print $1}')"
+            if [ "${supplied_sha256,,}" != "${actual_sha256,,}" ]; then
+              echo "::error::$input_name does not match $secret_name. Recompute with printf '%s' \"<exact $secret_name secret value>\" | sha256sum so no newline is appended."
+              return 1
+            fi
+            return 0
+          }
+          validation_failed=false
+          validate_reviewed_digest parameters_sha256 AZURE_RESOURCES_PARAMETERS_JSON "$PARAMETERS_JSON" "${PARAMETERS_SHA256:-}" || validation_failed=true
+          validate_reviewed_digest approval_sha256 AZURE_PROVISION_APPROVAL_JSON "$APPROVAL_JSON" "${APPROVAL_SHA256:-}" || validation_failed=true
+          if [ "$validation_failed" = true ]; then
             exit 1
           fi
           # These guards are redundant while this preflight hard-fails, but keep
