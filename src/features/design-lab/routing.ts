@@ -9,7 +9,7 @@ interface RouteLocation {
 
 export function readAppRoute(location: RouteLocation, hashRouting: boolean) {
   const path = hashRouting
-    ? location.hash.startsWith("#/") ? location.hash.slice(1) : SUNROOM_PATH
+    ? location.hash.startsWith("#/") ? location.hash.slice(1) : `/${location.hash}`
     : `${location.pathname}${location.search}${location.hash}`;
   const route = new URL(path, "https://sunsum.invalid");
   if (hashRouting && /^\/app\/?$/.test(route.pathname)) route.pathname = SUNROOM_PATH;

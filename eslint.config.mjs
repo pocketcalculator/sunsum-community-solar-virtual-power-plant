@@ -1,4 +1,6 @@
 import { builtinModules } from "node:module";
+import { dirname, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
@@ -181,11 +183,73 @@ const transportModules = [
     "Core workflow logic must stay transport-neutral; read the request in a handler and pass plain values in.",
 }));
 
+const featureRoot = fileURLToPath(new URL("./src/features/", import.meta.url));
+const featureCompositionRules = {
+  rules: {
+    "public-entry-only": {
+      meta: {
+        type: "problem",
+        schema: [{ type: "array", items: { type: "string" }, uniqueItems: true }],
+        messages: {
+          boundary: "Compose only the permitted public feature alias; relative or deep sibling imports are forbidden.",
+        },
+      },
+      create(context) {
+        const ownFeature = relative(featureRoot, context.filename).split(/[\\/]/)[0];
+        const allowed = context.options[0] ?? [];
+        function inspect(source) {
+          if (!source || typeof source.value !== "string") return;
+          const specifier = source.value;
+          const target = specifier.startsWith("@/features/")
+            ? resolve(featureRoot, specifier.slice("@/features/".length))
+            : specifier.startsWith(".")
+              ? resolve(dirname(context.filename), specifier)
+              : null;
+          if (!target) return;
+          const path = relative(featureRoot, target).replaceAll("\\", "/");
+          if (path === ".." || path.startsWith("../")) return;
+          const targetFeature = path.split("/")[0];
+          if (targetFeature === ownFeature) return;
+          if (allowed.includes(targetFeature) && specifier === `@/features/${targetFeature}`) return;
+          context.report({ node: source, messageId: "boundary" });
+        }
+        return {
+          ImportDeclaration: (node) => inspect(node.source),
+          ExportNamedDeclaration: (node) => inspect(node.source),
+          ExportAllDeclaration: (node) => inspect(node.source),
+          ImportExpression: (node) => inspect(node.source),
+        };
+      },
+    },
+  },
+};
+
+function publicFeatureComposition(entries) {
+  const names = entries.join("|");
+  return {
+    paths: serverImports,
+    patterns: [
+      nodeNamespace,
+      databasePackageInternals,
+      backendModules,
+      {
+        group: ["**/app/**"],
+        message: "Features must not depend on application routes.",
+      },
+      {
+        regex: `^@/features(?:$|/(?!(?:${names})$))`,
+        message: "This compositor may use only its named public feature entries, never their internals.",
+      },
+    ],
+  };
+}
+
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
   {
     files: ["app/**/*.{ts,tsx}", "src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
+    plugins: { "feature-composition": featureCompositionRules },
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/consistent-type-imports": "error",
@@ -255,6 +319,38 @@ export default defineConfig([
     },
   },
   {
+    // The service workspace composes only its browser-safe reader and learning.
+    files: ["src/features/live-workspace/**/*.{ts,tsx}"],
+    rules: {
+      "feature-composition/public-entry-only": ["error", ["live-read", "community-context"]],
+      "no-restricted-imports": [
+        "error",
+        publicFeatureComposition(["live-read", "community-context"]),
+      ],
+    },
+  },
+  {
+    // Retained demo compositions are confined to these exact consumers.
+    files: ["src/features/design-lab/DemoLearning.tsx"],
+    rules: {
+      "feature-composition/public-entry-only": ["error", ["community-context"]],
+      "no-restricted-imports": [
+        "error",
+        publicFeatureComposition(["community-context"]),
+      ],
+    },
+  },
+  {
+    files: ["src/features/design-lab/ComparisonView.tsx"],
+    rules: {
+      "feature-composition/public-entry-only": ["error", ["site-owner-dashboard"]],
+      "no-restricted-imports": [
+        "error",
+        publicFeatureComposition(["site-owner-dashboard"]),
+      ],
+    },
+  },
+  {
     files: ["src/domain/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
@@ -286,89 +382,9 @@ export default defineConfig([
     },
   },
   {
-    /**
-     * The connected workspace reads through `live-read`.
-     *
-     * `live-read` is not a sibling presentation feature: it is the bounded
-     * same-origin read client — its requests, its error vocabulary and the
-     * projections the workspace renders — and it is deliberately kept out of
-     * `@/domain` so the static demo entry can never resolve a live reader.
-     * `community-context` supplies the shared explanatory copy the workspace
-     * shows beside a read. Both dependencies are named here rather than by
-     * relaxing the sibling rule, so every other feature stays out of reach.
-     */
-    files: ["src/features/live-workspace/**/*.{ts,tsx}"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          paths: serverImports,
-          patterns: [
-            databasePackageInternals,
-            backendModules,
-            {
-              group: ["**/app/**"],
-              message: "Features must not depend on application routes.",
-            },
-            {
-              group: [
-                "@/features/*",
-                "@/features/*/**",
-                "!@/features/live-read",
-                "!@/features/live-read/**",
-                "!@/features/community-context",
-                "!@/features/community-context/**",
-              ],
-              message:
-                "The live workspace may compose only the live reader and the shared community context.",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    /**
-     * The static demo quotes the fixtures and the explanation it illustrates.
-     *
-     * `design-lab` ships only in the separate synthetic entry, and its point is
-     * to show the same dashboard fixtures and the same virtual-power-plant
-     * explanation the product surfaces use. Duplicating either would let the
-     * demo drift from what it claims to illustrate.
-     */
-    files: ["src/features/design-lab/**/*.{ts,tsx}"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          paths: serverImports,
-          patterns: [
-            databasePackageInternals,
-            backendModules,
-            {
-              group: ["**/app/**"],
-              message: "Features must not depend on application routes.",
-            },
-            {
-              group: [
-                "@/features/*",
-                "@/features/*/**",
-                "!@/features/community-context",
-                "!@/features/community-context/**",
-                "!@/features/site-owner-dashboard",
-                "!@/features/site-owner-dashboard/**",
-              ],
-              message:
-                "The static demo may quote only the dashboard fixtures and the shared community context.",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
     files: ["src/features/participation/**/*.{ts,tsx}"],
     rules: {
+      "feature-composition/public-entry-only": ["error", ["community-context"]],
       "no-restricted-imports": [
         "error",
         {
@@ -377,6 +393,10 @@ export default defineConfig([
             nodeNamespace,
             databasePackageInternals,
             backendModules,
+            {
+              regex: "^@/features(?:$|/(?!community-context$))",
+              message: "Public participation may compose only the public learning entry.",
+            },
             {
               group: [
                 "**/app/**",
@@ -402,6 +422,7 @@ export default defineConfig([
   {
     files: ["src/features/onboarding/**/*.{ts,tsx}"],
     rules: {
+      "feature-composition/public-entry-only": ["error", ["community-context"]],
       "no-restricted-imports": [
         "error",
         {
@@ -410,6 +431,10 @@ export default defineConfig([
             nodeNamespace,
             databasePackageInternals,
             backendModules,
+            {
+              regex: "^@/features(?:$|/(?!community-context$))",
+              message: "Profile previews may compose only the public learning entry.",
+            },
             {
               group: [
                 "**/app/**",

@@ -10,7 +10,7 @@ export default defineConfig({
   testIgnore: [],
   testMatch: ["design-lab.spec.ts", "vibehub.spec.ts", "sunroom-preview.spec.ts"],
   metadata: { routePrefix: `${hostingPath}#` },
-  use: { ...base.use, baseURL },
+  use: { ...base.use, baseURL, serviceWorkers: "block" },
   webServer: {
     command: `npm run preview:demo -- --base ${hostingPath}`,
     url: `${baseURL}${hostingPath}`,

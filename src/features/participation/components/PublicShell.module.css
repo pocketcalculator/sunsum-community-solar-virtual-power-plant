@@ -121,10 +121,17 @@
 
 .roleNavAside {
   display: flex;
-  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   margin-left: auto;
   padding-block: var(--space-1);
 }
+
+.demoModeLabel { font-size: var(--text-xs); color: var(--text-secondary); }
 
 .roleNavList {
   display: flex;
@@ -202,6 +209,15 @@
   max-width: 48rem;
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+.footerAction a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--text-accent);
+  font-size: var(--text-sm);
+  text-underline-offset: 0.2em;
 }
 
 @media (min-width: 48rem) {

@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 describe("public shell", () => {
-  it("keeps narrative navigation distinct from participation contexts", () => {
+  it("keeps narrative navigation distinct from role workspaces", () => {
     render(<PublicShell><p>Public content</p></PublicShell>);
     const primary = screen.getByRole("navigation", { name: "Primary" });
     for (const [name, href] of [
@@ -28,10 +28,10 @@ describe("public shell", () => {
     ] as const) {
       expect(within(primary).getByRole("link", { name })).toHaveAttribute("href", href);
     }
-    const participation = screen.getByRole("navigation", { name: "Participation contexts" });
-    expect(within(participation).getByRole("link", { name: "Site owner view" })).toHaveAttribute("href", "/dashboard/site-owner");
-    expect(within(participation).getByRole("link", { name: "Investor profile preview" })).toHaveAttribute("href", "/join?start=i-would-fund");
-    expect(within(participation).getByRole("link", { name: "Operator profile preview" })).toHaveAttribute("href", "/join");
+    const participation = screen.getByRole("navigation", { name: "Role workspaces" });
+    expect(within(participation).getByRole("link", { name: "Site owner workspace" })).toHaveAttribute("href", "/dashboard/site-owner");
+    expect(within(participation).getByRole("link", { name: "Investor workspace" })).toHaveAttribute("href", "/dashboard/investor");
+    expect(within(participation).getByRole("link", { name: "Operator workspace" })).toHaveAttribute("href", "/dashboard/operator");
   });
 
   it("retains the default three-choice public theme control", () => {
@@ -48,7 +48,17 @@ describe("public shell", () => {
     render(<PublicShell visibleRoleIds={["site-owner"]}><h1>Public content</h1></PublicShell>);
     expect(screen.getByRole("link", { name: "Skip to main content" })).toHaveAttribute("href", "#main-content");
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
-    const participation = screen.getByRole("navigation", { name: "Participation contexts" });
+    const participation = screen.getByRole("navigation", { name: "Role workspaces" });
     expect(within(participation).getAllByRole("link")).toHaveLength(1);
+  });
+
+  it("keeps injected demo controls separate from static fictional role destinations", () => {
+    render(<PublicShell demoControl={<span>Developer/demo control</span>}
+      workspaceLinks={[{ id: "site-owner", href: "/concepts/sunroom?role=site-owner&view=sites", label: "Fictional owner workspace" }]}>
+      <p>Public content</p>
+    </PublicShell>);
+    expect(screen.getByText("Developer/demo control")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Fictional owner workspace" }))
+      .toHaveAttribute("href", "/concepts/sunroom?role=site-owner&view=sites");
   });
 });

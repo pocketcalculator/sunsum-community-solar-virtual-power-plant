@@ -32,8 +32,8 @@ export function Hero() {
             <ActionLink href="/join" showArrow>
               Explore participation
             </ActionLink>
-            <ActionLink href="/need" variant="secondary">
-              Why community solar?
+            <ActionLink href="/app" variant="secondary">
+              Open Sunroom workspace
             </ActionLink>
           </div>
 

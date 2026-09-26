@@ -23,15 +23,18 @@ interface WorkspaceShellProps {
   refreshing: boolean;
   canRefresh: boolean;
   children: ReactNode;
+  roleControl?: ReactNode;
+  sourceMode?: "connected" | "server-demo" | "unavailable";
 }
 
 export function WorkspaceShell({
   role, view, navigation, onNavigate, onRefresh, refreshing, canRefresh, children,
+  roleControl, sourceMode = "connected",
 }: WorkspaceShellProps) {
   const [notices, setNotices] = useState(false);
   const [menu, setMenu] = useState(false);
   return (
-    <div className={styles.workspace} data-mode="live-read-only">
+    <div className={styles.workspace} data-mode={sourceMode}>
       <a href="#workspace-content" className={styles.skip}>Skip to workspace</a>
       <aside className={`${styles.sidebar} ${menu ? styles.sidebarOpen : ""}`}>
         <Link href="/" className={styles.brand}><BrandMark /><span>sunsum</span></Link>
@@ -66,11 +69,16 @@ export function WorkspaceShell({
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               strokeWidth="1.7" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
-          <div className={styles.mode}><span className={styles.modeDot} /><strong>Live reads only</strong></div>
+          <div className={styles.mode}><span className={styles.modeDot} /><strong>
+            {sourceMode === "server-demo" ? "Developer/demo mode" :
+              sourceMode === "unavailable" ? "Connection unavailable" : "Connected workspace"}
+          </strong></div>
           <div className={styles.topActions}>
-            <RoleControl value={role} allowedRoles={role ? [role] : []} mode="live"
-              onChange={() => { /* The current read contract supplies one authorized role. */ }} />
-            <ThemeToggle compact />
+            <div className={styles.perspectiveTools} data-header-appearance-row>
+              {roleControl ?? <RoleControl value={role} allowedRoles={role ? [role] : []} mode="live"
+                onChange={() => { /* This indicator cannot change the server-confirmed role. */ }} />}
+              <ThemeToggle compact />
+            </div>
             <button type="button" className={styles.iconButton} aria-label="Notifications"
               aria-expanded={notices} aria-controls="workspace-notices" onClick={() => setNotices(!notices)}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -88,7 +96,11 @@ export function WorkspaceShell({
           </section>
         )}
         <div className={styles.connectionBar}>
-          <p>Existing-service reads, within your current access. Workflow writes are not implemented.</p>
+          <p>{sourceMode === "server-demo"
+            ? "Server-backed fictional mock data. Seeded demo accounts are not verified participant identities."
+            : sourceMode === "unavailable"
+              ? "No service mode is admitted. Unavailable data is never replaced with fictional records."
+              : "Service permissions govern reads and any offered nonbinding-interest action. Other workflow changes remain unavailable."}</p>
           <button type="button" className={styles.textButton} disabled={!canRefresh || refreshing} onClick={onRefresh}>
             {refreshing ? "Refreshing permitted reads..." : "Refresh permitted reads"}
           </button>
@@ -96,7 +108,7 @@ export function WorkspaceShell({
         <main id="workspace-content" className={styles.main} tabIndex={-1} aria-busy={refreshing}>
           {children}
         </main>
-        <footer className={styles.footer}>Read, understand, decide. No submission, review, funding or publication is performed here.</footer>
+        <footer className={styles.footer}>Read, understand, decide. Interest is nonbinding; no funds, submissions, reviews or publication are executed here.</footer>
       </div>
     </div>
   );

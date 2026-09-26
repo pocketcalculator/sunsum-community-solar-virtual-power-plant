@@ -65,6 +65,8 @@ export function formatReadExport(
   const generatedAt = timestamp(manifest.generatedAt);
   const provenance = {
     source: manifest.provenance.source,
+    mode: choice(manifest.provenance.mode, ["connected", "server-demo"]),
+    store: choice(manifest.provenance.store, ["database-configured", "mock-configured"]),
     contractRevision: text(manifest.provenance.contractRevision),
     deployedRevision: text(manifest.provenance.deployedRevision),
     retrievedAt: timestamp(manifest.provenance.retrievedAt),
@@ -97,6 +99,8 @@ export function formatReadExport(
       ["scope", encodedManifest.scopeLabel],
       ["generated_at", generatedAt],
       ["source", provenance.source],
+      ["source_mode", provenance.mode],
+      ["source_store", provenance.store],
       ["contract_revision", provenance.contractRevision],
       ["deployed_revision", provenance.deployedRevision],
       ["retrieved_at", provenance.retrievedAt],

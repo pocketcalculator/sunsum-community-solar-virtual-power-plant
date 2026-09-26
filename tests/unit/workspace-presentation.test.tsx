@@ -75,6 +75,132 @@ describe("shared controlled role presentation", () => {
     expect(owner).toBeChecked();
     expect(screen.getByRole("radio", { name: "Investor" })).toBeDisabled();
   });
+
+  it("Escape cancels a drag including the following pointer click", () => {
+    const change = vi.fn();
+    const { container } = render(<RoleControl value="site-owner" allowedRoles={roles} mode="demo" onChange={change} />);
+    container.querySelectorAll<HTMLElement>("[data-role]").forEach((label, index) =>
+      vi.spyOn(label, "getBoundingClientRect").mockReturnValue(new DOMRect(index * 100, 0, 100, 44)));
+    const owner = screen.getByRole("radio", { name: "Site owner" });
+    fireEvent.pointerDown(owner, { pointerId: 9, button: 0, clientX: 20, clientY: 20 });
+    fireEvent.pointerMove(owner, { pointerId: 9, clientX: 220, clientY: 20 });
+    fireEvent.keyDown(owner, { key: "Escape" });
+    fireEvent.pointerUp(owner, { pointerId: 9, clientX: 220, clientY: 20 });
+    const accepted = fireEvent.click(screen.getByRole("radio", { name: "Investor" }), { detail: 1 });
+    expect(accepted).toBe(false);
+    expect(change).not.toHaveBeenCalled();
+    // JSDOM only restores the clicked radio after cancellation; native group restoration is covered in Playwright.
+    expect(owner.closest("[data-role]")).toHaveAttribute("data-selected", "true");
+    expect(container.querySelector<HTMLElement>("[data-role-hit-track]")?.style.getPropertyValue("--role-index")).toBe("0");
+  });
+
+  it("separates the decorative thin track from native full-size role targets", () => {
+    const { container } = render(<RoleControl value="operator" allowedRoles={roles} mode="demo" onChange={vi.fn()} />);
+    const track = container.querySelector("[data-role-visual-track]");
+    expect(track).toHaveAttribute("aria-hidden", "true");
+    expect(container.querySelectorAll("[data-role-control]")).toHaveLength(3);
+    expect(screen.getByRole("group", { name: "Demo role" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Operator" })).toBeChecked();
+  });
+
+  it("tracks fractional pointer movement without changing the controlled role and returns on cancel", () => {
+    const change = vi.fn();
+    const { container } = render(<RoleControl value="site-owner" allowedRoles={roles} mode="demo" onChange={change} />);
+    container.querySelectorAll<HTMLElement>("[data-role]").forEach((label, index) =>
+      vi.spyOn(label, "getBoundingClientRect").mockReturnValue(new DOMRect(index * 100, 0, 100, 44)));
+    const indicator = container.querySelector("[data-role-indicator]")!;
+    const track = container.querySelector<HTMLElement>("[data-role-hit-track]")!;
+    const owner = screen.getByRole("radio", { name: "Site owner" });
+    fireEvent.pointerDown(owner, { pointerId: 13, button: 0, clientX: 20, clientY: 20 });
+    fireEvent.pointerMove(owner, { pointerId: 13, clientX: 170, clientY: 20 });
+    expect(track.style.getPropertyValue("--role-index")).toBe("1.5");
+    expect(indicator).toHaveAttribute("data-role-state", "preview");
+    expect(owner).toBeChecked();
+    expect(change).not.toHaveBeenCalled();
+    fireEvent.pointerMove(owner, { pointerId: 13, clientX: 180, clientY: 20 });
+    expect(track.style.getPropertyValue("--role-index")).toBe("1.6");
+    fireEvent.pointerCancel(owner, { pointerId: 13, clientX: 180, clientY: 20 });
+    expect(track.style.getPropertyValue("--role-index")).toBe("0");
+    expect(indicator).toHaveAttribute("data-role-state", "confirmed");
+    expect(change).not.toHaveBeenCalled();
+  });
+
+  it("keeps one indicator node across pending, refusal and authoritative role changes", () => {
+    const change = vi.fn();
+    const { container, rerender } = render(<RoleControl value="site-owner" allowedRoles={roles} mode="server-demo" onChange={change} />);
+    container.querySelectorAll<HTMLElement>("[data-role]").forEach((button, index) =>
+      vi.spyOn(button, "getBoundingClientRect").mockReturnValue(new DOMRect(index * 100, 0, 100, 44)));
+    const indicator = container.querySelector("[data-role-indicator]")!;
+    const track = container.querySelector<HTMLElement>("[data-role-hit-track]")!;
+    const owner = screen.getByRole("button", { name: "Site owner" });
+    fireEvent.pointerDown(owner, { pointerId: 15, button: 0, clientX: 20, clientY: 20 });
+    fireEvent.pointerMove(owner, { pointerId: 15, clientX: 170, clientY: 20 });
+    fireEvent.pointerUp(owner, { pointerId: 15, clientX: 170, clientY: 20 });
+    expect(change).toHaveBeenCalledExactlyOnceWith("operator");
+    expect(track.style.getPropertyValue("--role-index")).toBe("0");
+    expect(owner).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: "Operator" })).not.toHaveAttribute("aria-current");
+    rerender(<RoleControl value={null} allowedRoles={roles} mode="server-demo" onChange={change} pendingRole="operator" />);
+    expect(container.querySelector("[data-role-indicator]")).toBe(indicator);
+    expect(indicator).toHaveAttribute("data-role-state", "hidden");
+    expect(container.querySelectorAll('[aria-current="true"]')).toHaveLength(0);
+    rerender(<RoleControl value="site-owner" allowedRoles={roles} mode="server-demo" onChange={change} error="Switch refused" />);
+    expect(indicator).toHaveAttribute("data-role-state", "confirmed");
+    expect(track.style.getPropertyValue("--role-index")).toBe("0");
+    expect(screen.getByRole("alert")).toHaveTextContent("Switch refused");
+    rerender(<RoleControl value="investor" allowedRoles={roles} mode="server-demo" onChange={change} />);
+    expect(container.querySelector("[data-role-indicator]")).toBe(indicator);
+    expect(track.style.getPropertyValue("--role-index")).toBe("2");
+    expect(screen.getByRole("button", { name: "Financier" })).toHaveAttribute("aria-current", "true");
+  });
+
+  it("retires a gesture across disable/re-enable even when the role returns unchanged", () => {
+    const change = vi.fn();
+    const { container, rerender } = render(<RoleControl value="site-owner" allowedRoles={roles} mode="demo" onChange={change} />);
+    container.querySelectorAll<HTMLElement>("[data-role]").forEach((label, index) =>
+      vi.spyOn(label, "getBoundingClientRect").mockReturnValue(new DOMRect(index * 100, 0, 100, 44)));
+    const owner = screen.getByRole("radio", { name: "Site owner" });
+    fireEvent.pointerDown(owner, { pointerId: 16, button: 0, clientX: 20, clientY: 20 });
+    fireEvent.pointerMove(owner, { pointerId: 16, clientX: 170, clientY: 20 });
+    rerender(<RoleControl value="site-owner" allowedRoles={roles} mode="demo" onChange={change} disabled />);
+    rerender(<RoleControl value="site-owner" allowedRoles={roles} mode="demo" onChange={change} />);
+    fireEvent.pointerUp(owner, { pointerId: 16, clientX: 170, clientY: 20 });
+    expect(change).not.toHaveBeenCalled();
+    expect(owner).toBeChecked();
+    expect(container.querySelector<HTMLElement>("[data-role-hit-track]")?.style.getPropertyValue("--role-index")).toBe("0");
+  });
+
+  describe.each(["demo", "server-demo"] as const)("%s unmoved pointer presses", (mode) => {
+    it.each(["value", "disable/re-enable", "pointercancel", "lostpointercapture"] as const)(
+      "suppresses the retired click after %s but accepts a fresh press",
+      (retirement) => {
+        const change = vi.fn();
+        const { container, rerender } = render(
+          <RoleControl value="site-owner" allowedRoles={roles} mode={mode} onChange={change} />,
+        );
+        container.querySelectorAll<HTMLElement>("[data-role]").forEach((target, index) =>
+          vi.spyOn(target, "getBoundingClientRect").mockReturnValue(new DOMRect(index * 100, 0, 100, 44)));
+        const operator = screen.getByRole(mode === "server-demo" ? "button" : "radio", { name: "Operator" });
+        const press = { pointerId: 21, button: 0, clientX: 150, clientY: 20 };
+        fireEvent.pointerDown(operator, press);
+        if (retirement === "value") {
+          rerender(<RoleControl value="investor" allowedRoles={roles} mode={mode} onChange={change} />);
+        } else if (retirement === "disable/re-enable") {
+          rerender(<RoleControl value="site-owner" allowedRoles={roles} mode={mode} onChange={change} disabled />);
+          rerender(<RoleControl value="site-owner" allowedRoles={roles} mode={mode} onChange={change} />);
+        } else if (retirement === "pointercancel") fireEvent.pointerCancel(operator, press);
+        else fireEvent.lostPointerCapture(operator, press);
+        fireEvent.pointerUp(operator, press);
+        fireEvent.click(operator, { detail: 1 });
+        expect(change).not.toHaveBeenCalled();
+        const fresh = { ...press, pointerId: 22 };
+        fireEvent.pointerDown(operator, fresh);
+        fireEvent.pointerUp(operator, fresh);
+        fireEvent.click(operator, { detail: 1 });
+        expect(change).toHaveBeenCalledExactlyOnceWith("operator");
+      },
+    );
+  });
 });
 
 describe("shared permitted collection presentation", () => {

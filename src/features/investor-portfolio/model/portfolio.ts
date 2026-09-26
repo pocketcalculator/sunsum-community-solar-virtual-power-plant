@@ -12,27 +12,8 @@
  * hold any of those, so this mapping cannot leak them even if edited carelessly.
  */
 
-/**
- * The wire vocabularies, duplicated rather than imported.
- *
- * Importing them would pull `@/backend` into a browser bundle, which the module
- * boundary forbids. The API validates every one of these and answers
- * `invalid_query` for anything it does not recognise, so the two lists drifting
- * apart produces a visible refusal rather than a silently wrong filter.
- */
-export const PROJECT_STAGES = [
-  "pre_development",
-  "development",
-  "construction",
-  "commissioning",
-  "operations",
-] as const;
-
-export const VIABILITY_STATUSES = [
-  "potentially_viable",
-  "more_information_required",
-  "not_currently_eligible",
-] as const;
+import { workspaceQueryString } from "@/domain/workspace-filters";
+export { PROJECT_STAGES, VIABILITY_STATUSES } from "@/domain/workspace-filters";
 
 /**
  * The engagement states that mean "this investor is already in". Mirrors
@@ -223,12 +204,9 @@ export function toEngagedProjectIds(payload: unknown): readonly string[] {
  * states its intent rather than relying on agreement about a default.
  */
 export function portfolioQueryString(filters: PortfolioFilters): string {
-  const params = new URLSearchParams();
-  params.set("mandate_match", filters.mandateMatch ? "true" : "false");
-  for (const stage of filters.stages) params.append("stage", stage);
-  if (filters.viability !== null) params.set("viability", filters.viability);
-  if (filters.projectType !== null) {
-    params.set("project_type", filters.projectType);
-  }
-  return params.toString();
+  return workspaceQueryString({
+    stages: filters.stages, mandateMatch: filters.mandateMatch,
+    ...(filters.viability === null ? {} : { viability: filters.viability }),
+    ...(filters.projectType === null ? {} : { projectType: filters.projectType }),
+  });
 }

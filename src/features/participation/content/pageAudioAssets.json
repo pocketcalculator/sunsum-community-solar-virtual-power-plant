@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "tracks": {
+    "need": {
+      "path": "audio/need.mp3",
+      "title": "Tower of Power - There's Only So Much Oil (sample)",
+      "attribution": "Tower of Power; supplied website sample.",
+      "mime": "audio/mpeg",
+      "bytes": 2967379,
+      "sha256": "5d8ed04c82d1d8f47acd59e8ac757e29e33fef6b5a561d1acacee424ede5ef7c",
+      "durationSeconds": 123.63755102040817,
+      "sampleRateHz": 44100,
+      "channels": 2
+    },
+    "opportunity": {
+      "path": "audio/opportunity.mp3",
+      "title": "Ready or Not - People Are The Power (sample)",
+      "attribution": "Supplied credit: Ready or Not - People Are The Power.",
+      "mime": "audio/mpeg",
+      "bytes": 2619428,
+      "sha256": "ffa7a0f689024dc900b11acb8f73532e72148cd1f529c23bca4aa5d34d2c9c77",
+      "durationSeconds": 109.1395918367347,
+      "sampleRateHz": 44100,
+      "channels": 2
+    },
+    "impact": {
+      "path": "audio/impact.mp3",
+      "title": "Curtis Mayfield - Power To The People (sample)",
+      "attribution": "Curtis Mayfield; supplied website sample.",
+      "mime": "audio/mpeg",
+      "bytes": 3265175,
+      "sha256": "5ff37d5f729bd037789c9c529fcd29439ae2a5927685741cb82b2e64beedb6d3",
+      "durationSeconds": 136.0457142857143,
+      "sampleRateHz": 44100,
+      "channels": 2
+    }
+  }
+}

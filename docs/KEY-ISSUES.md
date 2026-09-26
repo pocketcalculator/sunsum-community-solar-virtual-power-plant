@@ -2,7 +2,7 @@
 
 ## API [API]
 >
-> Last reviewed: 2026-09-21 | Open: 0
+> Last reviewed: 2026-09-21 | Open: 2
 
 Source-contract review of the live-read adapter, configuration, connection registry, and `/app` entry against WS2 commit `73695a052a6324434b36bebbdd0c834b455471b7`. Findings include untracked implementation files. These are source-backed failures, not claims about a deployed service.
 
@@ -66,6 +66,35 @@ Source-contract review of the live-read adapter, configuration, connection regis
 - Confidence: HIGH; inspected both encoded Blob texts.
 - Fix: Include an allowlisted source/provenance object in JSON and equivalent scalar CSV metadata rows, keeping source generation, retrieval time, contract revision, and unknown deployment revision distinct. Preserve existing escaping and do not serialize raw service URLs or credentials.
 
+### API-6 - Interest used cached project membership before dispatch
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `src/features/live-read/client.ts`, `expressInterest`
+- Problem: Fresh identity and engagement reads did not recheck whether the
+  selected project still belonged to the current filtered portfolio.
+- Correction: Retain the snapshot's copied query within its generation and
+  repeat that exact portfolio GET before dispatch. Missing projects and failed
+  preflight reads produce an explicit unsent result, never an unfiltered read.
+- Regression: `live-interest-contract.test.ts` covers exact filters, mutation of
+  the caller's original query array, stage/visibility removal and failed reads.
+  The backend remains the final authority; this is not an atomic write guarantee.
+
+### API-7 - Incomplete creation timestamps could confirm an invalid receipt
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `src/features/live-read/client.ts`, 201 receipt validation
+- Problem: The tolerant GET projection allowed missing/null timestamps through
+  the new POST confirmation branch.
+- Correction: Require both parsed creation and state-change timestamps for a
+  confirmed 201. Invalid receipts retain the dispatched unknown outcome; GET
+  projection compatibility is unchanged.
+- Regression: `live-interest-contract.test.ts` covers each timestamp omitted,
+  null and empty, empty reconciliation and no unacknowledged second POST.
+
 ### Cross-domain handoff
 
 DEFERRED_TO:RELY (MEDIUM, confirmed) - A superseded denial can retire the newer read context. At `src\features\live-read\transport.ts:293-302`, cancellation while consuming a 403 body is replaced with the old HTTP denial; `src\features\live-read\client.ts:204-208` then retires the current generation without checking whether that group was superseded. Reproduction: stall detail A's 403 body, start permitted detail B, and hold B's identity response pending; both reads return A's denial and B is aborted. Preserve cancellation/stale outcomes for retired groups before applying global invalidation, while continuing to invalidate genuinely current 401/403 reads. No Reliability ID was assigned and no source fix was applied.
@@ -77,7 +106,7 @@ preserve invalidation for current 401/403 bodies that fail during reading.
 
 ## Reliability [RELY]
 
-> Last reviewed: 2026-09-21 | Open: 0
+> Last reviewed: 2026-09-21 | Open: 4
 
 The first five findings came from an isolated source snapshot. The sixth was
 reproduced while exercising the strengthened continuity harness. Corrections
@@ -146,12 +175,65 @@ The controller suite now exercises these cases together with mounted
 identity/role replacement, visibility retirement, bounded focus refresh and
 the real object-URL hook's navigation/unmount cleanup.
 
+### RELY-7 - Session control remounts during read retirement
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- Files: `src/features/live-workspace/LiveWorkspace.tsx`,
+  `src/features/demo-auth/components/DemoRoleSwitcher.tsx`
+- Problem: Starting a switch clears the snapshot and unmounts the initiating
+  adapter. Its refusal disappears, and the sliding indicator is replaced.
+- Correction: The persistent shell owns the adapter; only actor-scoped content
+  retires. The actual composed-adapter regression covers immediate record
+  removal, the same indicator node and refusal surviving reconciliation.
+
+### RELY-8 - Late settlement restarts a disposed workspace
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `src/features/live-workspace/useWorkspaceReads.ts`
+- Problem: A switch completing after whole-workspace unmount can start fresh
+  reads; a later access failure can also replace the new page URL with `/app`.
+- Correction: Refresh and switch callbacks reject disposed owners and use the
+  current effect-owned client. Regressions distinguish whole-owner unmount from
+  adapter-only retirement, which still reconciles through the replacement client.
+
+### RELY-9 - First history entry lacks collection context
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `src/features/live-workspace/LiveWorkspace.tsx`
+- Problem: Without an initial control change, only the destination gets an
+  opaque history key. Back can retain a later filter instead of the initial
+  service query, selection and return focus.
+- Correction: Actor-owned RAM history snapshots the confirmed actor's unkeyed
+  entry before its first push. Only an opaque key enters replaceState; framework
+  metadata survives. The native Back regression restores the original query,
+  selection and focus without a priming control change.
+
+### RELY-10 - Retired unmoved presses can activate through click
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `src/components/workspace/RoleControl.tsx`
+- Problem: Epoch retirement suppresses the trailing click only after movement
+  crossed the drag threshold; an unmoved retired press can still choose a role.
+- Correction: Canceled, busy or obsolete presses suppress their trailing click
+  regardless of movement. Eight radio/button regressions cover value changes,
+  disable/re-enable, cancellation and lost capture, followed by a usable fresh
+  gesture. Target geometry and reduced-motion styling remain unchanged.
+
 ## Readability [READ]
 
 > Last reviewed: 2026-09-21 | Open: 0
 
-These three LOW findings are bounded maintenance simplifications, not
-authorization changes or proposals to rewrite stakeholder copy.
+READ-1 through READ-3 are historical bounded maintenance simplifications.
+The successor integration review adds READ-4 below; none changes authorization
+or stakeholder story copy.
 
 ### READ-1 - Retired local CSS classes remain after control replacement
 
@@ -183,13 +265,78 @@ authorization changes or proposals to rewrite stakeholder copy.
   wording, screening and journey stages remain separate. All 67 scoped
   onboarding/operator/detail/presentation cases pass after both simplifications.
 
+### READ-4 - Profile wording conflates local and service-backed demo identities
+
+- Severity: MEDIUM
+- Status: RESOLVED
+- Confidence: HIGH
+- File: `src/features/live-workspace/RoleViews.tsx:81`
+- Problem: The shared profile said a "demo role" was not its service identity,
+  although explicit server-demo intentionally uses a seeded service identity.
+- Resolution: Qualified the disclaimer as "browser-local demo role." This keeps
+  public answers and fictional local selection separate from authenticated
+  service identity without another mode branch or any permission change.
+
 ## Testing [TEST]
 
-> Last reviewed: 2026-09-21 | Open: 0
+> Last reviewed: 2026-09-21 | Open: 5
 
 Coverage findings are not assertions of production transport vulnerabilities.
 All service scenarios remain intercepted or mocked; none certifies real sign-in
 or cloud deployment.
+
+### TEST-9 - Lifetime suite was registered inside a running test
+
+- Severity: HIGH
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `tests/unit/demo-role-switcher.test.tsx`
+- Correction: Hoisted the composed-lifetime suite out of the refusal callback,
+  preserving both that refusal's assertions and all lifetime cases.
+
+### TEST-10 - Static audio observer missed prefixed and foreign requests
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- Files: `tests/e2e/vibehub.spec.ts`,
+  `tests/fixtures/static-network-guard.ts`
+- Correction: Context-wide deny-by-default routing admits only exact generated
+  local document/assets/native-media GETs, with independent request observation.
+  Worker transport is blocked, sockets are refused, and intercepted browser
+  canaries cover a prefixed POST, session read and foreign request. Pure policy
+  cases cover both actual and deeper hosting prefixes.
+
+### TEST-11 - Invalid archive fixtures could fail for unrelated missing media
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `infrastructure/scripts/tests/deployment-safety.test.ps1`
+- Correction: Copy the valid media-complete archive and change only the target
+  name or collision. Require the specific path/casing refusal rather than any
+  exception; the collision uses two independently allowed source paths.
+
+### TEST-12 - Unused mock parameter blocked zero-warning lint
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `tests/unit/demo-role-switcher.test.tsx`
+- Correction: Removed the unused implementation parameter; request argument
+  assertions and the zero-warning lint gate remain.
+
+### TEST-13 - Final artifacts were not bound to the reviewed PR head
+
+- Severity: MEDIUM
+- Status: FIXED, awaiting current-revision CI
+- Confidence: HIGH
+- File: `.github/workflows/repo-health.yml`
+- Correction: Application acceptance and packaging explicitly check out the
+  full PR-head SHA (event SHA for non-PR runs). Packaging requires matching
+  manifest/demo stamps and ZIP digests, and retains a CI receipt identifying
+  source SHA, event/merge SHA, run and both ZIP hashes separately. Ordinary
+  repository/infrastructure merge checks retain their original behavior.
 
 ### TEST-1 - Browser I/O guards did not enforce origin and role operations
 

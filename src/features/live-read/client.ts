@@ -1,4 +1,6 @@
 import type { LiveReadConfiguration } from "@/domain/live-configuration";
+import { workspaceSourceMode } from "@/domain/live-configuration";
+import { copyWorkspaceQuery, type WorkspaceQuery } from "@/domain/workspace-filters";
 
 import { LIVE_READ_LIMITS } from "./constants";
 import { failure, malformed, ReadFault, readError, rejectRead, success } from "./errors";
@@ -10,24 +12,27 @@ import {
   privateProject, privateSite, siteRecord, submissions, type IdentityFields,
 } from "./projections";
 import { WS2_CONTRACT_REVISION } from "./registry";
+import { currentProjectInterest } from "./interest";
 import {
   createTransport, operationPath, throwIfAborted, validateQuery, type Operation,
 } from "./transport";
 import type {
   DetailReference, DocumentReference, LiveDetail, LiveExportManifest, LiveIdentity,
-  LiveReadClient, LiveReadClientOptions, LiveSnapshot, ReadDownload, ReadError,
+  InterestOptions, InterestReceipt, InterestResult,
+  LiveReadClient, LiveReadClientOptions, LiveSnapshot, ReadDownload, ReadEngagement, ReadEngagements, ReadError,
   ReadInvestorDocument, ReadOperation, ReadOptions, ReadPrivateProject,
   ReadProvenance, ReadResult, ReadScope, ReadSummary, ScopedReadOptions,
-  SnapshotReadOptions,
+  SnapshotReadOptions, WorkspaceClient,
 } from "./types";
-import { count, id, isId, isObject, list, object, role, safeFileName, text, timestamp } from "./values";
+import { activeEngagementStates, count, id, isId, isObject, list, object, role, safeFileName, text, timestamp } from "./values";
 
-type Channel = "identity" | "snapshot" | "detail" | "document" | "export";
+type Channel = "identity" | "snapshot" | "detail" | "document" | "export" | "engagements" | "interest";
 interface Group {
   readonly channel: Channel;
   readonly controller: AbortController;
   readonly operations: ReadOperation[];
   readonly cleanup: () => void;
+  readonly expectedIdentity: IdentityFields | null;
   generation: number;
 }
 
@@ -37,9 +42,15 @@ function sameIdentity(left: IdentityFields, right: IdentityFields): boolean {
     left.organizationName === right.organizationName;
 }
 
+export function workspaceActorKey(identity: IdentityFields): string {
+  return JSON.stringify([
+    identity.userId, identity.role, identity.investorId, identity.onboarded, identity.organizationName,
+  ]);
+}
+
 function validateOptions(options: unknown, allowedKeys: readonly string[]): void {
   if (!isObject(options) || Object.keys(options).some((key) => !allowedKeys.includes(key))) {
-    rejectRead("invalid", "Only the documented read options are admitted.", "invalid_options");
+    rejectRead("invalid", "Only the documented service options are admitted.", "invalid_options");
   }
   if (options.signal !== undefined && !(options.signal instanceof AbortSignal)) {
     rejectRead("invalid", "A valid AbortSignal is required.", "invalid_signal");
@@ -97,22 +108,45 @@ function localSummary(records: LiveSnapshot["records"], projectsKnown = true): R
   };
 }
 
-export function createLiveReadClient(
+export function createWorkspaceClient(
   configuration: LiveReadConfiguration,
   options: LiveReadClientOptions = {},
-): ReadResult<LiveReadClient> {
+): ReadResult<WorkspaceClient> {
   try {
-    if (!isObject(configuration) || configuration.canAttemptReads !== true ||
-      configuration.source !== "database-configured" || configuration.apiBasePath !== "/api") {
+    if (!isObject(configuration) || configuration.canAttemptReads !== true || configuration.apiBasePath !== "/api") {
       return failure(readError("out-of-reach", "The existing-service read connection has not been admitted.", "configuration_not_admitted"));
     }
+    const sourceMode = workspaceSourceMode(configuration);
+    if ((sourceMode !== "connected" && sourceMode !== "server-demo") ||
+      configuration.source !== (sourceMode === "server-demo" ? "mock-configured" : "database-configured")) {
+      return failure(readError("out-of-reach", "The source mode and store do not match; no fallback is admitted.", "configuration_not_admitted"));
+    }
+    const mode = sourceMode;
     const configKeys = [
       "canAttemptReads", "canAttemptExports", "canAttemptDocumentDownloads",
-      "apiBasePath", "source", "reason",
+      "apiBasePath", "source", "reason", "mode", "canAttemptInterest", "syntheticIdentities",
     ];
     if (Object.keys(configuration).some((key) => !configKeys.includes(key))) {
       rejectRead("invalid", "Only public-safe read admission configuration is accepted.", "invalid_configuration");
     }
+    const synthetic = configuration.syntheticIdentities;
+    if (synthetic !== undefined && (!isObject(synthetic) ||
+      Object.keys(synthetic).some((key) => key !== "userIds" && key !== "investorIds") ||
+      !Array.isArray(synthetic.userIds) || !Array.isArray(synthetic.investorIds) ||
+      synthetic.userIds.length > 32 || synthetic.investorIds.length > 32 ||
+      !synthetic.userIds.every(isId) || !synthetic.investorIds.every(isId))) {
+      rejectRead("invalid", "Synthetic-identity evidence must contain bounded public UUID lists.", "invalid_configuration");
+    }
+    const syntheticUsers = new Set(synthetic?.userIds.map((value) => value.toLowerCase()));
+    const syntheticInvestors = new Set(synthetic?.investorIds.map((value) => value.toLowerCase()));
+    const parseIdentity = (value: unknown): IdentityFields => {
+      const identity = identityFields(value);
+      if (mode === "connected" && (syntheticUsers.has(identity.userId) ||
+        (identity.investorId !== null && syntheticInvestors.has(identity.investorId)))) {
+        rejectRead("denied", "This is a known seeded demo identity, not an admitted connected participant.", "synthetic_identity");
+      }
+      return identity;
+    };
     validateOptions(options, ["origin", "fetch", "timeoutMs", "now"]);
     const origin = configuredOrigin(options.origin);
     const fetcher = options.fetch ?? globalThis.fetch?.bind(globalThis);
@@ -127,11 +161,17 @@ export function createLiveReadClient(
     const now = options.now ?? (() => new Date());
     const admitDocuments = configuration.canAttemptDocumentDownloads === true;
     const admitExports = configuration.canAttemptExports === true;
+    const admitInterest = configuration.canAttemptInterest === true && configuration.mode === mode;
     const transport = createTransport(origin, fetcher, timeoutMs);
     const groups = new Map<Channel, Group>();
     const documents = new Map<string, DocumentReference>();
+    const permittedInterestProjects = new Set<string>();
+    let interestQuery: WorkspaceQuery | null = null;
+    const unknownInterest = new Map<string, InterestReceipt>();
+    let interestPending = false;
     let generation = 0;
     let current: IdentityFields | null = null;
+    let observedActor: IdentityFields | null = null;
     let scope: ReadScope | null = null;
 
     function retire(error: ReadError, except?: Group): void {
@@ -139,6 +179,8 @@ export function createLiveReadClient(
       current = null;
       scope = null;
       documents.clear();
+      permittedInterestProjects.clear();
+      interestQuery = null;
       for (const pending of groups.values()) {
         if (pending !== except) pending.controller.abort(new ReadFault(error));
       }
@@ -148,7 +190,7 @@ export function createLiveReadClient(
       retire(readError("stale", "The read context has been retired.", "context_invalidated"));
     }
 
-    function currentScope(expected?: ReadScope): ReadScope {
+    function currentScope(expected?: unknown): ReadScope {
       if (scope === null || current === null ||
         (expected !== undefined && (!isObject(expected) || expected.generation !== generation ||
           expected.userId !== current.userId || expected.role !== current.role))) {
@@ -165,6 +207,11 @@ export function createLiveReadClient(
     function begin(channel: Channel, readOptions: ReadOptions): Group {
       const signal = readOptions.signal;
       if (signal?.aborted) throwIfAborted(signal);
+      let expectedIdentity: IdentityFields | null = null;
+      if (channel === "snapshot" && "scope" in readOptions && readOptions.scope !== undefined) {
+        currentScope(readOptions.scope);
+        expectedIdentity = current === null ? null : { ...current };
+      }
       if (channel === "snapshot") invalidate();
       const superseded = new ReadFault(readError("canceled", "A newer read superseded this request.", "superseded"));
       groups.get(channel)?.controller.abort(superseded);
@@ -177,7 +224,7 @@ export function createLiveReadClient(
       const relay = () => controller.abort(new ReadFault(readError("canceled", "The read was canceled.", "canceled")));
       signal?.addEventListener("abort", relay, { once: true });
       const group: Group = {
-        channel, controller, operations: [], generation,
+        channel, controller, operations: [], generation, expectedIdentity,
         cleanup: () => signal?.removeEventListener("abort", relay),
       };
       groups.set(channel, group);
@@ -191,7 +238,8 @@ export function createLiveReadClient(
     ): Promise<ReadResult<T>> {
       let group: Group | undefined;
       try {
-        validateOptions(readOptions, channel === "snapshot" ? ["signal", "query"] :
+        validateOptions(readOptions, channel === "snapshot" ? ["signal", "query", "scope"] :
+          channel === "interest" ? ["signal", "scope", "acknowledgeUnknownOutcome"] :
           channel === "identity" ? ["signal"] : ["signal", "scope"]);
         if (channel !== "snapshot" && channel !== "identity" &&
           (!("scope" in readOptions) || !isObject(readOptions.scope))) {
@@ -255,6 +303,8 @@ export function createLiveReadClient(
       }
       return {
         source: "WS2",
+        mode,
+        store: mode === "server-demo" ? "mock-configured" : "database-configured",
         contractRevision: WS2_CONTRACT_REVISION,
         deployedRevision: null,
         retrievedAt: observedAt.toISOString(),
@@ -268,6 +318,8 @@ export function createLiveReadClient(
     }
 
     function adopt(identity: IdentityFields): void {
+      if (observedActor !== null && !sameIdentity(observedActor, identity)) unknownInterest.clear();
+      observedActor = { ...identity };
       current = Object.freeze({ ...identity });
       scope ??= Object.freeze({ userId: identity.userId, role: identity.role, generation });
     }
@@ -279,7 +331,7 @@ export function createLiveReadClient(
     }
 
     async function establish(group: Group): Promise<IdentityFields> {
-      const identity = await read(group, { kind: "identity" }, identityFields);
+      const identity = await read(group, { kind: "identity" }, parseIdentity);
       if (current !== null && !sameIdentity(identity, current)) identityChanged(group);
       adopt(identity);
       return identity;
@@ -293,7 +345,7 @@ export function createLiveReadClient(
     }
 
     async function after(group: Group, expected: IdentityFields): Promise<void> {
-      const identity = await read(group, { kind: "identity" }, identityFields);
+      const identity = await read(group, { kind: "identity" }, parseIdentity);
       if (!sameIdentity(identity, expected)) identityChanged(group);
       currentScope();
     }
@@ -301,6 +353,19 @@ export function createLiveReadClient(
     function requireInvestor(identity: IdentityFields): void {
       if (identity.role !== "investor" || identity.onboarded !== true || identity.investorId === null) {
         rejectRead("denied", "The existing service must confirm completed investor onboarding for this read.", "onboarding_required");
+      }
+    }
+
+    function reconcileUnknownInterest(identity: IdentityFields, entries: readonly ReadEngagement[]): void {
+      if (unknownInterest.size === 0) return;
+      const latest = new Map<string, ReadEngagement>();
+      for (const entry of entries) {
+        if (entry.fundingNeedId === null) latest.set(entry.projectId, entry);
+      }
+      for (const entry of latest.values()) {
+        if (entry.state !== null && activeEngagementStates.includes(entry.state)) {
+          unknownInterest.delete(`${identity.userId}:${identity.investorId}:${entry.projectId}`);
+        }
       }
     }
 
@@ -317,7 +382,7 @@ export function createLiveReadClient(
 
     async function readIdentity(readOptions: ReadOptions = {}): Promise<ReadResult<LiveIdentity>> {
       return run("identity", readOptions, async (group) => {
-        const identity = await read(group, { kind: "identity" }, identityFields);
+        const identity = await read(group, { kind: "identity" }, parseIdentity);
         if (current !== null && !sameIdentity(identity, current)) {
           retire(readError("stale", "The participant identity changed.", "identity_changed"), group);
           group.generation = generation;
@@ -330,12 +395,9 @@ export function createLiveReadClient(
     async function readSnapshot(readOptions: SnapshotReadOptions = {}): Promise<ReadResult<LiveSnapshot>> {
       return run("snapshot", readOptions, async (group): Promise<LiveSnapshot> => {
         validateQuery(readOptions.query);
-        const filter = readOptions.query === undefined ? undefined : {
-          ...readOptions.query,
-          ...(readOptions.query.statuses === undefined ? {} : { statuses: [...readOptions.query.statuses] }),
-          ...(readOptions.query.stages === undefined ? {} : { stages: [...readOptions.query.stages] }),
-        };
+        const filter = readOptions.query === undefined ? undefined : copyWorkspaceQuery(readOptions.query);
         const identity = await establish(group);
+        if (group.expectedIdentity !== null && !sameIdentity(group.expectedIdentity, identity)) identityChanged(group);
         validateQuery(filter, identity.role);
         if (identity.role === "site-owner") {
           const entries = await read(group, { kind: "owner-sites" }, (value) => ownerEntries(value, identity));
@@ -368,6 +430,11 @@ export function createLiveReadClient(
         const profile = await section(group, { kind: "profile" }, (value) => investorProfile(value, identity));
         const pipelineItems = await section(group, { kind: "my-engagements" }, (value) => engagements(value, identity));
         await after(group, identity);
+        if (pipelineItems.ok) reconcileUnknownInterest(identity, pipelineItems.data);
+        interestQuery = filter ?? {};
+        for (const record of collection.records) {
+          if (record.projectId !== null) permittedInterestProjects.add(record.projectId);
+        }
         return {
           ...detailBase(identity, group),
           role: "investor", records: collection.records, summary: collection.summary,
@@ -375,6 +442,127 @@ export function createLiveReadClient(
           completeness: profile.ok && pipelineItems.ok ? "complete" : "partial",
         };
       });
+    }
+
+    async function readMyEngagements(readOptions: ScopedReadOptions): Promise<ReadResult<ReadEngagements>> {
+      return run("engagements", readOptions, async (group) => {
+        const identity = await before(group, readOptions.scope);
+        requireInvestor(identity);
+        const entries = await read(group, { kind: "my-engagements" }, (value) => engagements(value, identity));
+        await after(group, identity);
+        reconcileUnknownInterest(identity, entries);
+        return { ...detailBase(identity, group), engagements: entries };
+      });
+    }
+
+    async function expressInterest(projectId: string, readOptions: InterestOptions): Promise<InterestResult> {
+      if (!admitInterest) return {
+        kind: "not-sent", receipt: null,
+        error: readError("out-of-reach", "Nonbinding interest has not been admitted for this configuration.", "interest_not_admitted"),
+      };
+      if (interestPending) return {
+        kind: "not-sent", receipt: null,
+        error: readError("invalid", "An interest request is already in progress. No additional request was sent.", "interest_pending"),
+      };
+      interestPending = true;
+      let dispatched = false;
+      let receipt: InterestReceipt | null = null;
+      let key: string | null = null;
+      try {
+        const result = await run("interest", readOptions, async (group): Promise<InterestResult> => {
+          if (!isId(projectId)) rejectRead("invalid", "A canonical project UUID is required.", "invalid_id");
+          projectId = projectId.toLowerCase();
+          if (readOptions.acknowledgeUnknownOutcome !== undefined && typeof readOptions.acknowledgeUnknownOutcome !== "boolean") {
+            rejectRead("invalid", "A deliberate uncertainty acknowledgement must be boolean.", "invalid_options");
+          }
+          const acknowledged = readOptions.acknowledgeUnknownOutcome === true;
+          const identity = await before(group, readOptions.scope);
+          requireInvestor(identity);
+          if (interestQuery === null || !permittedInterestProjects.has(projectId)) {
+            rejectRead("denied", "Choose a project in the current permitted portfolio before registering interest.", "project_not_admitted");
+          }
+          const collection = await read(group, { kind: "portfolio", query: interestQuery }, portfolio);
+          if (!collection.records.some((record) => record.projectId === projectId)) {
+            rejectRead("denied", "This project is no longer in the current permitted portfolio. Refresh the collection before registering interest.", "project_not_admitted");
+          }
+          const investorId = identity.investorId;
+          if (investorId === null) return malformed();
+          key = `${identity.userId}:${investorId}:${projectId}`;
+          const entries = await read(group, { kind: "my-engagements" }, (value) => engagements(value, identity));
+          await after(group, identity);
+          const observedAt = now();
+          if (!(observedAt instanceof Date) || !Number.isFinite(observedAt.getTime())) {
+            rejectRead("invalid", "The observation clock is invalid.", "invalid_clock");
+          }
+          const makeReceipt = (sent: boolean): InterestReceipt => ({
+            method: "POST", path: `/api/projects/${projectId}/engagements`,
+            projectId, investorId, scope: { ...currentScope() }, mode,
+            dispatched: sent, observedAt: observedAt.toISOString(),
+            contractRevision: WS2_CONTRACT_REVISION, deployedRevision: null,
+          });
+          receipt = makeReceipt(false);
+          const existing = currentProjectInterest(entries, projectId);
+          if (existing !== null) {
+            unknownInterest.delete(key);
+            return { kind: "existing", receipt, engagement: existing };
+          }
+          const previous = unknownInterest.get(key);
+          if (previous && !acknowledged) return {
+            kind: "unknown", receipt: previous,
+            error: readError("unavailable",
+              "The previous outcome is still unknown. Refresh status, or explicitly acknowledge it before a new attempt.",
+              "interest_outcome_unknown"),
+          };
+          if (!previous && unknownInterest.size >= LIVE_READ_LIMITS.maxItems) {
+            rejectRead("too-large", "Reconcile unresolved interest requests before starting another one.", "interest_receipt_limit");
+          }
+          assertGroup(group);
+          const response = await transport.postInterest(projectId, group.controller.signal, () => {
+            receipt = makeReceipt(true);
+            dispatched = true;
+          });
+          if (response.kind === "refused") return previous
+            ? { kind: "unknown", receipt: previous, error: {
+                ...response.error,
+                message: "The new request was refused; the earlier interest outcome is still unknown. Refresh existing engagements.",
+              } }
+            : { kind: "refused", receipt, error: response.error };
+          const created = response.kind === "created"
+            ? engagements([response.payload], identity, projectId)[0] : null;
+          if (response.kind === "created" && (object(response.payload).funding_need_id !== null ||
+            !created || created.fundingNeedId !== null ||
+            created.state !== "interested" || created.isBinding !== false ||
+            created.createdAt === null || created.stateChangedAt === null)) malformed();
+          await after(group, identity);
+          assertGroup(group);
+          unknownInterest.delete(key);
+          return created
+            ? { kind: "created", receipt, engagement: created }
+            : { kind: "existing", receipt, engagement: null };
+        });
+        if (result.ok) {
+          if ((result.data.kind === "refused" || result.data.kind === "unknown") &&
+            (result.data.error.kind === "unauthenticated" || result.data.error.kind === "denied")) {
+            retire(result.data.error);
+          }
+          return result.data;
+        }
+        if (dispatched) {
+          if (key !== null && receipt !== null && observedActor?.userId === readOptions.scope.userId) {
+            unknownInterest.set(key, receipt);
+          }
+          return {
+            kind: "unknown", receipt,
+            error: { ...result.error, message: "The interest outcome is unknown. It may have completed; refresh existing engagements without sending it again." },
+          };
+        }
+        return {
+          kind: result.error.kind === "unauthenticated" || result.error.kind === "denied" ? "refused" : "not-sent",
+          receipt, error: result.error,
+        };
+      } finally {
+        interestPending = false;
+      }
     }
 
     async function readDetail(reference: DetailReference, readOptions: ScopedReadOptions): Promise<ReadResult<LiveDetail>> {
@@ -577,9 +765,16 @@ export function createLiveReadClient(
       });
     }
 
-    return success({ readIdentity, readSnapshot, readDetail, readDocument, readExport, invalidate });
+    return success({ readIdentity, readSnapshot, readDetail, readDocument, readExport, readMyEngagements, expressInterest, invalidate });
   } catch (error) {
     if (error instanceof ReadFault) return failure(error.error);
     throw error;
   }
+}
+
+export function createLiveReadClient(
+  configuration: LiveReadConfiguration,
+  options: LiveReadClientOptions = {},
+): ReadResult<LiveReadClient> {
+  return createWorkspaceClient({ ...configuration, canAttemptInterest: false }, options);
 }

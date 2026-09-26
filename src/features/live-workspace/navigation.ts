@@ -7,6 +7,7 @@ export interface WorkspaceContext {
   scopeId: string | null;
   taskId: string | null;
   collectionView: WorkspaceView | null;
+  collectionKey?: string;
 }
 
 const COLLECTION_VIEWS = ["overview", "sites", "queue", "pipeline", "portfolio"] as const;
@@ -58,6 +59,10 @@ export function workspaceContext(href: string, historyState?: unknown): Workspac
   }
   const safe = new URL(connectedWorkspaceHref(query), "https://sunsum.invalid");
   const view = safe.searchParams.get("view");
+  const state = typeof historyState === "object" && historyState !== null ? historyState : null;
+  const collectionKey = state && "sunsumCollectionState" in state &&
+    typeof state.sunsumCollectionState === "string" && state.sunsumCollectionState.length <= 128
+    ? state.sunsumCollectionState : null;
   return {
     view: WORKSPACE_VIEWS.find((allowed) => allowed === view) ?? null,
     projectId: safe.searchParams.get("project"),
@@ -66,6 +71,7 @@ export function workspaceContext(href: string, historyState?: unknown): Workspac
     collectionView: typeof historyState === "object" && historyState !== null &&
       "sunsumCollectionView" in historyState
       ? COLLECTION_VIEWS.find((candidate) => candidate === historyState.sunsumCollectionView) ?? null : null,
+    ...(collectionKey === null ? {} : { collectionKey }),
   };
 }
 

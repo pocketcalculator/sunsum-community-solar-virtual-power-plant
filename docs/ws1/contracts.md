@@ -1,198 +1,193 @@
 # WS1 contract and evidence register
 
-**Status: source-backed read integration register.** This document is not a
-parallel API specification or certification of a deployed environment.
+**Source-backed contracts are not deployment or frontend-admission proof.**
+This follow-up is locally reconciled with immutable upstream
+`449f6b0660609af3c80946f618c5e73828a36768`, including merged PR71's final head
+`5be551b`. The final PR71 change affects authentication-code handling, not the
+role/provenance conclusions below.
 
-The current frontend implements the selected WS2 **read** operations against
-the schemas/handlers pinned in [connections.md](connections.md). Legitimate
-participant sign-in, actual authorized records and remote deployment remain
-separate acceptance evidence. The reader does not use demo-switch or implement
-business-workflow writes. Conditional WS4/provider families stay out of reach
-until their existing authorization/linkage contracts are supplied.
+The existing consumed contracts are pinned to that inspected upstream.
+The frontend release revision and
+artifact hashes are recorded separately. Do not silently relabel historical
+exports/manifests, claim observed deployment or expand frontend operations.
+The sole machine-readable connection registry remains
+[`src/domain/connections.ts`](../../src/domain/connections.ts); this register
+points to evidence, not a competing wire schema.
 
-The broader historical gate register below records workstream responsibilities;
-it must not be interpreted as proof of current remote readiness or absence.
-Use the [connection/deployment guide](connection-and-deployment-guide.md)
-for this release's actual admission and delivery path.
+## Enabled frontend scope
 
-The public foundation needs no backend or credentials. The landing page and the
-create-profile flow are public descriptions and a local form, not authenticated
-workspaces, populated pilot dashboards, or successful-looking substitutes for
-unavailable services. Creating a profile assembles answers in the browser and
-sends nothing.
+The dynamic UI consumes its existing authorized identity, owner, operator,
+investor, site-document and export reads. Its only business command is explicit
+project-level `POST /api/projects/{id}/engagements` with `{}`.
+The existing `POST /api/auth/demo-switch` adapter is enabled only in explicit
+mock-backed `server-demo`. Static `preview` has no session/API transport.
 
-## Selected local scope
+Profile creation, contact-list reads, GIS reads, project-original reads,
+document registration/uploads, assessment overrides and other business/provider
+operations are **not enabled** merely because their backend routes exist.
+The public `/join` flow remains fictional and unsaved.
 
-- Next.js App Router and TypeScript, using the existing root npm/CI layout.
-- Public landing/story pages, participation, education and a no-save
-  fictional profile flow without password capture.
-- Separate synthetic Sunroom and ephemeral, permission-scoped service reads;
-  no connected workflow-write commands.
-- Ordinary local production build/start; WS3 owns Azure delivery and service configuration.
+## Merged service code and runtime evidence
 
-The revised September 14, 2026 charter remains the MVP scope authority.
-The September 16 database decision in the
-[technical design](../sunsum_technical_design_doc.md) selects **Azure Database
-for PostgreSQL Flexible Server with Drizzle ORM and Drizzle Kit**, and the
-web preview uses Linux App Service code deployment.
-Private Blob Storage, Entra integration, and optional Fabric remain integration
-work. These decisions do not supply a database schema, configure those
-services, or make them dependencies of the current browser-only profile flow.
+| Source-backed capability | What exists | What is not established |
+| --- | --- | --- |
+| [PR27 session authentication](https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/pull/27) | Protected-route/session-auth implementation | Configured legitimate sign-in, participant mapping or a real authorized session |
+| [PR41 assessment override](https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/pull/41) | Operator override in `src\backend\core\projects` and `src\backend\handlers\projects`, at `/api/sites/{id}/assessment/override` | Live WS4/model conformance or approval for a frontend override write |
 
-## External acceptance gates
+Origin-checked anonymous session/intake routes do not make protected reads
+anonymous. Seeded demo sign-in is not production identity, and disabling its
+issuance does not turn an old demo cookie into a genuine participant.
 
-| Gate                     | Owner                  | Required evidence                                                             | Status                     |
-| ------------------------ | ---------------------- | ----------------------------------------------------------------------------- | -------------------------- |
-| Wire contract            | WS2 with WS4           | Versioned machine-readable inputs/outputs/errors and ownership                | Source-pinned selected reads; remote revision not confirmed |
-| Screening                | WS4                    | Units, range shapes, rules/assumptions/version, and three outcome examples    | Stored authorized results only; separate candidate not admitted |
-| Demo data                | WS2/WS4                | Approved synthetic examples and repeatable seed mechanism                    | Separate 50-record frontend demo; no backend seed action |
-| Identity and permissions | WS2/WS3                | Actor/session semantics, object ownership, investor scope and document access | Signed-session source accepted; legitimate participant handoff required |
-| Azure delivery           | WS3                    | Service/artifact/startup, access, configuration and budget                    | Historical F1 delivery; this release is package-first |
-| UX                       | WS5                    | Shared design decision and review disposition                                 | Selected original styling with Sunroom structure |
-| Core acceptance          | WS6 and service owners | Actual persisted/deployed three-role journey and adverse cases                | Beyond this frontend's live-read-only scope |
+## Implemented backend, not enabled frontend
 
-An unavailable handoff does not assert that another contributor has done no
-work. Source acceptance, configuration, actual authorized reads and deployment
-are independent facts; one must not silently mark the others complete.
+| Backend surface | Source contract | Frontend status |
+| --- | --- | --- |
+| `POST /api/profiles` | Anonymous same-origin intake; rejects request password/caller role; derives nullable role | No frontend POST; no-save preview retained |
+| Operator sign-up/contact-list read (PR69) | Protected access to participant intake records | No contact-list caller or new personal-data projection |
+| PR70 project-document POST registration / PUT bytes | Metadata registration and raw-byte upload are separate operations | Neither write is admitted |
+| `GET /api/projects/{projectId}/documents/{documentId}/content` | Existing project-original route; disclosure/engagement can permit eligible tier-one investors | No project-original UI read; current originals remain site-only |
+| `GET /api/sites/candidate-parcels` (merged PR71) | Authenticated `site_owner` or `operator`; query-free collection without an owner filter | No GIS operation, renderer/provider call or broadened audit allowance |
 
-### WS2 artifacts offered against these gates
+There is **no GET project-document-list route**. Do not infer one from the
+POST registration URL or use metadata to manufacture an original-content URL.
 
-| Gate                     | Artifact                                                           | Version |
-| ------------------------ | ------------------------------------------------------------------ | ------- |
-| Wire contract            | `docs/api/openapi.yaml` with `docs/api/README.md`   | Labels differ; pin source commit and schemas |
-| Demo data                | `src/backend/core/store` seed — five Atlanta/Chattanooga pilot sites, deterministic on process start | 0.1.0   |
-| Identity and permissions | `src/backend/README.md` role/disclosure model; `src/backend/handlers/identity` session resolution | 0.1.0   |
-| Export                   | `GET /export` — role-aware JSON or CSV download, composed from the reads each role already has | 0.1.1   |
+### Profile intake is not sign-in
 
-The wire contract moves to 0.1.1 with `GET /export`. It is an addition, not a
-change: no existing operation, field or status was altered, so a client written
-against 0.1.0 is unaffected.
+A profile 201 returns intake metadata, not an authenticated account, session,
+workspace grant or durable-database guarantee. Response `role_id` is server-derived
+and may validly be null. The current fixture-backed dev store is intentionally
+non-production and may lose records on process restart.
 
-`GET /export` answers WS1's auto-export requirement. Two properties are worth
-carrying into the canonical contract rather than rediscovering later:
+The public `ProfileDraft` no longer contains an account-method answer or password.
+The backend requires `account_method`, so this is **not a simple snake_case
+mapping**. Do not invent `email` or another sign-in choice to satisfy the DTO.
+Any later save needs explicit admission, an intentional UX/answer mapping and
+a reviewed serializer. Password and caller-supplied `role_id` remain rejected.
 
-- **It composes, it does not re-query.** The bundle is built from
-  `getOwnerSites`, `getPortfolio` with `getDealRoom`, and `getPipeline` with
-  `getSubmissionDetail`. A change to a disclosure tier therefore reaches the
-  export automatically, and the export cannot become a second, weaker copy of
-  the visibility rules.
-- **Documents are a manifest, not bytes.** `content_url` is null whenever the
-  caller has no route to the content, which is *always* for an investor —
-  tier-1 content delivery is the §7.6 short-lived-SAS design and is not built.
-  This also lets the export describe metadata without reading Blob bytes.
-  Current remote storage availability must be observed separately.
+Preview-role mapping is distinct from backend derivation: for example,
+`workforce-participant` previews with no role while backend charter mapping can
+derive operator. Neither is authentication. Static no-save wording remains
+correct; dynamic consent/success wording changes only with an actually admitted
+and implemented save.
 
-Known limitation carried by the identity gate: every *protected* route now
-requires a signed `sunsum_session` cookie and answers `401 unauthenticated`
-without one, and cookie-authenticated writes are refused across sites, so the
-limitation is no longer "no authentication". Two routes are deliberately
-anonymous, because a client cannot present a cookie it does not yet have:
-`POST /auth/demo-switch` issues the first one and `POST /auth/logout` clears
-it. Both are origin-checked instead. What remains is that a session *starts*
-without a credential — `POST /auth/demo-switch` hands out one of three seeded
-identities to anyone who can reach it, gated only by `SUNSUM_DEMO_AUTH`. Roles
-are read from the user row, never from caller-supplied input, so the disclosure
-tiers are enforced; but this is still a demo sign-in, and WS3 owns replacing it
-with a real identity provider.
+### Document metadata and bytes
 
-Vocabulary translation between the WS1 charter ids (`site-owner`, `operator`,
-`financier`, and the seven journey stage ids) and the backend wire vocabulary
-(`site_owner`, `operator`, `investor`, five project stages) is the backend's
-responsibility and lives in `src/backend/handlers/shared/vocabulary.ts` and
-`journeyStageId` in `src/backend/core/journey`. WS1 vocabulary is not renamed.
+PR70's project-original GET is implemented. Metadata may be registered before
+bytes exist, so a permitted download may return 404. Stored content type,
+attachment/nosniff delivery and original-read authorization are distinct from
+metadata existence. Container access and memory-store contents require separate
+operational evidence; no remote configuration repair is authorized here.
 
-The two vocabularies are translated at different points, because only one of
-them travels on the wire as a raw token:
+The UI's existing original route remains site-based and owner/operator scoped.
+Backend investor project-content eligibility does not turn that site route into
+an investor route. Project-only metadata cannot use a contextual `site_id` as
+proof of a site-content capability.
 
-- **Journey stages are already translated for you.** Every response that places
-  something on the ribbon carries `journey_stage_id` in WS1's own kebab-case
-  ids, alongside the raw `submission_status` / `project_stage`. Render from
-  `journey_stage_id`; no adapter call is needed.
-- **Roles are not.** `GET /api/me` returns the service role, and composed
-  user/contact records may also carry a wire role. The browser-safe read
-  adapter translates `site_owner` to the workspace's `site-owner`; investor
-  remains `investor` within that workspace. The public charter's `financier`
-  intent is a different vocabulary, not a grant. Browser presentation must
-  not import `@/backend` to perform a translation. Existing backend vocabulary
-  tests still cover its independent public-charter adapter.
+The exporter still builds role-scoped JSON/CSV/document manifests, not file
+bundles. Its legacy investor `content_url` remains null; it has not automatically
+adopted the newer project-content path. Preserve server engagement/disclosure
+checks and the independent export/original flags. No upload is needed or allowed
+as an automatic response to missing bytes.
 
-## The viability service boundary
+## Parcel and GIS contract
 
-`POST /assess` in §6.1 is a call the backend *makes*, not an endpoint it serves.
-The web app never sees it: `POST /sites` and `POST /sites/{id}/submit` are the
-public operations, and the screening happens inside them.
+PR71 is merged. The backend admits `site_owner` **or** `operator`; investors
+are refused, and there is **no per-owner parcel filtering**. Authorized viewers
+receive the same configured candidate collection. An operator-only UI control
+would not change that server policy.
 
-The upstream is the preliminary-viability service, and its API is
-`POST {SUNSUM_VIABILITY_URL}/assessments`. It does not share our vocabulary, so
-`src/backend/viability` is the single place the two are reconciled. The
-translation is worth recording here because each line of it is a place a demo
-could show a homeowner a wrong number:
+The endpoint accepts no query parameters and returns `application/geo+json`
+with `no-store`. It publishes Polygon/MultiPolygon XY geometry in EPSG:4326 and
+five nullable string properties: `parcel_id`, `site_address`, `city`, `state`,
+`postal_code`. Owner/valuation fields are withheld. Do not send bbox, layer,
+where, fields, token, paging or map-pan arguments.
 
-| Ours                        | Theirs                                     | Rule                                                        |
-| --------------------------- | ------------------------------------------ | ----------------------------------------------------------- |
-| `approximate_area_sqm`      | `usable_roof_area_sqft` / `usable_land_area_acres` | Exact conversion, chosen by `site_type`             |
-| `viability_status` (3)      | `recommendation` (4)                       | `viable` maps **down** to `potentially_viable`               |
-| size / generation **ranges** | single point estimates                     | Both bounds take the point; a flag records it was not a range |
-| `missing_information`       | `missing_information`                      | Passed through unchanged                                     |
+The backend parcel selector defaults to **three synthetic parcels**. It is
+independent of the record store and workspace mode. Collection metadata
+`fetched_at` and `stale` is not fixture/live provenance or an upstream dataset
+revision; even 200 and `stale=false` do not prove ArcGIS access.
+Do not infer source from IDs, feature count or dates.
 
-Three properties this boundary holds to, which any replacement upstream must
-also hold to:
+Source inspection identifies cache authorization/cooldown and concurrent-failure
+consistency concerns, incomplete/invalid-feature reporting limits and source-policy
+decisions requiring review before frontend admission. These are not live
+operating measurements. The process-local on-demand cache is not a finalized
+refresh SLA or permission for frontend polling.
 
-- **Nothing is invented to fill a gap.** A field the owner did not provide is
-  absent from the request, not defaulted, and returns as `missing_information`.
-- **Consumption is never sent as generation.** The upstream has an
-  `annual_production_kwh` field and we hold `electricity_usage_kwh_annual`.
-  They share a unit and mean opposite things; conflating them would corrupt the
-  financial screening while looking entirely plausible.
-- **A screening is never promoted into an approval.** Feature C says this is a
-  preliminary screening and not an engineering, utility or financing
-  determination, so the upstream's `viable` cannot surface as a stronger claim
-  than our own UI is permitted to make.
+Candidate IDs are not site/project UUIDs; no authorized join is implied.
+Selecting a parcel must not create a site, project or viability result.
+Separate basemap/reference-layer caching, parcel display and repeated
+new/changed-site enrichment. This bulk GET does not implement the full latter
+workflow or invoke/persist WS4 assessment.
 
-An unreachable service returns `503 service_unavailable` and persists neither
-the site nor an assessment, rather than recording a screening that never ran.
-`SUNSUM_VIABILITY=demo`, the default, uses an in-process fixture so the journey
-is demonstrable with no second deployment — but it returns the same illustrative
-numbers for every site, and is not a screening.
+Parcel/admin/account credentials and parcel-access tokens remain backend-side.
+A separate basemap-only, referrer-restricted browser key is optional, not
+provisioned or authorized for use here. Actual product/tenant privileges and
+licensing require owner review; a legacy token test does not establish that
+ArcGIS lacks secure authentication. Basemap caching is not an assumed mirror right.
 
-## Questions the canonical contract must resolve
+Private geometry/properties must not enter source, fixtures or bundles.
+Format/hash receipts are not publication authority; parcel appraisals are not
+investment data. EPSG:4326 is a contract requirement, not a claim of a CRS member
+read from private input. See the [editing/authentication boundary](connection-and-deployment-guide.md#backend-geojson-map-boundary).
 
-- Draft versus submission requirements, consent, optional usage/equipment/files,
-  validation feedback, and repeated-submit behavior.
-- Explicit area/power/annual-energy units, range and missing-value representation,
-  preliminary outcomes, factors, flags, and reviewer override/rationale.
-- Submission disposition versus project stage, permitted transitions,
-  site-to-project conversion, assignment, next action and target date.
-- Session expiry, actor changes, role/object permissions, and per-role activity
-  projections. Internal notes must not leak through a shared timeline.
-- Operator-controlled investor visibility and approved-stage constraints.
-  Permissions must apply to direct record and document requests.
-- File types/limits, upload/download grants, required-document rules,
-  acknowledgement actor/time/status, and visibility revocation behavior.
-- Error shapes, request correlation, pagination/filtering, unit-compatible
-  summaries, concurrency/idempotency, and authoritative refresh after writes.
-- Hosting-appropriate response security headers, including CSP, referrer policy,
-  content-type protection, and HSTS where HTTPS deployment requires it. Do not
-  treat a local public preview as an approved production security configuration.
+## Mode, authority and action lifetime
 
-Do not fill these gaps with invented tariffs, eligibility thresholds, source-data
-defaults, or a UI-only policy.
+`server-demo` requires explicit mock store, exact `SUNSUM_DEMO_AUTH=enabled`,
+configured test signing and same-origin `/api`. Connected mode requires explicit
+db-backed configuration, demo auth off, legitimate sign-in/mapping admission
+and fresh service identity. Known seeded identities are excluded. Current dev
+infrastructure stays fixture-only; a suggested db-mode switch is not authority
+to weaken its guard.
 
-## Wider workflow adoption
+Read, export, original and interest admission are separate. One deliberate
+interest click sends at most one POST after current investor/project/onboarding
+and identity/engagement checks. `{}` is project-level interest, not a
+funding-need-specific engagement or a capital commitment.
 
-For future changes beyond the source-pinned reads in this release:
+| Result | Interpretation |
+| --- | --- |
+| Matching 201 | Confirmed nonbinding creation; refresh authoritative engagements |
+| Expected 409 | Existing engagement, not another creation or an automatic retry |
+| Pre-dispatch cancellation | Not sent |
+| Refusal | Respect auth/role/onboarding/origin/record scope; no demo recovery |
+| Lost/aborted post-dispatch response, 5xx or invalid success receipt | Outcome unknown; bounded GET reconciliation only |
 
-1. Record its location, version and accepting owners here.
-2. Agree shared import, generated types, or runtime conformance checks.
-3. Replace provisional wire assumptions and their fixtures before calling a
-   screen integrated. Preserve useful presentation tests without treating them
-   as proof of service behavior.
-4. Keep wire schemas/errors in the agreed contract boundary; keep feature state
-   and derived view models within the owning modules.
-5. Under separate write authority, prove one persisted record across owner submission, screening, operator
-   acceptance, owner status and a permitted investor detail, including a denial
-   or error path, before completing broad feature lanes.
+An empty/failed reconciliation does not prove failure. Any deliberate new attempt
+acknowledges the unresolved one and repeats preflight. Actor/config changes
+retire old UI/receipts; no command queue or replay follows navigation.
+GET provenance remains separate from mutation receipts.
 
-This register declares no speculative endpoint URLs, JSON schema,
-identity vendor, database migration, or fallback service. Missing services must
-remain visibly unavailable rather than returning fake success.
+## Viability and model agreement
+
+The existing [`src/backend/viability`](../../src/backend/viability) HTTP translator
+already feeds [`core/sites`](../../src/backend/core/sites) workflows. Its local
+request/response schemas and configured `{SUNSUM_VIABILITY_URL}/assessments`
+target are implementation facts, **not proof the actual WS4 tool agreed or conforms**.
+
+| Application value | Existing local mapping boundary |
+| --- | --- |
+| Area in square metres | Convert by site type to upstream square feet/acres |
+| Upstream `viable` | Surface no stronger than preliminary `potentially_viable` |
+| Point estimates | Preserve the source limitation when presented as ranges |
+| Missing inputs | Remain missing; consumption is not generation |
+
+Geometry/address and incomplete zoning/land-class inputs do not form a complete
+viability dataset. The model owner's required field/layer list and backend/model/
+frontend agreement remain necessary. Reuse the existing translator; do not
+invent a second DTO or silently supply missing values. Demo viability values
+and merged override code do not certify a live model.
+
+## Audio and release evidence
+
+The three approved clips use the single schema-1
+[public manifest](../../src/features/participation/content/pageAudioAssets.json),
+with measured metadata and no private provenance. Both archives contain exact
+matching bytes and the canonical `AUDIO-CREDITS.txt` notice; third-party recordings
+are not MIT code. See [media credits](media-credits.md).
+
+Schema-2 release metadata distinguishes the reviewed frontend source, consumed
+backend pin, mode-specific allowed mutations, per-file/operator/media hashes and
+unknown deployed revision. Packaging makes zero Azure calls. Historical artifacts
+are not rewritten. Use the [package guide](connection-and-deployment-guide.md#package-without-azure)
+and separate owner approval for any later deployment.

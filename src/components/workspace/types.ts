@@ -1,11 +1,16 @@
 export type WorkspaceRole = "site-owner" | "operator" | "investor";
-export type WorkspaceMode = "demo" | "live";
+export type WorkspaceMode = "demo" | "live" | "server-demo";
 
 export interface RoleControlProps {
   value: WorkspaceRole | null;
   allowedRoles: readonly WorkspaceRole[];
   mode: WorkspaceMode;
   onChange: (role: WorkspaceRole) => void;
+  variant?: "panel" | "pill";
+  className?: string | undefined;
+  disabled?: boolean;
+  pendingRole?: WorkspaceRole | null;
+  error?: string | null;
 }
 
 /** A permitted display projection, not a service record or synthetic Site. */

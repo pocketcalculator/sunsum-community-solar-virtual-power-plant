@@ -1,84 +1,109 @@
 # SunSum connection index
 
-Use this table to find the integration, not to infer that it is operating.
-The source-backed WS2 reads are implemented against the pinned contract;
-legitimate participant sign-in, deployed revision and actual authorized
-records must still be confirmed. An unavailable connection is
-**out of reach right now**, not evidence that its owner has not built it.
+The sole machine-readable registry is
+[`src/domain/connections.ts`](../../src/domain/connections.ts), re-exported by
+the public [`live-read` entry](../../src/features/live-read/index.ts).
+It owns accepted operations, roles, disclosure, configuration names and bounds.
+This document is an index, not another endpoint/schema registry.
 
-The canonical machine-readable registry is
-[`src/domain/connections.ts`](../../src/domain/connections.ts); browser-safe
-adapters in [`src/features/live-read`](../../src/features/live-read) re-export
-it. `app/app` composes the connected entry, while
-`static/main.tsx` composes only the synthetic demo. They share permitted
-presentation primitives, not workflow state or authority.
+The follow-up is locally reconciled with immutable upstream
+`449f6b0660609af3c80946f618c5e73828a36768`, the inspected consumed-contract pin.
+Source implementation, enabled
+frontend calls, configured stores and observed deployment are separate facts.
+No new operation is admitted merely by updating a source pin.
 
-## Read families
+## Frontend connection families
 
-| Search ID | Owner | Existing read surface | Boundary / next handoff |
-| --- | --- | --- | --- |
-| `SUNSUM-CONNECTION:WS2-IDENTITY` | WS2/WS3 | `GET /api/me` | Legitimate existing session and user-role mapping; no demo-switch |
-| `SUNSUM-CONNECTION:WS2-OWNER` | WS2 | `/api/me/sites`, `/api/me/outstanding` | Owner-scoped records, units, provenance and actual empty/error states |
-| `SUNSUM-CONNECTION:WS2-OPERATOR` | WS2 | Submissions/list/detail, pipeline, project engagements | Operator authorization; no generic project GET; no review/stage writes |
-| `SUNSUM-CONNECTION:WS2-INVESTOR` | WS2 | Investor profile, portfolio, engagements, funding needs, deal room | Existing onboarding/grants/engagement; lower-tier disclosure, no auto-interest |
-| `SUNSUM-CONNECTION:WS2-DOCUMENTS-EXPORT` | WS2/WS3 | Composed metadata, original content, JSON/CSV export | Original bytes owner/operator only; separate export authority; no file bundle |
-| `SUNSUM-CONNECTION:WS4-ASSESSMENT-READ` | WS4 with WS2 | Candidate assessment list/detail/audit/report | Out of reach until existing per-record auth, deployed schema and ID linkage are supplied |
-| `SUNSUM-CONNECTION:WS2-TO-WS4-SCREENING` | WS2/WS4 | Stored results via authorized reads | New screening persists state and is not implemented in this frontend release |
-| `SUNSUM-CONNECTION:MAPS-LOCATION` | WS4/GIS | Stored authorized locations/provenance | Approved source, licensing and role precision; no new geocoding or exposed key |
-| `SUNSUM-CONNECTION:AI-IMAGE-EVIDENCE` | WS4 | Stored observations/warnings/human review | No upload, model generation, correction or paid processing |
-| `SUNSUM-CONNECTION:FINANCE-GIS-EXTERNAL-DATA` | WS4/data owners | Stored results and approved projections | Assumptions/units/vintage/license; no private ingestion or new calculation |
+Dynamic modes share one bounded service client. Static preview has no service
+or session adapter. An unavailable family does not mean its backend code is absent.
 
-Activity, notifications, utility status and guidance map only to actual
-documented fields inside these families. There is no invented
-notifications, utility or generic project endpoint. Unknown counts and
-unavailable histories must not appear as empty successful reads.
+| Search ID | Frontend caller / scope | Boundary |
+| --- | --- | --- |
+| `SUNSUM-CONNECTION:WS2-IDENTITY` | Existing `GET /api/me`; all admitted roles | Fresh signed identity; connected rejects known seeded principals |
+| `SUNSUM-CONNECTION:WS2-OWNER` | Owner sites and outstanding requests | Caller-owned records, existing stored assessment/document metadata |
+| `SUNSUM-CONNECTION:WS2-OPERATOR` | Submissions/pipeline/detail, project engagements/funding | Existing operator projections only; no contact-list read, review or stage command |
+| `SUNSUM-CONNECTION:WS2-INVESTOR` | Portfolio/profile/engagement/funding/deal-room reads and explicit interest | Current investor/project/onboarding scope; no automatic interest or private operator fill-in |
+| `SUNSUM-CONNECTION:WS2-DOCUMENTS-EXPORT` | Separately admitted site-original downloads and normalized export | UI originals remain site-only for owner/operator; project-original GET and all uploads are not enabled |
+| `SUNSUM-CONNECTION:WS4-ASSESSMENT-READ` | Stored permitted assessment fields | No direct WS4 reader or claimed real-model verification |
+| `SUNSUM-CONNECTION:WS2-TO-WS4-SCREENING` | Stored authorized results | No new screening, rescreening or override command |
+| `SUNSUM-CONNECTION:MAPS-LOCATION` | No frontend GIS operation | Backend parcel GET exists; `site_owner`/operator access without owner filtering is not frontend admission |
+| `SUNSUM-CONNECTION:AI-IMAGE-EVIDENCE` | Stored observations/context only | No upload, inference, correction or provider call |
+| `SUNSUM-CONNECTION:FINANCE-GIS-EXTERNAL-DATA` | Stored permitted funding/context projections | No private ingestion or new calculations; parcel appraisals are not investment data |
 
-## Source basis
+Activity, notifications, utility status and guidance use only existing documented
+fields. Do not invent generic project/notification endpoints or turn unknown
+counts into empty success. See the [backend-versus-frontend matrix](contracts.md#implemented-backend-not-enabled-frontend)
+for profile/contact, project-document and parcel capabilities.
 
-The integration baseline is upstream
-[`73695a052a63`](https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/commit/73695a052a6324434b36bebbdd0c834b455471b7),
-with [OpenAPI](../api/openapi.yaml) and the actual WS2 handlers.
-Pin schemas and operations rather than relying only on the differing
-0.1.0/0.1.1 document labels.
+## Source modes and mutations
 
-The reader also accounts for these source-contract details:
+| Mode | Admission | Backend mutations enabled in the UI |
+| --- | --- | --- |
+| Static `SYNTHETIC_DEMO_ONLY` | Environment `preview`, no API base | None; fictional commands remain local |
+| `server-demo` | Explicit `mock`, exact demo auth `enabled`, configured test signing, same-origin `/api` | Deliberate mock-store project interest and the existing seeded-session switch |
+| `connected` | Explicit `db`, demo auth off, configured signing, legitimate sign-in/mapping and current service identity | Deliberate project-level interest only |
+| `unavailable` | Missing/invalid/mixed configuration | None; never fall back to another mode |
 
-- Project `target_date` can be a date-only input or the database mapper's ISO
-  timestamp. Both retain their supplied precision and timezone; missing values
-  do not acquire a midnight timestamp.
-- WS2 selects the last engagement in its emitted creation/ID order for a
-  project. A later update to an older row does not make it the current
-  engagement. The deal-room GET still makes the authorization decision.
-- The database requires one document parent. The export may fill `site_id`
-  from the surrounding project context; this does not give a project-only
-  document a site-content route. The reader preserves that metadata without
-  an original-download capability.
-- An unavailable pipeline keeps the observed submission count but an unknown
-  project count. A successful empty pipeline can report a genuine zero.
+The command is `POST /api/projects/{id}/engagements` with `{}`. It records
+nonbinding interest, not a capital commitment. The compatibility flag
+`SUNSUM_LIVE_READ_AUTH_APPROVED` is admission evidence, not authentication.
+`canAttemptInterest` is derived, not a generic write grant or new environment
+variable. Export and original-download approvals remain independent.
 
-The separately referenced WS4 candidate was
-[`0c1c6d4bbbc1`](https://github.com/pocketcalculator/sunsum-community-solar-virtual-power-plant/commit/0c1c6d4bbbc15ec91cb8d0a59daa6e5094ff5301),
-not a verified production service. Its broad assessment GETs cannot be
-exposed through a shared privileged proxy. The old stateless `/assess`
-proposal is superseded; the implemented WS2 screening client uses
-`{SUNSUM_VIABILITY_URL}/assessments`, and the candidate base includes `/api`.
-Neither POST is a read-only UI action.
+## Queries, provenance and outcomes
 
-## Status and annotations
+Investor wire queries use repeated `stage`, `viability`, exact `project_type`
+and explicit `mandate_match` (default on). Operator queries use repeated
+`status`, `type`, `viability` and applied raw-address `location`. Local paging,
+sorting and cards/list do not become unsupported server parameters.
 
-| Token | Meaning |
-| --- | --- |
-| `LIVE_READ_ONLY` | Existing-service reader entry; service authorization still applies |
-| `SYNTHETIC_DEMO_ONLY` | Fictional local data and deliberate demo commands |
-| `OUT_OF_REACH_RIGHT_NOW` | An affected handoff, configuration or access is unavailable |
-| `WORKFLOW_WRITES_NOT_IMPLEMENTED` | The frontend cannot execute business mutations in connected mode |
-| `SUNSUM-DEPLOYMENT:<GATE-ID>` | Find the applicable existing-target/artifact-approval guard |
+Only the current actor/query may publish rows, counts or loading state. Keep
+sensitive queries/records out of URLs/history/storage; counts describe loaded
+permitted records, not a complete account total. Preserve date-only precision,
+service engagement ordering and project-versus-funding-need distinctions.
 
-For a connection handoff, provide source/contract and deployed revisions,
-accepted operations, safe configuration **names**, identity/record/disclosure
-scope, freshness/pagination, export authority, and last authorized-read
-evidence. Do not provide secret values in a ticket, README or client bundle.
-Configuration presence is not a successful provider call.
+Matching 201 confirms interest; 409 is existing engagement. Pre-dispatch
+cancellation is not sent. Network loss, timeout/abort after dispatch, 5xx or an
+invalid success receipt means **unknown outcome**. Reconcile with authorized
+GETs; empty/failed reads do not prove failure or trigger replay. Any deliberate
+new attempt acknowledges uncertainty and repeats preflight.
 
-See [the practical connection/deployment guide](connection-and-deployment-guide.md)
-for setup order, commands, troubleshooting and package-only delivery.
+Read/export provenance carries configured mode/store, contract revision and
+retrieval time with deployed revision unknown. POST receipts are separate.
+Project-only metadata does not gain a site-original capability from a contextual
+site ID, and export links do not automatically adopt PR70's project-content route.
+
+## GIS and storage boundaries
+
+Merged PR71 implements query-free `GET /api/sites/candidate-parcels` for
+`site_owner` **or** `operator`; there is no owner filter. It defaults to three
+synthetic parcels and returns no source-mode/provenance field.
+`fetched_at`/`stale`, a 200 or a database-configured workspace cannot certify
+live GIS. Cache authorization/failure behavior, completeness and source-policy
+assumptions still need review before frontend admission; no live provider
+validation is claimed.
+
+The canonical map entry, public typed client and `MapLimit.tsx` /
+`CollectionView.tsx` are the editing seam, not permission to add a transport.
+Keep candidates separate from submitted sites/projects unless an authorized
+join exists. Geometry/address is not a complete viability input set.
+
+Parcel credentials/tokens stay backend-side. A separate basemap-only,
+referrer-restricted browser key is optional and not provisioned/authorized here.
+Cache reference layers only as licensing permits; no default frontend polling
+or assumed mirror right. Private geometry/properties and appraisal data do not
+belong in source, fixtures or bundles. See the [detailed handoff](connection-and-deployment-guide.md#backend-geojson-map-boundary).
+
+The current dev record store intentionally remains `mock`. Blob configuration
+is independent: the source supports `SUNSUM_BLOB=azure` with
+`AZURE_STORAGE_ACCOUNT_NAME`, but that proves no deployed configuration,
+container, permission or bytes. No cloud configuration repair is part of this UI.
+
+## Operator handoff
+
+Provide connection ID, source/contract and frontend revisions, admitted mode,
+identity/disclosure scope, bounds/freshness and actual authorized observations.
+Use safe configuration names, never secret values or private records.
+`SUNSUM-DEPLOYMENT:<GATE-ID>` locates separate target/artifact guards; repository
+access is not deployment authority. Use the [practical guide](connection-and-deployment-guide.md)
+for starts, package commands and failure handling.

@@ -10,13 +10,13 @@ export const FAQ_ITEMS: readonly FaqItem[] = [
     id: "finished",
     question: "Is this the finished product?",
     answer:
-      "No. These public pages explain a proposed community-energy approach and offer a fictional profile preview. The connected workspace is read-only and depends on authorized access; a separately labeled synthetic demo uses fictional scenarios. A proposal, an implemented screen and an operating project are different things.",
+      "No. These public pages explain a proposed community-energy approach and offer a fictional profile preview. The connected workspace depends on authorized access and offers only explicitly scoped actions; a separately labeled synthetic demo uses fictional scenarios. A proposal, an implemented screen and an operating project are different things.",
   },
   {
     id: "real-data",
     question: "Does anything here connect to real projects?",
     answer:
-      "These public pages do not request project records. The connected read-only workspace reports its own connection and access status, including when a service is out of reach. Public diagrams, profile examples and separately labeled synthetic scenarios are not real project data.",
+      "These public pages do not request project records. The connected workspace reports its own connection and access status, including when a service is out of reach. Public diagrams, profile examples and separately labeled synthetic scenarios are not real project data.",
   },
   {
     id: "profile",
@@ -28,7 +28,7 @@ export const FAQ_ITEMS: readonly FaqItem[] = [
     id: "register",
     question: "Can I register a site or sign in today?",
     answer:
-      "Not through this public preview. It does not request credentials, register a site or create a session. The read-only workspace requires an established, authorized access path; choosing a participation type here cannot provide one.",
+      "The public profile preview does not register a site or create an account. Real workspace access requires an established, authorized session. An explicitly enabled developer/demo control switches only seeded demo accounts; choosing a public participation type grants no role.",
   },
   {
     id: "audience",

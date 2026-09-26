@@ -264,13 +264,15 @@ function PreviewWorkspace({ initialRole, initialView, initialProject, initialSco
         <div className={s.breadcrumb}><span>My community</span><Icon name="chevron" size={11} /><strong>{viewName}</strong></div>
         <div className={s.topActions}>
           <button type="button" className={s.searchKey} onClick={() => { setQuery(""); setPalette(true); }} aria-label="Search commands and projects"><Icon name="search" size={17} /><span>Quick find</span><kbd>Ctrl K</kbd></button>
-          <ThemeToggle compact />
+          <div className={s.perspectiveTools} data-header-appearance-row>
+            <RoleControl value={role} allowedRoles={["site-owner", "operator", "investor"]} mode="demo" onChange={(next) => chooseRole(next)} />
+            <ThemeToggle compact />
+          </div>
           <button type="button" className={s.iconButton} aria-label="Open notifications" title="Historical demo notices; unread count not supplied" onClick={() => setNotifications(true)}><Icon name="bell" size={19} /></button>
           <span className={s.avatar} title="Fictional demo profile">{role === "site-owner" ? "AM" : role === "operator" ? "JL" : "CF"}</span>
         </div>
       </header>
       <div className={s.contextBar}>
-        <RoleControl value={role} allowedRoles={["site-owner", "operator", "investor"]} mode="demo" onChange={(next) => chooseRole(next)} />
         <label className={s.contextSelect}><span>Project context</span><select aria-label="Project context" value={scopeId ?? ""} onChange={(event) => {
           const next = event.target.value || null;
           const nextView = view === "documents" || view === "reports" ? view : role === "operator" ? "queue" : "overview";

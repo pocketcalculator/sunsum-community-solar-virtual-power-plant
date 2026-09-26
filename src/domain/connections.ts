@@ -1,5 +1,5 @@
 export const WS2_CONTRACT_REVISION =
-  "73695a052a6324434b36bebbdd0c834b455471b7" as const;
+  "449f6b0660609af3c80946f618c5e73828a36768" as const;
 
 export type ConnectionRole = "site-owner" | "operator" | "investor";
 
@@ -58,8 +58,8 @@ const ws2 = {
   freshness: "Explicit uncached GET observation; record timestamps may be unknown. No polling or connection certification.",
   pagination: "Pinned endpoints are unpaged. Results exceeding 5,000 items or the byte bound fail explicitly; no silent truncation.",
   status: "READ_ADMISSION_REQUIRED",
-  statusReason: "An approved database-backed, non-demo configuration and a legitimate participant session are required. Metadata does not claim a runtime connection.",
-  demoCounterpart: "Independent SYNTHETIC_DEMO_ONLY presentation; never a live-read fallback.",
+  statusReason: "Connected mode requires an approved database-backed configuration and legitimate participant session. Explicit server-demo uses only the mock store and seeded sessions. Metadata does not certify either runtime.",
+  demoCounterpart: "Independent SYNTHETIC_DEMO_ONLY static presentation, or explicitly admitted fictional server-demo; never a failed-read fallback.",
   nextHandoff: "Service owner confirms participant sign-in and disclosure; deployment owner supplies public-safe admission configuration.",
 } as const;
 
@@ -95,7 +95,7 @@ export const CONNECTION_REGISTRY: readonly ConnectionDefinition[] = Object.freez
     id: "SUNSUM-CONNECTION:WS2-IDENTITY",
     label: "Existing participant identity",
     acceptedOperations: ["GET /api/me"],
-    disclosure: "Current participant identity only; no cookie issuance, demo switching, account creation or caller-supplied role.",
+    disclosure: "The service confirms the current role. Only the separate explicit server-demo adapter may request seeded demo switching; no account creation or caller-granted live role.",
     roleScope: allRoles,
   }),
   connection({
@@ -123,15 +123,16 @@ export const CONNECTION_REGISTRY: readonly ConnectionDefinition[] = Object.freez
   connection({
     ...ws2,
     id: "SUNSUM-CONNECTION:WS2-INVESTOR",
-    label: "Investor portfolio and existing engagements",
+    label: "Investor portfolio and nonbinding interest",
     acceptedOperations: [
       "GET /api/portfolio",
       "GET /api/investors/me/profile",
       "GET /api/me/engagements",
       "GET /api/projects/{projectId}/deal-room",
       "GET /api/projects/{projectId}/funding-needs",
+      "POST /api/projects/{projectId}/engagements",
     ],
-    disclosure: "Tier-zero coarse portfolio; tier-one released metadata only with an existing eligible engagement. Never private operator fill-in or automatic interest.",
+    disclosure: "Tier-zero coarse portfolio; tier-one metadata with an eligible current engagement. One explicit project-level nonbinding-interest POST is supported for admitted investors. No automatic interest, withdrawal or funding commitment.",
     roleScope: ["investor"],
   }),
   connection({
@@ -166,10 +167,10 @@ export const CONNECTION_REGISTRY: readonly ConnectionDefinition[] = Object.freez
   ),
   seam(
     "SUNSUM-CONNECTION:MAPS-LOCATION",
-    "Maps and location seam",
-    "Location integration owner",
-    "Stored authorized location fields only; no live map, geocoder, tiles or paid provider calls.",
-    "Approve provider, billing, privacy, public-safe configuration and a bounded location contract.",
+    "Backend GeoJSON map seam",
+    "Existing backend and location integration owners",
+    "Stored authorized location fields remain available. The merged backend offers GeoJSON FeatureCollection (EPSG:4326). The browser never receives parcel credentials or ESRI provider/account tokens, including short-lived or referer-bound tokens. Basemap setup and provider entitlements have not been verified for this frontend.",
+    "Merged PR71 implements GET /api/sites/candidate-parcels for site owners and operators; it is not admitted by this frontend. Reconcile authentication, the project-join contract, approved property projection, role/record disclosure, bounds and trusted fixture/live provenance before adding a typed GET. The backend defaults to three synthetic parcels and reports freshness, not source provenance. Its read-through cache is not an agreed refresh schedule: no polling by default. Backend/operators own provider credentials. Edit this registry and the live-read transport/projection only after that handoff.",
   ),
   seam(
     "SUNSUM-CONNECTION:AI-IMAGE-EVIDENCE",

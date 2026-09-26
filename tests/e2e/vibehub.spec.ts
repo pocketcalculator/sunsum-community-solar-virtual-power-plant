@@ -1,30 +1,126 @@
 import { expect, test } from "@playwright/test";
+import { exercisePublicAudio } from "./public-audio-cases";
+import { expectCompactPerspectiveRow, expectPerspectiveGlide } from "./perspective-layout";
+import { installStaticNetworkGuard } from "../fixtures/static-network-guard";
 
 function hostingPath() {
   const prefix = test.info().config.metadata.routePrefix;
   return typeof prefix === "string" ? prefix.replace(/#$/, "") : "/";
 }
 
-test("the static no-hash root opens Sunroom directly without a concept picker", async ({ page }) => {
+test("bare and explicit public roots show the original landing with a deliberate Sunroom entrance", async ({ page }, testInfo) => {
   test.skip(!test.info().config.metadata.routePrefix, "Static build only.");
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const errors: string[] = [];
+  const serviceCalls: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) serviceCalls.push(request.url());
+  });
   const root = hostingPath();
-  await page.goto(root);
-  await expect(page.getByRole("heading", { level: 1, name: "Your community, looking brighter.", exact: true })).toBeVisible();
-  await expect(page.locator("[data-concept]")).toHaveAttribute("data-concept", "sunroom");
-  await expect(page.getByRole("group", { name: "Demo role", exact: true }).getByRole("radio", { name: "Site owner", exact: true })).toBeChecked();
-  await expect(page.getByRole("link", { name: /Gridline|All concepts|Explore the (?:Sunroom|Gridline) concept/i, includeHidden: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Gridline|All concepts/i, includeHidden: true })).toHaveCount(0);
-  await expect(page.getByRole("combobox", { name: /concept/i, includeHidden: true })).toHaveCount(0);
-  await expect(page.locator("body")).not.toContainText(/Gridline|Two points of view/i);
-  await page.getByRole("link", { name: "Skip to content", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#lab-content")).toBeFocused();
-  await expect(page).toHaveURL((url) => url.pathname === root);
-  await page.reload();
-  await expect(page.getByRole("heading", { level: 1, name: "Your community, looking brighter.", exact: true })).toBeVisible();
+  for (const hash of ["", "#/"]) {
+    await page.goto(`${root}${hash}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Community solar, with communities at the center.", exact: true })).toBeVisible();
+    await expect(page.locator("[data-concept]")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Explore participation", exact: true })).toHaveAttribute("href", "#/join");
+    await expect(page.getByRole("link", { name: "Why local needs come first", exact: true })).toHaveAttribute("href", "#/need");
+    const workspace = page.getByRole("link", { name: "Open Sunroom workspace", exact: true });
+    await expect(workspace).toHaveAttribute("href", "#/app");
+    await page.getByRole("link", { name: "Skip to main content", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#main-content")).toBeFocused();
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1, name: /Community solar/ })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`public-front-door-${hash ? "hash" : "bare"}.png`), fullPage: true, animations: "disabled" });
+    await workspace.click();
+    await expect(page).toHaveURL((url) => url.pathname === root && url.hash === "#/concepts/sunroom");
+    await expect(page.getByRole("heading", { level: 1, name: "Your community, looking brighter.", exact: true })).toBeVisible();
+    await expect(page.locator("[data-concept]")).toHaveAttribute("data-concept", "sunroom");
+    const role = page.getByRole("group", { name: "Demo role", exact: true });
+    expect(await role.evaluate((element) => element.closest("header") !== null)).toBe(true);
+    await expectCompactPerspectiveRow(page, "Demo role");
+    await page.screenshot({ path: testInfo.outputPath(`compact-synthetic-header-${hash ? "hash" : "bare"}.png`), animations: "disabled" });
+    if (!hash) {
+      const viewport = page.viewportSize();
+      if (!viewport) throw new Error("The header case requires a configured viewport.");
+      await page.setViewportSize({ ...viewport, width: 320 });
+      await page.screenshot({ path: testInfo.outputPath("compact-synthetic-header-320.png"), animations: "disabled" });
+      await expectCompactPerspectiveRow(page, "Demo role");
+      await page.setViewportSize(viewport);
+    }
+    await page.getByRole("link", { name: "Skip to content", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#lab-content")).toBeFocused();
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1, name: "Your community, looking brighter.", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Gridline|All concepts/i, includeHidden: true })).toHaveCount(0);
+  }
+  expect(serviceCalls).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("the shared role highlight glides forward and back instead of replacing selected backgrounds", async ({ page }, testInfo) => {
+  test.skip(!testInfo.config.metadata.routePrefix, "Static build only.");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto(`${hostingPath()}#/concepts/sunroom?role=site-owner&view=overview`);
+  const group = page.getByRole("group", { name: "Demo role", exact: true });
+  await expect(group.getByRole("radio", { name: "Site owner", exact: true })).toBeChecked();
+  await expectPerspectiveGlide(page, "Demo role", async () => {
+    await group.getByRole("radio", { name: "Operator", exact: true }).check();
+  });
+  await expect(group.getByRole("radio", { name: "Operator", exact: true })).toBeChecked();
+  await expectPerspectiveGlide(page, "Demo role", async () => {
+    await group.getByRole("radio", { name: "Operator", exact: true }).press("ArrowLeft");
+  });
+  await expect(group.getByRole("radio", { name: "Site owner", exact: true })).toBeChecked();
+  await page.screenshot({ path: testInfo.outputPath("shared-pill-glide-settled.png"), animations: "disabled" });
+});
+
+test("dragging tracks the pointer continuously, then glides back on cancellation without changing role", async ({ page }) => {
+  test.skip(!test.info().config.metadata.routePrefix, "Static build only.");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto(`${hostingPath()}#/concepts/sunroom?role=site-owner&view=overview`);
+  const group = page.getByRole("group", { name: "Demo role", exact: true });
+  const owner = group.getByRole("radio", { name: "Site owner", exact: true });
+  const operator = group.getByRole("radio", { name: "Operator", exact: true });
+  const indicator = group.locator("[data-role-indicator]");
+  const [first, second, initial] = await Promise.all([owner.boundingBox(), operator.boundingBox(), indicator.boundingBox()]);
+  if (!first || !second || !initial) throw new Error("Role drag geometry is missing.");
+  const pitch = second.x - first.x;
+  const x = first.x + first.width / 2;
+  const y = first.y + first.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + pitch * 0.6, y, { steps: 5 });
+  await expect(indicator).toHaveAttribute("data-role-state", "preview");
+  await expect.poll(async () => {
+    const bounds = await indicator.boundingBox();
+    return bounds ? Math.abs(bounds.x - initial.x - pitch * 0.6) : Infinity;
+  }).toBeLessThan(2);
+  await expect(owner).toBeChecked();
+  await expectPerspectiveGlide(page, "Demo role", async () => {
+    await page.keyboard.press("Escape");
+    const accepted = await group.getByRole("radio", { name: "Investor", exact: true }).evaluate((element) =>
+      element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 })));
+    expect(accepted).toBe(false);
+    await expect(owner).toBeChecked();
+    await page.mouse.up();
+  });
+  await expect(owner).toBeChecked();
+});
+
+test("reduced motion snaps the role highlight without losing keyboard selection", async ({ page }) => {
+  test.skip(!test.info().config.metadata.routePrefix, "Static build only.");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(`${hostingPath()}#/concepts/sunroom?role=site-owner&view=overview`);
+  const group = page.getByRole("group", { name: "Demo role", exact: true });
+  const owner = group.getByRole("radio", { name: "Site owner", exact: true });
+  await owner.press("ArrowRight");
+  await expect(group.getByRole("radio", { name: "Operator", exact: true })).toBeChecked();
+  const indicator = group.locator("[data-role-indicator]");
+  expect(await indicator.evaluate((element) =>
+    getComputedStyle(element).transitionDuration.split(",").every((duration) => parseFloat(duration) === 0))).toBe(true);
+  expect(await indicator.evaluate((element) => element.getAnimations().length)).toBe(0);
 });
 
 for (const pathname of ["/app", "/app/", "/concepts", "/concepts/", "/concepts/gridline", "/concepts/gridline/", "/concepts/sunroom/"]) {
@@ -108,10 +204,69 @@ for (const pathname of ["/need", "/opportunity", "/impact"]) {
   });
 }
 
+for (const topic of ["need", "opportunity", "impact"] as const) {
+  test(`static ${topic} plays the exact supplied clip below the hosting prefix`, async ({ page, context, baseURL }) => {
+    test.skip(!test.info().config.metadata.routePrefix, "Static build only.");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const root = hostingPath();
+    if (!baseURL) throw new Error("Static test base URL is missing.");
+    const audit = await installStaticNetworkGuard(context, new URL(root, baseURL));
+    await page.goto(`${root}#/${topic}`);
+    await page.reload();
+    await exercisePublicAudio(page, topic, root, `${root}AUDIO-CREDITS.txt`);
+    expect(audit.observed).toEqual([]);
+    expect(audit.blocked).toEqual([]);
+  });
+}
+
+test("static guard blocks and observes prefixed writes, sessions and foreign traffic", async ({ page, context, baseURL }) => {
+  test.skip(!test.info().config.metadata.routePrefix, "Static build only.");
+  if (!baseURL) throw new Error("Static test base URL is missing.");
+  const root = hostingPath();
+  const audit = await installStaticNetworkGuard(context, new URL(root, baseURL));
+  await page.goto(`${root}#/need`);
+  expect(audit.observed).toEqual([]);
+  const failures = await page.evaluate(async () => {
+    const attempts = [
+      fetch("./api/profiles", { method: "POST", body: "synthetic-static-guard-canary" }),
+      fetch("/api/me"),
+      fetch("https://static-guard.invalid/not-an-api", { mode: "no-cors" }),
+    ];
+    return (await Promise.allSettled(attempts)).map((result) => result.status);
+  });
+  expect(failures).toEqual(["rejected", "rejected", "rejected"]);
+  expect(audit.observed).toHaveLength(3);
+  expect(audit.blocked).toHaveLength(3);
+  expect([...audit.observed].sort()).toEqual([...audit.blocked].sort());
+  expect(audit.blocked.some((request) => request.startsWith("POST ") && request.endsWith(`${root}api/profiles`))).toBe(true);
+});
+
+test("static role workspace links use Sunroom without relocating the legacy owner illustration", async ({ page }) => {
+  test.skip(!test.info().config.metadata.routePrefix, "Static build only.");
+  const root = hostingPath();
+  for (const [label, role, view] of [
+    ["Fictional site owner workspace", "site-owner", "sites"],
+    ["Fictional investor workspace", "investor", "portfolio"],
+    ["Fictional operator workspace", "operator", "queue"],
+  ] as const) {
+    await page.goto(`${root}#/`);
+    const link = page.getByRole("navigation", { name: "Role workspaces" }).getByRole("link", { name: label });
+    await expect(link).toHaveAttribute("href", `#/concepts/sunroom?role=${role}&view=${view}`);
+    await link.click();
+    await expect(page.locator("[data-concept]")).toHaveAttribute("data-concept", "sunroom");
+  }
+  await page.getByRole("contentinfo").getByRole("link", { name: "About SunSum", exact: true }).click();
+  const illustration = page.getByRole("link", { name: "Site owner illustration", exact: true });
+  await expect(illustration).toHaveAttribute("href", "#/dashboard/site-owner");
+  await illustration.click();
+  await expect(page.getByRole("button", { name: /Run simulation/i })).toBeEnabled();
+  await expect(page.locator("[data-concept]")).toHaveCount(0);
+});
+
 test("About SunSum opens the original public landing, join flow and dashboard", async ({ page }) => {
   test.skip(!test.info().config.metadata.routePrefix, "Static build only.");
   const root = hostingPath();
-  await page.goto(root);
+  await page.goto(`${root}#/concepts/sunroom`);
   const about = page.getByRole("contentinfo").getByRole("link", { name: "About SunSum", exact: true });
   await expect(about).toHaveAttribute("href", "#/");
   await about.click();

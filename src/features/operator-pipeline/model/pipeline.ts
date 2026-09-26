@@ -10,29 +10,8 @@
  * address, and it is rendered, because an operator is who the address is for.
  */
 
-/**
- * The wire vocabularies, duplicated rather than imported, for the same reason
- * the investor workspace duplicates its own: importing them would pull
- * `@/backend` into a browser bundle. The API answers `invalid_query` for
- * anything it does not recognise, so drift produces a refusal rather than a
- * silently wrong filter.
- */
-export const SUBMISSION_STATUSES = [
-  "draft",
-  "submitted",
-  "screening",
-  "info_requested",
-  "accepted",
-  "rejected",
-] as const;
-
-export const SITE_TYPES = ["rooftop", "land"] as const;
-
-export const VIABILITY_STATUSES = [
-  "potentially_viable",
-  "more_information_required",
-  "not_currently_eligible",
-] as const;
+import { workspaceQueryString } from "@/domain/workspace-filters";
+export { SUBMISSION_STATUSES, SITE_TYPES, VIABILITY_STATUSES } from "@/domain/workspace-filters";
 
 export interface PipelineCard {
   readonly id: string;
@@ -171,12 +150,10 @@ export function toPipelineView(payload: unknown): PipelineView | null {
  * them, so the difference matters.
  */
 export function pipelineQueryString(filters: PipelineFilters): string {
-  const params = new URLSearchParams();
-  for (const status of filters.statuses) params.append("status", status);
-  if (filters.siteType !== null) params.set("type", filters.siteType);
-  if (filters.viability !== null) params.set("viability", filters.viability);
-  if (filters.location !== null && filters.location.trim() !== "") {
-    params.set("location", filters.location.trim());
-  }
-  return params.toString();
+  return workspaceQueryString({
+    statuses: filters.statuses,
+    ...(filters.siteType === null ? {} : { siteType: filters.siteType }),
+    ...(filters.viability === null ? {} : { viability: filters.viability }),
+    ...(filters.location?.trim() ? { location: filters.location.trim() } : {}),
+  });
 }

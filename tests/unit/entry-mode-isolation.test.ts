@@ -14,7 +14,7 @@ function resolveLocal(specifier: string, from: string, hasFile: (path: string) =
     : resolve(dirname(from), specifier);
   if (/\.(?:css|svg|png|jpg|webp)$/.test(path)) return null;
   const found = [path, `${path}.ts`, `${path}.tsx`, join(path, "index.ts"), join(path, "index.tsx")]
-    .find((candidate) => /\.(?:ts|tsx)$/.test(candidate) && hasFile(candidate));
+    .find((candidate) => /\.(?:ts|tsx|json)$/.test(candidate) && hasFile(candidate));
   if (!found) throw new Error(`Unresolved local module ${specifier} from ${relative(root, from)}`);
   return found;
 }
@@ -28,6 +28,10 @@ function runtimeGraph(entries: readonly string[], fixtures?: Readonly<Record<str
     seen.add(file);
     const text = sources ? sources.get(file) : readFileSync(file, "utf8");
     if (text === undefined) throw new Error(`Missing graph fixture: ${relative(root, file)}`);
+    if (file.endsWith(".json")) {
+      JSON.parse(text);
+      return;
+    }
     const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
     const inspect = (node: ts.Node) => {
       let specifier: string | null = null;
@@ -61,7 +65,7 @@ function forbiddenLiveFiles(graph: readonly string[]) {
 }
 
 describe("separate runtime entry graphs", () => {
-  it("does not initialize synthetic workflow, fixture views or demo sign-in from /app", () => {
+  it("keeps synthetic UI out of /app and confines demo sign-in to its explicit browser compositor", () => {
     const frameworkEntries = ["app", "app/app"].flatMap((directory) =>
       ["layout", "template", "error", "global-error", "loading", "not-found", "default"].flatMap((name) =>
         [".ts", ".tsx"].map((extension) => `${directory}/${name}${extension}`)))
@@ -69,7 +73,18 @@ describe("separate runtime entry graphs", () => {
     expect(frameworkEntries).toContain("app/layout.tsx");
     expect(frameworkEntries).toContain("app/not-found.tsx");
     const graph = runtimeGraph(["app/app/page.tsx", ...frameworkEntries]);
-    expect(forbiddenLiveFiles(graph)).toEqual([]);
+    expect(graph.filter((file) => /src\/features\/(?:design-lab|site-owner-dashboard)\//.test(file))).toEqual([]);
+    expect(graph).toContain("app/app/configuration.ts");
+    const configuration = ts.createSourceFile("configuration.ts",
+      readFileSync(resolve(root, "app/app/configuration.ts"), "utf8"), ts.ScriptTarget.Latest, true);
+    expect(configuration.statements.some((node) => ts.isImportDeclaration(node) &&
+      ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text === "server-only")).toBe(true);
+    const browserGraph = runtimeGraph(["app/app/WorkspaceEntry.tsx", ...frameworkEntries]);
+    expect(forbiddenLiveFiles(browserGraph).sort()).toEqual([
+      "src/features/demo-auth/components/DemoRoleSwitcher.tsx",
+      "src/features/demo-auth/index.ts",
+    ]);
+    expect(forbiddenLiveFiles(runtimeGraph(["src/features/live-workspace/index.ts"]))).toEqual([]);
   });
 
   it.each(["runtime", "type-only"] as const)("distinguishes a %s demo import through a composed layout", (kind) => {
@@ -81,6 +96,29 @@ describe("separate runtime entry graphs", () => {
       "src/features/design-lab/state.ts": "export interface DemoState {} export function initializeDemo() {}",
     });
     expect(forbiddenLiveFiles(graph)).toEqual(kind === "runtime" ? ["src/features/design-lab/state.ts"] : []);
+  });
+
+  it("tracks JSON as validated data without interpreting its string values as imports", () => {
+    const graph = runtimeGraph(["static/main.tsx"], {
+      "static/main.tsx": 'import audio from "@/features/participation/content/pageAudioAssets.json" with { type: "json" }; export { audio };',
+      "src/features/participation/content/pageAudioAssets.json": JSON.stringify({ note: 'import("@/backend")' }),
+    });
+    expect(graph).toEqual(["static/main.tsx", "src/features/participation/content/pageAudioAssets.json"]);
+    expect(() => runtimeGraph(["static/main.tsx"], {
+      "static/main.tsx": 'import missing from "./missing.json"; export { missing };',
+    })).toThrow("Unresolved local module ./missing.json");
+    expect(() => runtimeGraph(["static/main.tsx"], {
+      "static/main.tsx": 'import invalid from "./invalid.json"; export { invalid };',
+      "static/invalid.json": "{",
+    })).toThrow(SyntaxError);
+  });
+
+  it("still detects backend data imported by a browser entry", () => {
+    const graph = runtimeGraph(["static/main.tsx"], {
+      "static/main.tsx": 'import fixture from "@/backend/fixture.json"; export { fixture };',
+      "src/backend/fixture.json": JSON.stringify({ value: "synthetic guard canary" }),
+    });
+    expect(forbiddenLiveFiles(graph)).toEqual(["src/backend/fixture.json"]);
   });
 
   it("does not ship a live reader, live workspace or backend through the static entry", () => {

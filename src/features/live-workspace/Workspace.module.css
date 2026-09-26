@@ -66,8 +66,10 @@
 .sidebarBottom a { color: var(--text-muted); text-underline-offset: .2em; }
 .body { min-width: 0; display: flex; flex-direction: column; }
 .topbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); padding: var(--space-4) var(--space-6); background: var(--surface-raised); }
-.mode, .topActions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
-.mode { font-size: var(--text-sm); white-space: nowrap; }
+.mode, .topActions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); min-width: 0; max-width: 100%; }
+.mode { font-size: var(--text-sm); }
+.perspectiveTools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: var(--space-2); width: min(100%, 22rem); flex: 0 1 22rem; min-width: 0; }
+.perspectiveTools > fieldset { width: 100%; min-width: 0; }
 .modeDot { display: inline-block; width: .5rem; height: .5rem; background: var(--accent-solar); border-radius: var(--radius-pill); }
 .iconButton, .menuButton {
   min-width: var(--target-min);
@@ -155,8 +157,12 @@
   .sidebar { display: none; height: auto; position: static; }
   .sidebarOpen { display: flex; }
   .menuButton { display: inline-flex; }
-  .topbar { padding: var(--space-3) var(--space-4); }
-  .topActions { flex: 1; justify-content: flex-end; }
+  .topbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; padding: var(--space-3) var(--space-4); }
+  .menuButton { grid-column: 1; grid-row: 1; }
+  .mode { grid-column: 2; grid-row: 1; }
+  .topActions { display: contents; }
+  .topActions > .iconButton { grid-column: 3; grid-row: 1; }
+  .perspectiveTools { grid-column: 1 / -1; grid-row: 2; width: min(100%, 22rem); justify-self: end; }
   .main { padding: var(--space-5) var(--space-4); }
   .connectionBar, .noticePanel { flex-direction: column; align-items: flex-start; padding-inline: var(--space-4); gap: var(--space-2); }
   .cards, .steps, .comparison { grid-template-columns: minmax(0, 1fr); }
@@ -165,6 +171,9 @@
   .details { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
   .details dd { margin-bottom: var(--space-3); }
   .filters { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 22rem) {
+  .topbar { padding-inline: var(--space-2); }
 }
 @media (prefers-reduced-motion: reduce) {
   .enter { animation: none; }

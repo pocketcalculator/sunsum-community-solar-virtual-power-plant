@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { THEME_STORAGE_KEY } from "../../src/components/ui/theme/theme";
+import { exercisePublicAudio } from "./public-audio-cases";
+import { expectCompactPerspectiveRow } from "./perspective-layout";
 
 const entryPaths = [
   { label: "I have a rooftop", href: "/join?start=i-have-roof" },
@@ -7,10 +9,10 @@ const entryPaths = [
   { label: "I want to fund projects", href: "/join?start=i-would-fund" },
 ];
 
-const participationLinks = [
-  { label: "Site owner view", href: "/dashboard/site-owner" },
-  { label: "Investor profile preview", href: "/join?start=i-would-fund" },
-  { label: "Operator profile preview", href: "/join" },
+const roleLinks = [
+  { label: "Site owner workspace", href: "/dashboard/site-owner" },
+  { label: "Investor workspace", href: "/dashboard/investor" },
+  { label: "Operator workspace", href: "/dashboard/operator" },
 ];
 
 async function hasOverflow(page: Page) {
@@ -41,7 +43,7 @@ async function completeProfile(page: Page, participant: RegExp = /^property owne
   await page.getByRole("button", { name: /finish and review/i }).click();
 }
 
-test("landing keeps participation contexts distinct from the lower entry cards", async ({ page }, testInfo) => {
+test("landing keeps role workspaces distinct from fictional participation cards", async ({ page }, testInfo) => {
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -55,8 +57,8 @@ test("landing keeps participation contexts distinct from the lower entry cards",
     await expect(link).toHaveAttribute("href", path.href);
   }
 
-  const contexts = page.getByRole("navigation", { name: "Participation contexts" });
-  for (const item of participationLinks) {
+  const contexts = page.getByRole("navigation", { name: "Role workspaces" });
+  for (const item of roleLinks) {
     await expect(contexts.getByRole("link", { name: item.label, exact: true }))
       .toHaveAttribute("href", item.href);
   }
@@ -89,12 +91,47 @@ for (const [route, title] of [
     await expect(learning.getByRole("term")).toHaveCount(5);
     await expect(learning).toContainText("Grid-tied solar alone is not backup power");
     expect(await hasOverflow(page)).toBe(false);
-    await expect(page.locator("audio, video, iframe")).toHaveCount(0);
+    await expect(page.getByRole("main")).toHaveCount(1);
+    await expect(page.locator("video, iframe")).toHaveCount(0);
+    await expect(page.locator("audio")).toHaveCount(1);
+    await expect(page.locator("audio")).toHaveAttribute("src", `/audio${route}.mp3`);
+    await expect(page.locator("audio")).not.toHaveAttribute("autoplay");
+    await expect(page.locator("audio")).not.toHaveAttribute("loop");
     await page.getByRole("link", { name: "Return to SunSum", exact: true }).click();
     await expect(page).toHaveURL("/");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 }
+
+for (const topic of ["need", "opportunity", "impact"] as const) {
+  test(`${topic} plays the supplied media with independent keyboard playback and mute controls`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/${topic}`);
+    await exercisePublicAudio(page, topic);
+  });
+}
+
+test("a failed public clip reports an error without losing the authored story", async ({ page }) => {
+  await page.route("**/audio/need.mp3", (route) => route.fulfill({ status: 404, body: "" }));
+  await page.goto("/need");
+  await page.getByRole("button", { name: /^Play / }).click();
+  await expect(page.getByRole("region", { name: /^Music:/ }).getByRole("alert")).toContainText("could not be played");
+  await expect(page.getByRole("button", { name: /^Play / })).toBeVisible();
+  await expect(page.getByRole("article")).toContainText("not a claim of current projects or guaranteed outcomes");
+});
+
+test("the service workspace keeps a thin role capsule next to theme without header overlap", async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/app");
+  await expect(page.getByRole("group", { name: "Workspace role", exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("compact-workspace-role-theme.png"), fullPage: false, animations: "disabled" });
+  await expectCompactPerspectiveRow(page, "Workspace role");
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error("The header case requires a configured viewport.");
+  await page.setViewportSize({ ...viewport, width: 320 });
+  await page.screenshot({ path: testInfo.outputPath("compact-workspace-role-theme-320.png"), animations: "disabled" });
+  await expectCompactPerspectiveRow(page, "Workspace role");
+});
 
 test("the profile preview opens on its first step", async ({ page }, testInfo) => {
   const response = await page.goto("/join");
@@ -106,15 +143,16 @@ test("the profile preview opens on its first step", async ({ page }, testInfo) =
   await page.screenshot({ path: testInfo.outputPath("join-step-1.png"), fullPage: true, animations: "disabled" });
 });
 
-test("the dynamic owner alias enters read-only sites, never the static simulation", async ({ page }) => {
+for (const [role, view] of [["site-owner", "sites"], ["operator", "queue"], ["investor", "portfolio"]] as const) {
+test(`the dynamic ${role} alias enters the canonical workspace without a persona grant or sample fallback`, async ({ page }) => {
   const apiRequests: string[] = [];
   page.on("request", (request) => {
     if (new URL(request.url()).pathname.startsWith("/api/")) apiRequests.push(request.url());
   });
-  await page.goto("/dashboard/site-owner");
-  await expect(page).toHaveURL(/\/app\?view=sites$/);
+  await page.goto(`/dashboard/${role}?role=operator&next=https://outside.invalid`);
+  await expect(page).toHaveURL(new RegExp(`/app\\?view=${view}$`));
   await expect(page.getByRole("heading", { name: "Your service connection is out of reach right now" })).toBeVisible();
-  await expect(page.getByText("Live reads only", { exact: true })).toBeVisible();
+  await expect(page.getByText("Connection unavailable", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /run simulation/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Refresh permitted reads", exact: true })).toBeDisabled();
   expect(apiRequests).toEqual([]);
@@ -122,6 +160,7 @@ test("the dynamic owner alias enters read-only sites, never the static simulatio
     Object.keys(localStorage).filter((key) => key.startsWith("sunsum-design-lab")),
   )).toEqual([]);
 });
+}
 
 test("a landing deep link pre-selects an editable answer without skipping a step", async ({ page }) => {
   await page.goto("/");
@@ -270,13 +309,13 @@ for (const rootPixels of [20, 32]) {
   });
 }
 
-test("metadata distinguishes the fictional preview from connected reads independently of body copy", async ({ page }) => {
+test("metadata distinguishes the fictional preview from authorized service actions", async ({ page }) => {
   for (const path of ["/", "/need", "/opportunity", "/impact", "/join", "/nope"]) {
     await page.goto(path);
     const description = page.locator('meta[name="description"]');
     if (path !== "/join") {
-      await expect(description).toHaveAttribute("content", /separate interactive demo uses fictional data/i);
-      await expect(description).toHaveAttribute("content", /connected workflow writes are not implemented/i);
+      await expect(description).toHaveAttribute("content", /separate synthetic demo uses fictional browser-local data/i);
+      await expect(description).toHaveAttribute("content", /service actions require authorized access/i);
     } else {
       await expect(description).toHaveAttribute("content", /no account is created/i);
       await expect(description).toHaveAttribute("content", /nothing you enter is saved/i);

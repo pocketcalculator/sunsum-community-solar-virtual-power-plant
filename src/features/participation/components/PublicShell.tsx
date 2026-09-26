@@ -9,7 +9,17 @@ import styles from "./PublicShell.module.css";
 interface PublicShellProps {
   children: ReactNode;
   headerAction?: ReactNode;
+  footerAction?: ReactNode;
+  /**
+   * The demo sign-in control, when the server has enabled it.
+   *
+   * Passed in rather than imported because the module boundary forbids one
+   * feature importing another, and because whether demo sign-in exists at all
+   * is a server decision this component must not try to make.
+   */
+  demoControl?: ReactNode;
   visibleRoleIds?: readonly ParticipantRoleId[];
+  workspaceLinks?: readonly { id: ParticipantRoleId; href: string; label: string }[];
 }
 
 const PRIMARY_NAV = [
@@ -25,14 +35,14 @@ const ROLE_NAV = [
   {
     id: "site-owner",
     href: "/dashboard/site-owner",
-    label: "Site owner view",
+    label: "Site owner workspace",
   },
   {
     id: "financier",
-    href: "/join?start=i-would-fund",
-    label: "Investor profile preview",
+    href: "/dashboard/investor",
+    label: "Investor workspace",
   },
-  { id: "operator", href: "/join", label: "Operator profile preview" },
+  { id: "operator", href: "/dashboard/operator", label: "Operator workspace" },
 ] as const satisfies readonly {
   id: ParticipantRoleId;
   href: string;
@@ -49,9 +59,12 @@ const ALL_ROLE_IDS = ROLE_NAV.map((item) => item.id);
 export function PublicShell({
   children,
   headerAction,
+  footerAction,
+  demoControl,
   visibleRoleIds = ALL_ROLE_IDS,
+  workspaceLinks = ROLE_NAV,
 }: PublicShellProps) {
-  const visibleRoleLinks = ROLE_NAV.filter((item) =>
+  const visibleRoleLinks = workspaceLinks.filter((item) =>
     visibleRoleIds.includes(item.id),
   );
 
@@ -89,18 +102,26 @@ export function PublicShell({
           ) : null}
         </div>
 
-        {visibleRoleLinks.length > 0 ? (
-          <nav className={styles.roleNav} aria-label="Participation contexts">
+        {visibleRoleLinks.length > 0 || demoControl ? (
+          <nav className={styles.roleNav} aria-label="Role workspaces">
             <div className={styles.roleNavInner}>
-              <ul className={styles.roleNavList}>
-                {visibleRoleLinks.map((item) => (
-                  <li key={item.id}>
-                    <Link className={styles.roleNavLink} href={item.href}>
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              {visibleRoleLinks.length > 0 ? (
+                <ul className={styles.roleNavList}>
+                  {visibleRoleLinks.map((item) => (
+                    <li key={item.id}>
+                      <Link className={styles.roleNavLink} href={item.href}>
+                        {item.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {demoControl ? (
+                <div className={styles.roleNavAside}>
+                  <span className={styles.demoModeLabel}>Developer/demo mode</span>
+                  {demoControl}
+                </div>
+              ) : null}
             </div>
           </nav>
         ) : null}
@@ -122,9 +143,10 @@ export function PublicShell({
           </p>
           <p className={styles.footerNote}>
             Stories and diagrams explain a proposal. The public profile preview
-            is fictional and unsaved; separate workspace reads depend on an
+            is fictional and unsaved; separate workspace actions depend on an
             authorized connection and permitted access.
           </p>
+          {footerAction && <div className={styles.footerAction}>{footerAction}</div>}
         </div>
       </footer>
     </div>

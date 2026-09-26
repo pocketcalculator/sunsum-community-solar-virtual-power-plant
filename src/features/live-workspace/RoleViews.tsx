@@ -78,7 +78,7 @@ export function ProfileView({ snapshot }: { snapshot: LiveSnapshot }) {
         { label: "Organization", value: identity.organizationName ?? "Not specified" },
         { label: "Investor onboarding", value: identity.onboarded === null ? "Not supplied" : identity.onboarded ? "Recorded complete" : "Not recorded complete" },
       ]} />
-      <p className={styles.muted}>A public participation answer or demo role is not this identity.</p>
+      <p className={styles.muted}>A public participation answer or browser-local demo role is not this identity.</p>
     </section>
     {snapshot.role === "investor" && (!snapshot.profile.ok ? <ReadFailure error={snapshot.profile.error} /> :
       <section className={styles.panel}>
@@ -119,7 +119,8 @@ export function EngagementsView({ snapshot, onOpen }: { snapshot: LiveSnapshot; 
             {record && <button type="button" className={styles.textButton} onClick={() => onOpen(record.id)}>Read permitted project</button>}
           </li>;
         })}</ul>}
-    <WriteBoundary action="Expressing or withdrawing interest, committing funding or unlocking a deal room" />
+    <p>Open a permitted portfolio project to explicitly register nonbinding interest or request its eligible deal-room read.</p>
+    <WriteBoundary action="Withdrawing interest or committing funding" />
   </section>;
 }
 
@@ -130,7 +131,7 @@ export function LearningView() {
       <ol className={styles.steps}>
         <li><strong>Check your perspective</strong><p>The service supplies your role. Only its permitted records can load.</p></li>
         <li><strong>Read a record in context</strong><p>Compare source fields, evidence and timestamps before interpreting a status.</p></li>
-        <li><strong>Keep action and access separate</strong><p>This release does not execute workflows. A download also needs its own disclosure admission.</p></li>
+        <li><strong>Keep action and access separate</strong><p>Nonbinding project interest requires an explicit investor action. Other workflow writes remain unavailable, and a download needs its own disclosure admission.</p></li>
       </ol>
       <p>Learning is optional and can be revisited. It does not complete a profile or task.</p>
     </section>

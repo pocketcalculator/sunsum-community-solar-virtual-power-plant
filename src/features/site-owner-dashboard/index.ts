@@ -13,5 +13,10 @@ export {
   type DashboardDataSource,
   type SiteOwnerDashboardProps,
 } from "./components/SiteOwnerDashboard";
-export { DASHBOARD_LOCATIONS, type DashboardLocation } from "./model/mockDashboard";
+export {
+  DASHBOARD_LOCATIONS,
+  MAX_SELECTED_LOCATIONS,
+  RETURN_POINTS,
+  type DashboardLocation,
+} from "./model/mockDashboard";
 export { toDashboardLocation, toDashboardLocations } from "./model/fromOwnerSites";
